@@ -123,3 +123,392 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   APP SHELL — Full-viewport flex column: AuthHeader + iframe
+   All sizing uses dvh so iOS Safari's collapsible chrome is handled.
+═══════════════════════════════════════════════════════════════════════ */
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background-color: #0a0a0a;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: #0a0a0a;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   AUTH HEADER — Minimal monochrome top bar
+═══════════════════════════════════════════════════════════════════════ */
+
+.auth-header {
+  flex-shrink: 0;
+  height: 48px;
+  background: rgba(10, 10, 10, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  z-index: 200;
+}
+
+.auth-header-inner {
+  height: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ── Wordmark ─────────────────────────────────────────────────────────── */
+
+.auth-wordmark {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 3.5px;
+  text-transform: uppercase;
+  color: #e8e8e8;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* ── Right-side controls wrapper ─────────────────────────────────────── */
+
+.auth-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Sign-in button (unauthenticated) ────────────────────────────────── */
+
+.auth-signin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 99px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #0a0a0a;
+  background: #e8e8e8;
+  transition: all 0.18s ease-in-out;
+  white-space: nowrap;
+}
+
+.auth-signin-btn:hover {
+  background: #ffffff;
+  transform: scale(1.03) translateY(-1px);
+}
+
+.auth-signin-btn:active {
+  transform: scale(0.97);
+}
+
+.auth-signin-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 3px;
+}
+
+/* ── Authenticated user pill ─────────────────────────────────────────── */
+
+.auth-user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 0.18s ease-in-out;
+}
+
+.auth-user-pill:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.auth-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  object-fit: cover;
+  flex-shrink: 0;
+  display: block;
+}
+
+.auth-user-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #b0b0b0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.1px;
+}
+
+/* Thin vertical rule between name and sign-out */
+.auth-divider {
+  display: inline-block;
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.auth-signout-btn {
+  background: none;
+  border: none;
+  padding: 3px 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: #444;
+  border-radius: 6px;
+  transition: all 0.18s ease-in-out;
+  white-space: nowrap;
+}
+
+.auth-signout-btn:hover {
+  color: #c0c0c0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.auth-signout-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline-offset: 2px;
+}
+
+/* ── Loading skeleton ────────────────────────────────────────────────── */
+
+.auth-skeleton {
+  width: 120px;
+  height: 30px;
+  border-radius: 99px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: auth-shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes auth-shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   APP FRAME — Iframe that hosts public/index.html
+   Fills every remaining pixel below the auth header.
+   Same-origin access means localStorage is shared with the parent window —
+   all workout data persists with zero changes to the workout app's code.
+═══════════════════════════════════════════════════════════════════════ */
+
+.app-frame-container {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  min-height: 0; /* Required for flex children to shrink past content size */
+}
+
+.app-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: #0a0a0a;
+}
+
+/* ─── Mobile adjustments ───────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .auth-header { height: 44px; }
+  .auth-header-inner { padding: 0 14px; }
+
+  /* On very small screens collapse the name — avatar + sign-out is enough */
+  .auth-user-name,
+  .auth-divider { display: none; }
+
+  .auth-user-pill { gap: 6px; padding-right: 8px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SIGN-IN PAGE — Minimal monochrome gate
+═══════════════════════════════════════════════════════════════════════ */
+
+.si-shell {
+  position: fixed;
+  inset: 0;
+  background: #0a0a0a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 24px 16px;
+  font-family: 'Geist', system-ui, sans-serif;
+}
+
+/* No ambient glow — invisible placeholder */
+.si-glow { display: none; }
+
+.si-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: 100%;
+  max-width: 360px;
+}
+
+/* ── Logo ────────────────────────────────────────────────────────────── */
+
+.si-logo-wrap {
+  margin-bottom: 36px;
+}
+
+.si-logo-wrap svg {
+  color: #ffffff;
+  display: block;
+}
+
+/* ── App title ───────────────────────────────────────────────────────── */
+
+.si-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+  color: #e8e8e8;
+}
+
+.si-eyebrow {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #3a3a3a;
+  margin: 0 0 36px;
+}
+
+/* ── Separator ───────────────────────────────────────────────────────── */
+
+.si-divider {
+  width: 32px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  margin: 0 auto 28px;
+}
+
+/* ── Tagline ─────────────────────────────────────────────────────────── */
+
+.si-que {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.8;
+  color: #444;
+  margin: 0 0 40px;
+  max-width: 280px;
+}
+
+/* ── Primary CTA button ──────────────────────────────────────────────── */
+
+.si-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #0a0a0a;
+  background: #e8e8e8;
+  transition: all 0.18s ease-in-out;
+  margin-bottom: 20px;
+}
+
+.si-btn:hover:not(:disabled) {
+  background: #ffffff;
+  transform: scale(1.02) translateY(-1px);
+}
+
+.si-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.si-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.si-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 3px;
+}
+
+/* Spinner inside the button while redirecting */
+.si-btn-spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid rgba(10, 10, 10, 0.2);
+  border-top-color: #0a0a0a;
+  border-radius: 50%;
+  animation: si-spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes si-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Data / privacy note ─────────────────────────────────────────────── */
+
+.si-note {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #2a2a2a;
+  margin: 0;
+}
+
+/* ─── Mobile ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .si-que { font-size: 13px; }
+  .si-btn { padding: 13px 20px; }
+}

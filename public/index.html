@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Ironman Performance Command Center</title>
+    <title>Que</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#0ea5e9">
+    <meta name="theme-color" content="#070910">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,59 +13,60 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* Core Palette - Deep Space Theme */
-            --bg-base: #030712;
-            --bg-elevated: #0a0f1e;
-            --bg-surface: #111827;
-            --bg-surface-hover: #1f2937;
-            --bg-inset: #0d1424;
-            
-            /* Border System */
-            --border-subtle: rgba(255,255,255,0.04);
-            --border-default: rgba(255,255,255,0.08);
-            --border-strong: rgba(255,255,255,0.12);
-            --border-focus: rgba(14,165,233,0.5);
-            
-            /* Accent Colors */
-            --accent-primary: #0ea5e9;
-            --accent-primary-dim: rgba(14,165,233,0.12);
-            --accent-primary-glow: rgba(14,165,233,0.25);
-            
-            --accent-secondary: #a855f7;
-            --accent-secondary-dim: rgba(168,85,247,0.12);
-            --accent-secondary-glow: rgba(168,85,247,0.25);
-            
-            --accent-success: #10b981;
-            --accent-success-dim: rgba(16,185,129,0.12);
-            
-            --accent-warning: #f59e0b;
-            --accent-warning-dim: rgba(245,158,11,0.12);
-            
-            --accent-cyan: #06b6d4;
-            --accent-cyan-dim: rgba(6,182,212,0.12);
-            
-            --accent-danger: #ef4444;
-            --accent-danger-dim: rgba(239,68,68,0.12);
-            
-            /* Text Hierarchy */
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --text-tertiary: #475569;
-            --text-muted: #334155;
-            
-            /* Spacing & Radius */
+            /* ━━ Canvas ━━ */
+            --bg-base:          #0a0a0a;
+            --bg-elevated:      #111111;
+            --bg-surface:       #1a1a1a;
+            --bg-surface-hover: #222222;
+            --bg-inset:         #0d0d0d;
+
+            /* ━━ Border System ━━ */
+            --border-subtle:  rgba(255,255,255,0.06);
+            --border-default: rgba(255,255,255,0.09);
+            --border-strong:  rgba(255,255,255,0.15);
+            --border-focus:   rgba(255,255,255,0.25);
+
+            /* ━━ Single White Accent ━━ */
+            --accent-primary:      #ffffff;
+            --accent-primary-dim:  rgba(255,255,255,0.07);
+            --accent-primary-glow: rgba(255,255,255,0.11);
+
+            --accent-secondary:      #c8c8c8;
+            --accent-secondary-dim:  rgba(255,255,255,0.04);
+            --accent-secondary-glow: rgba(255,255,255,0.08);
+
+            /* ━━ Subdued Semantic — activity types only ━━ */
+            --accent-success:     #80b99a;
+            --accent-success-dim: rgba(128,185,154,0.09);
+
+            --accent-warning:     #c4a06a;
+            --accent-warning-dim: rgba(196,160,106,0.09);
+
+            --accent-cyan:     #6aaec4;
+            --accent-cyan-dim: rgba(106,174,196,0.09);
+
+            --accent-danger:     #d97070;
+            --accent-danger-dim: rgba(217,112,112,0.09);
+
+            /* ━━ Text Hierarchy ━━ */
+            --text-primary:   #f0f0f0;
+            --text-secondary: #888888;
+            --text-tertiary:  #555555;
+            --text-muted:     #333333;
+
+            /* ━━ Spatial ━━ */
             --radius-sm: 8px;
             --radius-md: 12px;
             --radius-lg: 16px;
-            --radius-xl: 24px;
-            
+            --radius-xl: 22px;
+
             --nav-height: 0px;
-            
-            /* Shadows */
-            --shadow-card: 0 0 0 1px var(--border-subtle), 0 4px 24px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
-            --shadow-elevated: 0 0 0 1px var(--border-default), 0 8px 40px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.3);
-            --shadow-glow-primary: 0 0 40px rgba(14,165,233,0.15);
-            --shadow-glow-secondary: 0 0 40px rgba(168,85,247,0.15);
+
+            /* ━━ Shadows ━━ */
+            --shadow-card:           0 0 0 1px var(--border-subtle);
+            --shadow-elevated:       0 0 0 1px var(--border-default), 0 24px 64px rgba(0,0,0,0.6);
+            --shadow-glow-primary:   0 0 0 1px rgba(255,255,255,0.09);
+            --shadow-glow-secondary: 0 0 0 1px rgba(255,255,255,0.07);
         }
         
         @media (max-width: 768px) { :root { --nav-height: 72px; } }
@@ -84,17 +85,6 @@
             overflow-x: hidden;
         }
         
-        /* Ambient Background Glow */
-        body::before {
-            content: '';
-            position: fixed;
-            inset: 0;
-            background: 
-                radial-gradient(ellipse 80% 50% at 20% -10%, rgba(14,165,233,0.08) 0%, transparent 50%),
-                radial-gradient(ellipse 60% 40% at 80% 110%, rgba(168,85,247,0.06) 0%, transparent 50%);
-            pointer-events: none;
-            z-index: 0;
-        }
         
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -107,25 +97,22 @@
         .top-nav {
             display: flex;
             align-items: center;
-            background: rgba(3,7,18,0.8);
+            background: rgba(10,10,10,0.92);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--border-subtle);
-            padding: 12px 32px;
-            gap: 8px;
+            padding: 10px 28px;
+            gap: 6px;
             position: sticky;
             top: 0;
             z-index: 100;
         }
         
         .nav-logo {
-            font-size: 13px;
-            font-weight: 800;
-            letter-spacing: 2px;
-            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 3.5px;
+            color: var(--text-primary);
             margin-right: 24px;
             white-space: nowrap;
             text-transform: uppercase;
@@ -153,10 +140,9 @@
         }
         
         .top-nav-btn.active {
-            color: var(--accent-primary);
-            background: var(--accent-primary-dim);
-            border-color: rgba(14,165,233,0.2);
-            box-shadow: var(--shadow-glow-primary);
+            color: var(--text-primary);
+            background: var(--bg-surface);
+            border-color: var(--border-default);
         }
         
         /* ══════════════════════════════════════════════════════════════════
@@ -174,9 +160,9 @@
                 left: 0;
                 right: 0;
                 height: var(--nav-height);
-                background: rgba(3,7,18,0.95);
-                backdrop-filter: blur(24px);
-                -webkit-backdrop-filter: blur(24px);
+                background: rgba(10,10,10,0.96);
+                backdrop-filter: blur(28px) saturate(180%);
+                -webkit-backdrop-filter: blur(28px) saturate(180%);
                 border-top: 1px solid var(--border-subtle);
                 z-index: 200;
                 padding-bottom: env(safe-area-inset-bottom, 0);
@@ -201,18 +187,18 @@
                 position: relative;
             }
             
-            .bottom-nav-btn.active { color: var(--accent-primary); }
-            
+            .bottom-nav-btn.active { color: var(--text-primary); }
+
             .bottom-nav-btn.active::before {
                 content: '';
                 position: absolute;
                 top: 0;
                 left: 50%;
                 transform: translateX(-50%);
-                width: 32px;
-                height: 3px;
+                width: 28px;
+                height: 2px;
                 border-radius: 0 0 4px 4px;
-                background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+                background: var(--text-primary);
             }
             
             .bottom-nav-btn svg {
@@ -253,16 +239,17 @@
         ══════════════════════════════════════════════════════════════════ */
         .card {
             background: var(--bg-elevated);
-            border: 1px solid var(--border-subtle);
+            border: 1px solid var(--border-default);
             border-radius: var(--radius-lg);
             padding: 24px;
-            margin-bottom: 20px;
-            box-shadow: var(--shadow-card);
+            margin-bottom: 16px;
             position: relative;
             overflow: hidden;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: border-color 0.25s ease-in-out;
         }
-        
+
         .card::before {
             content: '';
             position: absolute;
@@ -270,12 +257,12 @@
             left: 0;
             right: 0;
             height: 1px;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 40%, rgba(255,255,255,0.05) 60%, transparent 100%);
             pointer-events: none;
         }
-        
+
         @media (min-width: 769px) {
-            .card { padding: 32px; margin-bottom: 24px; }
+            .card { padding: 28px; margin-bottom: 16px; }
         }
         
         /* ══════════════════════════════════════════════════════════════════
@@ -415,7 +402,7 @@
             border-color: var(--border-strong);
             color: var(--text-primary);
             background: var(--bg-surface-hover);
-            transform: translateY(-1px);
+            transform: scale(1.04);
         }
         
         select#selectMonth,
@@ -449,9 +436,8 @@
         }
         
         .view-btn.active {
-            background: var(--accent-primary-dim);
-            color: var(--accent-primary);
-            box-shadow: 0 0 12px var(--accent-primary-dim);
+            background: rgba(255,255,255,0.10);
+            color: var(--text-primary);
         }
         
         /* ══════════════════════════════════════════════════════════════════
@@ -461,66 +447,66 @@
             display: grid;
             grid-template-columns: repeat(7, 1fr);
             gap: 6px;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
         }
-        
+
         .weekday-label {
             text-align: center;
-            font-weight: 700;
+            font-weight: 600;
             color: var(--text-muted);
             text-transform: uppercase;
             font-size: 10px;
-            padding: 8px 0;
+            padding: 6px 0;
             letter-spacing: 1px;
         }
         
         .calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 6px;
+            gap: 8px;
         }
-        
-        .calendar-grid.view-mode-week { gap: 8px; }
+
+        .calendar-grid.view-mode-week { gap: 10px; }
         .calendar-grid.view-mode-day { grid-template-columns: 1fr; }
-        
+
         .calendar-day-cell {
             background: var(--bg-surface);
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
-            min-height: 80px;
-            padding: 10px;
+            min-height: 90px;
+            padding: 12px;
             cursor: pointer;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.2s ease-in-out;
             display: flex;
             flex-direction: column;
             gap: 6px;
             position: relative;
             overflow: hidden;
         }
-        
+
         @media (min-width: 769px) {
             .calendar-day-cell {
-                min-height: 110px;
-                padding: 14px;
+                min-height: 130px;
+                padding: 16px;
             }
         }
-        
+
         .calendar-day-cell:hover {
-            border-color: var(--accent-primary-glow);
-            background: rgba(14,165,233,0.04);
-            transform: translateY(-2px);
+            border-color: var(--border-strong);
+            background: var(--bg-surface-hover);
+            transform: scale(1.015);
             box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            z-index: 2;
         }
-        
+
         .calendar-day-cell.selected-day {
-            border-color: var(--accent-primary);
-            background: var(--accent-primary-dim);
-            box-shadow: var(--shadow-glow-primary), 0 8px 32px rgba(14,165,233,0.2);
+            border-color: var(--border-strong);
+            background: rgba(255,255,255,0.05);
         }
-        
+
         .calendar-day-cell.today-cell .day-num-track {
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            color: var(--bg-base);
+            background: #ffffff;
+            color: #0a0a0a;
             width: 26px;
             height: 26px;
             border-radius: 50%;
@@ -528,7 +514,7 @@
             align-items: center;
             justify-content: center;
             font-size: 12px;
-            font-weight: 800;
+            font-weight: 700;
         }
         
         .calendar-day-cell.empty-day {
@@ -538,10 +524,10 @@
             transform: none !important;
         }
         
-        .calendar-grid.view-mode-week .calendar-day-cell { min-height: 180px; }
-        @media (min-width: 769px) { .calendar-grid.view-mode-week .calendar-day-cell { min-height: 260px; } }
-        .calendar-grid.view-mode-day .calendar-day-cell { min-height: 150px; background: var(--bg-elevated); }
-        
+        /* Desktop week / day cells */
+        .calendar-grid.view-mode-week .calendar-day-cell { min-height: 320px; }
+        .calendar-grid.view-mode-day .calendar-day-cell { min-height: 180px; background: var(--bg-elevated); }
+
         .day-num-track {
             font-weight: 700;
             font-size: 13px;
@@ -549,26 +535,104 @@
             display: inline-block;
             font-family: 'JetBrains Mono', monospace;
         }
-        
+
         .cell-contents-summary {
-            font-size: 10px;
-            color: var(--text-tertiary);
+            font-size: 11px;
+            color: var(--text-secondary);
             white-space: pre-wrap;
             overflow: hidden;
-            max-height: 48px;
-            line-height: 1.5;
+            max-height: 64px;
+            line-height: 1.6;
             padding-left: 8px;
-            border-left: 2px solid var(--accent-primary-glow);
+            border-left: 2px solid rgba(255,255,255,0.10);
             margin-top: 4px;
         }
-        
+
         @media (min-width: 769px) {
-            .cell-contents-summary {
-                max-height: 64px;
-                font-size: 11px;
-                color: var(--text-secondary);
+            .cell-contents-summary { max-height: 80px; }
+            .calendar-grid.view-mode-week .cell-contents-summary { max-height: 260px; }
+        }
+
+        /* ── Mobile week strip ─────────────────────────────────────────── */
+        @media (max-width: 768px) {
+            /* Hide the Day/Week/Month toggle — week is always right on mobile */
+            .view-toggle { display: none; }
+
+            .calendar-grid.view-mode-week {
+                gap: 5px;
             }
-            .calendar-grid.view-mode-week .cell-contents-summary { max-height: 200px; }
+
+            .calendar-grid.view-mode-week .calendar-day-cell {
+                min-height: 72px;
+                padding: 10px 4px 8px;
+                align-items: center;
+                text-align: center;
+                gap: 3px;
+            }
+
+            .calendar-grid.view-mode-week .day-num-track {
+                font-size: 18px;
+                font-weight: 700;
+                color: var(--text-secondary);
+                display: block;
+            }
+
+            .calendar-grid.view-mode-week .calendar-day-cell.selected-day {
+                background: rgba(255,255,255,0.10);
+                border-color: rgba(255,255,255,0.22);
+            }
+
+            .calendar-grid.view-mode-week .calendar-day-cell.selected-day .day-num-track {
+                color: var(--text-primary);
+            }
+
+            .calendar-grid.view-mode-week .calendar-day-cell.today-cell .day-num-track {
+                background: #ffffff;
+                color: #0a0a0a;
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 16px;
+            }
+
+            /* Month view on mobile: just numbers, no summary */
+            .calendar-grid.view-mode-month .cell-contents-summary { display: none; }
+            .calendar-grid.view-mode-month .calendar-day-cell {
+                min-height: 48px;
+                padding: 10px 4px;
+                align-items: center;
+                justify-content: center;
+            }
+            .calendar-grid.view-mode-month .day-num-track {
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--text-secondary);
+                display: block;
+                text-align: center;
+            }
+        }
+
+        /* Day abbreviation shown in mobile week strip */
+        .cell-day-abbr {
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            display: block;
+        }
+
+        /* Activity dot — shown when day has logged content */
+        .cell-activity-dot {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--text-tertiary);
+            margin: 0 auto;
+            flex-shrink: 0;
         }
         
         /* ══════════════════════════════════════════════════════════════════
@@ -583,9 +647,9 @@
         }
         
         .active-day-pill {
-            background: linear-gradient(135deg, var(--accent-primary-dim), var(--accent-secondary-dim));
-            border: 1px solid var(--accent-primary-glow);
-            color: var(--accent-primary);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
             padding: 6px 16px;
             border-radius: 99px;
             font-size: 12px;
@@ -622,13 +686,18 @@
             margin: 28px 0;
         }
         
-        /* Group Pills */
+        /* Group Pills — horizontal scroll, no wrap */
         .group-pills-row {
             display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
+            gap: 6px;
+            flex-wrap: nowrap;
+            overflow-x: auto;
             margin-bottom: 16px;
+            padding-bottom: 4px;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
         }
+        .group-pills-row::-webkit-scrollbar { display: none; }
         
         .group-pill {
             background: var(--bg-surface);
@@ -647,50 +716,22 @@
         .group-pill:hover {
             color: var(--text-primary);
             border-color: var(--border-strong);
-            transform: translateY(-1px);
+            transform: scale(1.03);
         }
         
-        .group-pill.active[data-g="push"] {
-            background: var(--accent-primary-dim);
-            border-color: var(--accent-primary-glow);
-            color: var(--accent-primary);
-            box-shadow: 0 0 20px var(--accent-primary-dim);
-        }
-        
-        .group-pill.active[data-g="pull"] {
-            background: var(--accent-secondary-dim);
-            border-color: var(--accent-secondary-glow);
-            color: var(--accent-secondary);
-            box-shadow: 0 0 20px var(--accent-secondary-dim);
-        }
-        
-        .group-pill.active[data-g="legs"] {
-            background: var(--accent-warning-dim);
-            border-color: rgba(245,158,11,0.25);
-            color: var(--accent-warning);
-            box-shadow: 0 0 20px var(--accent-warning-dim);
-        }
-        
-        .group-pill.active[data-g="core"] {
-            background: var(--accent-cyan-dim);
-            border-color: rgba(6,182,212,0.25);
-            color: var(--accent-cyan);
-            box-shadow: 0 0 20px var(--accent-cyan-dim);
-        }
-        
-        .group-pill.active[data-g="other"] {
-            background: rgba(148,163,184,0.1);
-            border-color: rgba(148,163,184,0.2);
-            color: var(--text-secondary);
+        .group-pill.active {
+            background: rgba(255,255,255,0.09);
+            border-color: rgba(255,255,255,0.22);
+            color: var(--text-primary);
         }
         
         /* Add Lift Form */
         .add-lift-form {
-            background: linear-gradient(135deg, rgba(14,165,233,0.04) 0%, rgba(168,85,247,0.02) 100%);
+            background: var(--bg-surface);
             border: 1px solid var(--border-default);
             border-radius: var(--radius-md);
-            padding: 20px;
-            margin-bottom: 16px;
+            padding: 18px;
+            margin-bottom: 14px;
         }
         
         .lift-name-row { margin-bottom: 12px; }
@@ -703,28 +744,144 @@
         }
         
         .add-lift-btn {
-            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-            color: var(--bg-base);
+            background: #f0f0f0;
+            color: #0a0a0a;
             border: none;
             padding: 14px;
             border-radius: var(--radius-sm);
-            font-weight: 800;
+            font-weight: 700;
             font-family: inherit;
             cursor: pointer;
             width: 100%;
-            font-size: 13px;
-            letter-spacing: 0.3px;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 4px 20px rgba(14,165,233,0.3), 0 0 40px rgba(14,165,233,0.1);
+            font-size: 12px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            transition: all 0.18s ease-in-out;
         }
-        
+
         .add-lift-btn:hover {
-            box-shadow: 0 8px 32px rgba(14,165,233,0.4), 0 0 60px rgba(14,165,233,0.15);
-            transform: translateY(-2px);
+            background: #ffffff;
+            transform: scale(1.01) translateY(-1px);
         }
-        
-        .add-lift-btn:active { transform: translateY(0) scale(0.98); }
-        
+
+        .add-lift-btn:active { transform: scale(0.98); }
+
+        /* ── Per-set form ──────────────────────────────────────────────── */
+        .sets-stepper-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .sets-header-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .sets-stepper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sets-step-btn {
+            width: 32px;
+            height: 32px;
+            border: 1px solid var(--border-default);
+            background: var(--bg-surface);
+            color: var(--text-primary);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 18px;
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            line-height: 1;
+            padding: 0;
+        }
+        .sets-step-btn:hover {
+            background: var(--bg-surface-hover);
+            border-color: var(--border-strong);
+        }
+        .sets-count-display {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-primary);
+            min-width: 24px;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Table that holds the col-header row + set rows — shared grid */
+        .set-table { margin-bottom: 12px; }
+        .set-col-headers,
+        .set-row {
+            display: grid;
+            grid-template-columns: 28px 1fr 1.6fr;
+            gap: 8px;
+            align-items: center;
+        }
+        .set-col-headers {
+            margin-bottom: 6px;
+        }
+        .set-col-headers span {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding-left: 4px;
+        }
+        .set-rows-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .set-row input {
+            /* Override global input padding for compact set rows */
+            padding: 10px 12px;
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .set-num-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-align: right;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Inline per-set editing in logged list */
+        .sr-edit-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .sr-edit-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .sr-edit-num {
+            font-size: 10px;
+            color: var(--text-muted);
+            min-width: 14px;
+            text-align: right;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .sr-edit-sep { color: var(--text-tertiary); font-size: 11px; }
+        .sr-edit-input {
+            padding: 3px 7px;
+            font-size: 12px;
+            border-radius: 6px;
+            background: var(--bg-surface-hover);
+            border: 1px solid var(--border-strong);
+            color: var(--text-primary);
+            outline: none;
+            font-family: inherit;
+        }
+
         /* Group Badges */
         .group-badge {
             font-size: 9px;
@@ -737,11 +894,11 @@
             flex-shrink: 0;
         }
         
-        .group-badge.push { background: var(--accent-primary-dim); color: var(--accent-primary); }
-        .group-badge.pull { background: var(--accent-secondary-dim); color: var(--accent-secondary); }
-        .group-badge.legs { background: var(--accent-warning-dim); color: var(--accent-warning); }
-        .group-badge.core { background: var(--accent-cyan-dim); color: var(--accent-cyan); }
-        .group-badge.other { background: rgba(148,163,184,0.1); color: var(--text-secondary); }
+        .group-badge.push,
+        .group-badge.pull,
+        .group-badge.legs,
+        .group-badge.core,
+        .group-badge.other { background: rgba(255,255,255,0.07); color: var(--text-secondary); }
         
         /* Sets/Reps Badge */
         .sr-badge {
@@ -763,6 +920,7 @@
         .sr-badge:hover {
             border-color: var(--accent-primary-glow);
             color: var(--accent-primary);
+            transform: scale(1.03);
         }
         
         /* Exercise Items */
@@ -808,15 +966,17 @@
             border-radius: 3px 0 0 3px;
         }
         
-        .exercise-item.has-push::before { background: var(--accent-primary); }
-        .exercise-item.has-pull::before { background: var(--accent-secondary); }
-        .exercise-item.has-legs::before { background: var(--accent-warning); }
-        .exercise-item.has-core::before { background: var(--accent-cyan); }
-        .exercise-item.has-other::before, .exercise-item.has-text::before { background: var(--text-tertiary); opacity: 0.3; }
+        .exercise-item.has-push::before,
+        .exercise-item.has-pull::before,
+        .exercise-item.has-legs::before,
+        .exercise-item.has-core::before,
+        .exercise-item.has-other::before,
+        .exercise-item.has-text::before { background: rgba(255,255,255,0.25); }
         
         .exercise-item:hover {
-            border-color: var(--border-strong);
+            border-color: var(--border-default);
             background: var(--bg-surface-hover);
+            transform: scale(1.01);
         }
         
         .exercise-item:hover::before { opacity: 1; }
@@ -899,27 +1059,30 @@
             gap: 6px;
         }
         
+        /* Swim — Ice Cyan */
         .cardio-add-btn.swim {
             color: var(--accent-cyan);
             background: var(--accent-cyan-dim);
-            border-color: rgba(6,182,212,0.25);
+            border-color: rgba(6,203,232,0.22);
         }
-        
+
+        /* Run — Emerald Green */
         .cardio-add-btn.run {
             color: var(--accent-success);
             background: var(--accent-success-dim);
-            border-color: rgba(16,185,129,0.25);
+            border-color: rgba(15,217,160,0.22);
         }
-        
+
+        /* Bike — Metabolic Amber */
         .cardio-add-btn.bike {
             color: var(--accent-warning);
             background: var(--accent-warning-dim);
-            border-color: rgba(245,158,11,0.25);
+            border-color: rgba(245,166,35,0.22);
         }
-        
+
         .cardio-add-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            transform: scale(1.04) translateY(-1px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
         }
         
         .cardio-list {
@@ -948,19 +1111,22 @@
             transition: all 0.2s;
         }
         
+        /* Swim — Ice Cyan */
         .cardio-entry.swim-entry {
             border-left-color: var(--accent-cyan);
-            background: linear-gradient(135deg, rgba(6,182,212,0.04), transparent);
+            background: linear-gradient(135deg, rgba(6,203,232,0.04), transparent);
         }
-        
+
+        /* Run — Emerald Green */
         .cardio-entry.run-entry {
             border-left-color: var(--accent-success);
-            background: linear-gradient(135deg, rgba(16,185,129,0.04), transparent);
+            background: linear-gradient(135deg, rgba(15,217,160,0.04), transparent);
         }
-        
+
+        /* Bike — Metabolic Amber */
         .cardio-entry.bike-entry {
             border-left-color: var(--accent-warning);
-            background: linear-gradient(135deg, rgba(245,158,11,0.04), transparent);
+            background: linear-gradient(135deg, rgba(245,166,35,0.04), transparent);
         }
         
         .cardio-header {
@@ -1020,29 +1186,28 @@
         .notes-area::placeholder { color: var(--text-muted); }
         
         .save-btn {
-            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-            color: var(--bg-base);
+            background: #f0f0f0;
+            color: #0a0a0a;
             border: none;
-            padding: 16px;
+            padding: 15px;
             border-radius: var(--radius-sm);
-            font-weight: 800;
+            font-weight: 700;
             font-family: inherit;
             cursor: pointer;
             width: 100%;
-            font-size: 13px;
+            font-size: 11px;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            min-height: 56px;
-            margin-top: 20px;
-            transition: all 0.25s;
-            box-shadow: 0 4px 24px rgba(14,165,233,0.25);
+            letter-spacing: 1.5px;
+            min-height: 50px;
+            margin-top: 18px;
+            transition: all 0.18s ease-in-out;
         }
-        
+
         .save-btn:hover {
-            box-shadow: 0 8px 40px rgba(14,165,233,0.4);
-            transform: translateY(-2px);
+            background: #ffffff;
+            transform: scale(1.01) translateY(-1px);
         }
-        
+
         .save-btn:active { transform: scale(0.98); }
         
         /* ══════════════════════════════════════════════════════════════════
@@ -1052,48 +1217,62 @@
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.8);
+            background: rgba(10,10,10,0.80);
             z-index: 500;
             align-items: flex-end;
             justify-content: center;
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(14px) saturate(160%);
+            -webkit-backdrop-filter: blur(14px) saturate(160%);
         }
-        
+
         .modal-overlay.open {
             display: flex;
-            animation: modalFadeIn 0.2s ease;
+            animation: modalFadeIn 0.18s ease;
         }
-        
+
         @media (min-width: 769px) {
             .modal-overlay { align-items: center; }
         }
-        
+
         @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
-        
+
         .modal-sheet {
             background: var(--bg-elevated);
-            border-top: 1px solid var(--border-default);
+            border: 1px solid var(--border-default);
+            border-bottom: none;
             border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-            padding: 20px 24px 36px;
+            padding: 18px 22px 36px;
             width: 100%;
-            max-height: 85vh;
+            max-height: 88vh;
             overflow-y: auto;
-            box-shadow: var(--shadow-elevated), 0 -20px 60px rgba(0,0,0,0.5);
-            animation: modalSlideUp 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+            box-shadow: var(--shadow-elevated), 0 -24px 80px rgba(0,0,0,0.5);
+            /* Spring physics: stiffness 300, damping 30 approximation */
+            animation: modalSlideUp 0.44s cubic-bezier(0.22, 1, 0.36, 1);
         }
-        
+
         @media (min-width: 769px) {
             .modal-sheet {
                 border-radius: var(--radius-xl);
-                max-width: 600px;
+                max-width: 580px;
                 border: 1px solid var(--border-default);
-                animation: modalScaleIn 0.25s ease;
+                animation: modalScaleIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
             }
         }
-        
-        @keyframes modalSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        @keyframes modalScaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+        /* Spring slide-up: overshoots slightly then settles */
+        @keyframes modalSlideUp {
+            0%   { transform: translateY(100%); opacity: 0; }
+            60%  { transform: translateY(-4%);  opacity: 1; }
+            80%  { transform: translateY(2%); }
+            100% { transform: translateY(0); }
+        }
+
+        /* Spring scale-in: subtle overshoot for desktop */
+        @keyframes modalScaleIn {
+            0%   { opacity: 0; transform: scale(0.90) translateY(10px); }
+            55%  { transform: scale(1.015) translateY(-2px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
         
         .modal-handle {
             width: 40px;
@@ -1122,13 +1301,13 @@
         }
         
         .tmpl-option:hover {
-            border-color: var(--accent-primary-glow);
-            background: var(--accent-primary-dim);
-            transform: translateX(4px);
+            border-color: var(--border-strong);
+            background: var(--bg-surface-hover);
+            transform: scale(1.01) translateX(3px);
         }
-        
+
         .tmpl-option-title {
-            color: var(--accent-primary);
+            color: var(--text-primary);
             font-weight: 700;
             font-size: 14px;
             margin-bottom: 6px;
@@ -1203,11 +1382,11 @@
         
         .pool-item:hover {
             border-color: var(--accent-primary-glow);
-            transform: translateY(-2px);
+            transform: scale(1.01) translateY(-2px);
         }
         
         .pool-item strong {
-            color: var(--accent-primary);
+            color: var(--text-secondary);
             font-size: 12px;
             display: block;
             margin-bottom: 10px;
@@ -1245,23 +1424,26 @@
         }
         
         .cardio-pool-card:hover {
-            transform: translateX(4px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            transform: scale(1.02) translateX(3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.25);
         }
         
+        /* Swim — Ice Cyan */
         .cardio-pool-card.swim-card {
             background: var(--accent-cyan-dim);
-            border-color: rgba(6,182,212,0.25);
+            border-color: rgba(6,203,232,0.22);
         }
-        
+
+        /* Run — Emerald Green */
         .cardio-pool-card.run-card {
             background: var(--accent-success-dim);
-            border-color: rgba(16,185,129,0.25);
+            border-color: rgba(15,217,160,0.22);
         }
-        
+
+        /* Bike — Metabolic Amber */
         .cardio-pool-card.bike-card {
             background: var(--accent-warning-dim);
-            border-color: rgba(245,158,11,0.25);
+            border-color: rgba(245,166,35,0.22);
         }
         
         .pool-card-icon { font-size: 22px; }
@@ -1288,9 +1470,9 @@
             display: inline-flex;
             align-items: center;
             gap: 10px;
-            background: var(--accent-primary-dim);
-            border: 1px solid var(--accent-primary-glow);
-            color: var(--accent-primary);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
             padding: 10px 20px;
             border-radius: var(--radius-sm);
             font-weight: 700;
@@ -1302,12 +1484,11 @@
         
         .active-date-banner::before {
             content: '';
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
-            background: var(--accent-primary);
+            background: var(--text-tertiary);
             flex-shrink: 0;
-            animation: pulse 2s ease-in-out infinite;
         }
         
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
@@ -1365,34 +1546,34 @@
         }
         
         .commit-btn {
-            background: var(--accent-primary-dim);
-            border: 1px solid var(--accent-primary-glow);
-            color: var(--accent-primary);
+            background: #f0f0f0;
+            border: none;
+            color: #0a0a0a;
             padding: 16px;
             border-radius: var(--radius-sm);
-            font-weight: 800;
+            font-weight: 700;
             font-family: inherit;
             cursor: pointer;
             width: 100%;
-            font-size: 12px;
+            font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1px;
             margin-top: 20px;
             min-height: 52px;
-            transition: all 0.2s;
+            transition: all 0.18s;
         }
-        
+
         .commit-btn:hover {
-            background: rgba(14,165,233,0.2);
-            box-shadow: var(--shadow-glow-primary);
+            background: #ffffff;
+            transform: scale(1.01);
         }
         
         /* ══════════════════════════════════════════════════════════════════
            BUDGET HERO
         ══════════════════════════════════════════════════════════════════ */
         .budget-hero {
-            background: linear-gradient(140deg, var(--accent-primary-dim) 0%, var(--accent-secondary-dim) 100%);
-            border: 1px solid var(--accent-primary-glow);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
             border-radius: var(--radius-lg);
             padding: 36px 28px 30px;
             text-align: center;
@@ -1401,13 +1582,6 @@
             overflow: hidden;
         }
         
-        .budget-hero::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(ellipse 80% 50% at 50% -20%, var(--accent-primary-glow), transparent);
-            pointer-events: none;
-        }
         
         .budget-hero-eyebrow {
             font-size: 11px;
@@ -1423,10 +1597,7 @@
             font-weight: 800;
             letter-spacing: -4px;
             line-height: 1;
-            background: linear-gradient(135deg, var(--text-primary) 30%, var(--accent-primary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--text-primary);
             font-family: 'JetBrains Mono', monospace;
         }
         
@@ -1463,20 +1634,20 @@
         }
         
         .stat-tile:hover {
-            border-color: var(--border-strong);
-            transform: translateY(-2px);
+            border-color: var(--border-default);
+            transform: scale(1.02) translateY(-1px);
         }
         
         .stat-tile.t-amber {
             background: var(--accent-warning-dim);
-            border-color: rgba(245,158,11,0.2);
+            border-color: rgba(245,166,35,0.18);
         }
-        
+
         .stat-tile.t-green {
             background: var(--accent-success-dim);
-            border-color: rgba(16,185,129,0.2);
+            border-color: rgba(15,217,160,0.18);
         }
-        
+
         .stat-tile.t-purple {
             background: var(--accent-secondary-dim);
             border-color: var(--accent-secondary-glow);
@@ -1509,23 +1680,23 @@
         ══════════════════════════════════════════════════════════════════ */
         .clear-day-btn {
             background: var(--accent-danger-dim);
-            border: 1px solid rgba(239,68,68,0.2);
+            border: 1px solid rgba(245,101,101,0.18);
             color: var(--accent-danger);
-            width: 38px;
-            height: 38px;
+            width: 36px;
+            height: 36px;
             border-radius: var(--radius-sm);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s;
+            transition: all 0.2s ease-in-out;
             flex-shrink: 0;
         }
         
         .clear-day-btn:hover {
-            background: rgba(239,68,68,0.2);
-            border-color: rgba(239,68,68,0.4);
-            transform: scale(1.05);
+            background: rgba(245,101,101,0.18);
+            border-color: rgba(245,101,101,0.36);
+            transform: scale(1.06);
         }
         
         /* ══════════════════════════════════════════════════════════════════
@@ -1617,15 +1788,15 @@
         }
         
         .chart-tab.active {
-            background: var(--accent-primary-dim);
-            border-color: var(--accent-primary-glow);
-            color: var(--accent-primary);
-            box-shadow: 0 0 20px var(--accent-primary-dim);
+            background: rgba(255,255,255,0.10);
+            border-color: var(--border-default);
+            color: var(--text-primary);
         }
         
         .chart-tab:hover:not(.active) {
             color: var(--text-primary);
             border-color: var(--border-strong);
+            transform: scale(1.02);
         }
         
         .trend-canvas {
@@ -1657,7 +1828,7 @@
         .load-more-btn:hover {
             background: var(--bg-surface-hover);
             color: var(--text-primary);
-            transform: translateY(-1px);
+            transform: scale(1.01);
         }
         
         /* ══════════════════════════════════════════════════════════════════
@@ -1679,9 +1850,10 @@
         }
         
         .p-card:hover {
-            border-color: var(--border-strong);
-            transform: translateY(-4px);
+            border-color: var(--border-default);
+            transform: scale(1.02) translateY(-3px);
             box-shadow: var(--shadow-elevated);
+            z-index: 2;
         }
         
         .p-day-badge {
@@ -1771,7 +1943,7 @@
         .tmpl-trigger:hover {
             background: var(--accent-primary-dim);
             border-style: solid;
-            transform: translateY(-2px);
+            transform: scale(1.01) translateY(-1px);
         }
         
         /* ══════════════════════════════════════════════════════════════════
@@ -1884,7 +2056,100 @@
         }
         
         .met-card-tinted {
-            background: linear-gradient(145deg, rgba(14,165,233,0.04) 0%, var(--bg-elevated) 50%);
+            background: var(--bg-elevated);
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           BENTO GRID LAYOUT — Premium Dashboard Configuration
+        ══════════════════════════════════════════════════════════════════ */
+        .bento-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        @media (min-width: 1100px) {
+            .bento-row {
+                grid-template-columns: 62fr 38fr;
+                align-items: start;
+            }
+        }
+
+        .bento-main,
+        .bento-side {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 0;
+        }
+
+        /* Cards inside bento columns don't need their own margin */
+        .bento-main .card,
+        .bento-side .card {
+            margin-bottom: 0;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           TRANSITION POLISH — Global ease-in-out on all interactive targets
+        ══════════════════════════════════════════════════════════════════ */
+        button,
+        select,
+        input[type="text"],
+        input[type="number"],
+        .group-pill,
+        .chart-tab,
+        .view-btn,
+        .tmpl-option,
+        .exercise-item,
+        .cardio-entry,
+        .daily-log-row,
+        .p-card,
+        .stat-tile {
+            transition-timing-function: ease-in-out;
+        }
+
+        /* Cross-fade for category switches (exercise list state changes) */
+        .exercise-list,
+        .cardio-list {
+            transition: opacity 0.18s ease-in-out;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           METRICS PAGE VERTICAL STACK
+        ══════════════════════════════════════════════════════════════════ */
+        #pageMetabolics .met-split .card {
+            margin-bottom: 0;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           TYPOGRAPHY ENHANCEMENTS
+        ══════════════════════════════════════════════════════════════════ */
+        .section-title {
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+        }
+
+        .ex-text {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .stat-tile-val {
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.5px;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           BORDER FOCUS RING — Unified focus experience
+        ══════════════════════════════════════════════════════════════════ */
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        button:focus-visible {
+            outline: 2px solid rgba(255,255,255,0.35);
+            outline-offset: 2px;
         }
     </style>
 </head>
@@ -1894,7 +2159,7 @@
      TOP NAVIGATION
 ══════════════════════════════════════════════════════════════════════ -->
 <nav class="top-nav">
-    <span class="nav-logo">Ironman</span>
+    <span class="nav-logo">Que</span>
     <button class="top-nav-btn active" id="tnBtn0" onclick="showPage('pageCalendar',0)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Calendar
@@ -1931,6 +2196,8 @@
      PAGE: CALENDAR
 ══════════════════════════════════════════════════════════════════════ -->
 <div id="pageCalendar" class="page active">
+<div class="bento-row">
+<div class="bento-main">
     <div class="card">
         <div class="cal-nav">
             <div class="cal-nav-left">
@@ -1956,7 +2223,8 @@
         </div>
         <div class="calendar-grid view-mode-month" id="calendarGridBox"></div>
     </div>
-
+</div><!-- /bento-main -->
+<div class="bento-side">
     <!-- Workout Log -->
     <div class="card" id="workoutLogCard">
         <div class="editor-top">
@@ -1991,31 +2259,40 @@
             </div>
             <div class="add-lift-form">
                 <div class="group-pills-row" id="groupPillsRow">
-                    <button class="group-pill active" data-g="push" onclick="selectGroup('push')">Push</button>
-                    <button class="group-pill" data-g="pull" onclick="selectGroup('pull')">Pull</button>
-                    <button class="group-pill" data-g="legs" onclick="selectGroup('legs')">Legs</button>
-                    <button class="group-pill" data-g="core" onclick="selectGroup('core')">Core</button>
-                    <button class="group-pill" data-g="other" onclick="selectGroup('other')">Other</button>
+                    <button class="group-pill active" data-g="chest"     onclick="selectGroup('chest')">Chest</button>
+                    <button class="group-pill" data-g="back"      onclick="selectGroup('back')">Back</button>
+                    <button class="group-pill" data-g="shoulders" onclick="selectGroup('shoulders')">Shoulders</button>
+                    <button class="group-pill" data-g="tricep"    onclick="selectGroup('tricep')">Tricep</button>
+                    <button class="group-pill" data-g="bicep"     onclick="selectGroup('bicep')">Bicep</button>
+                    <button class="group-pill" data-g="forearms"  onclick="selectGroup('forearms')">Forearms</button>
+                    <button class="group-pill" data-g="abs"       onclick="selectGroup('abs')">Abs</button>
+                    <button class="group-pill" data-g="quads"     onclick="selectGroup('quads')">Quads</button>
+                    <button class="group-pill" data-g="hamstring" onclick="selectGroup('hamstring')">Hamstring</button>
+                    <button class="group-pill" data-g="glutes"    onclick="selectGroup('glutes')">Glutes</button>
+                    <button class="group-pill" data-g="calfs"     onclick="selectGroup('calfs')">Calfs</button>
+                    <button class="group-pill" data-g="adductors" onclick="selectGroup('adductors')">Adductors</button>
                 </div>
                 <div class="lift-name-row">
                     <select id="exerciseSelect" onchange="handleExSelect()"></select>
                     <input type="text" id="customExInput" placeholder="Type exercise name..." style="display:none; margin-top:10px;">
                 </div>
-                <div class="lift-input-grid">
-                    <div class="input-group" style="margin-bottom:0;">
-                        <label>Sets</label>
-                        <input type="number" id="setsInput" value="3" min="1" max="30">
-                    </div>
-                    <div class="input-group" style="margin-bottom:0;">
-                        <label>Reps</label>
-                        <input type="text" id="repsInput" placeholder="e.g. 8, 8-10, failure">
-                    </div>
-                    <div class="input-group" style="margin-bottom:0;">
-                        <label>Weight (optional)</label>
-                        <input type="text" id="weightInput" placeholder="185 lbs, bodyweight…">
+                <div class="sets-stepper-row">
+                    <span class="sets-header-label">Sets</span>
+                    <div class="sets-stepper">
+                        <button type="button" class="sets-step-btn" onclick="adjustSets(-1)">−</button>
+                        <span id="setsCountDisplay" class="sets-count-display">3</span>
+                        <button type="button" class="sets-step-btn" onclick="adjustSets(1)">+</button>
                     </div>
                 </div>
-                <button class="add-lift-btn" onclick="commitAddLift()" style="margin-top:12px;">+ Log Exercise</button>
+                <div class="set-table">
+                    <div class="set-col-headers">
+                        <span></span>
+                        <span>Reps</span>
+                        <span>Weight <span style="font-weight:400;opacity:0.5">(optional)</span></span>
+                    </div>
+                    <div id="setRowsContainer" class="set-rows-container"></div>
+                </div>
+                <button class="add-lift-btn" onclick="commitAddLift()">+ Log Exercise</button>
             </div>
             <div class="exercise-list" id="liftListDisplay">
                 <div class="exercise-empty">Nothing logged yet — pick a muscle group above, choose an exercise, and hit Log. Or load a full template with the button above.</div>
@@ -2050,6 +2327,8 @@
             <textarea id="inDayNotes" class="notes-area" rows="2" placeholder="PRs hit, fatigue level, form cues…" oninput="syncActiveDayToMemory()"></textarea>
         </div>
     </div>
+</div><!-- /bento-side -->
+</div><!-- /bento-row -->
 
     <!-- Hidden cardio data -->
     <input type="hidden" id="inSteps" value="0">
@@ -2307,17 +2586,26 @@
     let activeDayFocusString = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
     let currentDisplayDate = new Date(_today.getFullYear(), _today.getMonth(), _today.getDate());
     let activeViewMode = "month";
-    let currentGroup = "push";
+    let currentGroup = "chest";
     let lastBurn = 0, lastBudget = 0;
+    let pendingSetsCount = 3;
+    let pendingSetData = [{r:'1',w:''},{r:'1',w:''},{r:'1',w:''}];
 
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
     const PRESETS = {
-        push:  ["Bench Press","Incline Bench","Decline Bench","Chest Flyes","Cable Crossover","Push-ups","Overhead Press","Arnold Press","Lateral Raises","Front Raises","Tricep Pushdown","Tricep Extensions","Skull Crushers","Dips","Close-Grip Bench"],
-        pull:  ["Pull-ups","Chin-ups","Lat Pulldown","T-Bar Row","Barbell Row","Seated Cable Row","Single-Arm Row","Face Pulls","Shrugs","Bicep Curls","Hammer Curls","Preacher Curls","Incline Curls","Cable Curls"],
-        legs:  ["Back Squat","Front Squat","Leg Press","Romanian Deadlift","Stiff-Leg Deadlift","Leg Curl","Leg Extension","Hip Thrust","Glute Bridge","Lunges","Bulgarian Split Squat","Pendulum Squat","Calf Raises","Hip Adduction","Hip Abduction"],
-        core:  ["Plank","Side Plank","Crunches","Bicycle Crunches","Dead Bug","Russian Twists","Hanging Leg Raises","Cable Crunch","Ab Wheel Rollout","V-ups","Pallof Press"],
-        other: ["Deadlift","Sumo Deadlift","Farmer Carries","Power Clean","Box Jumps","Battle Ropes","Sled Push","Kettlebell Swing","Turkish Get-up"]
+        chest:     ["Bench Press","Incline Bench Press","Decline Bench Press","Chest Flyes","Cable Crossover","Push-ups","Machine Chest Press","Pec Deck","Smith Machine Press","Dumbbell Pullover"],
+        back:      ["Pull-ups","Chin-ups","Lat Pulldown","T-Bar Row","Barbell Row","Seated Cable Row","Single-Arm Row","Face Pulls","Shrugs","Deadlift","Sumo Deadlift","Rack Pull","Straight-Arm Pulldown"],
+        tricep:    ["Tricep Pushdown","Overhead Tricep Extension","Skull Crushers","Close-Grip Bench","Dips","Cable Tricep Kickback","Diamond Push-ups","Tricep Machine"],
+        bicep:     ["Barbell Curl","Dumbbell Curl","Hammer Curls","Preacher Curl","Incline Curl","Cable Curl","Concentration Curl","Spider Curl","21s"],
+        forearms:  ["Wrist Curls","Reverse Wrist Curls","Reverse Curl","Farmer Carries","Dead Hang","Plate Pinch"],
+        shoulders: ["Overhead Press","Arnold Press","Lateral Raises","Front Raises","Rear Delt Flyes","Cable Lateral Raise","Face Pulls","Upright Row","Machine Shoulder Press"],
+        abs:       ["Plank","Side Plank","Crunches","Bicycle Crunches","Dead Bug","Russian Twists","Hanging Leg Raises","Cable Crunch","Ab Wheel Rollout","V-ups","Pallof Press","Dragon Flag"],
+        quads:     ["Back Squat","Front Squat","Leg Press","Leg Extension","Lunges","Bulgarian Split Squat","Pendulum Squat","Hack Squat","Step-ups"],
+        hamstring: ["Romanian Deadlift","Stiff-Leg Deadlift","Leg Curl","Seated Leg Curl","Nordic Curl","Good Mornings","Glute-Ham Raise"],
+        glutes:    ["Hip Thrust","Glute Bridge","Glute Kickback","Cable Pull-Through","Frog Pump","Donkey Kicks"],
+        calfs:     ["Standing Calf Raise","Seated Calf Raise","Single-Leg Calf Raise","Donkey Calf Raise","Leg Press Calf Raise"],
+        adductors: ["Hip Adduction Machine","Copenhagen Plank","Wide-Stance Squat","Side Lunges","Cable Hip Adduction","Sumo Squat"]
     };
 
     const defaultTemplates = [
@@ -2334,6 +2622,16 @@
     /* ── UTILS ── */
     function escH(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+    function getUsage() {
+        try { return JSON.parse(localStorage.getItem('queExerciseUsage')) || {}; } catch { return {}; }
+    }
+    function bumpUsage(group, name) {
+        const u = getUsage();
+        if (!u[group]) u[group] = {};
+        u[group][name] = (u[group][name] || 0) + 1;
+        localStorage.setItem('queExerciseUsage', JSON.stringify(u));
+    }
+
     function parseEx(raw) {
         if (!raw) return [];
         try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; }
@@ -2347,10 +2645,15 @@
         const arr = parseEx(raw);
         if (!arr.length) return raw;
         return arr.map(e => {
-            if (e.k === 'lift') return `${e.n}${e.s&&e.r ? ' '+e.s+'×'+e.r : ''}`;
-            if (e.k === 'swim') return `🏊 Swim${e.v1?' '+e.v1+'min':''}`;
-            if (e.k === 'run')  return `🏃 Run${e.v1?' '+e.v1+'mi':''}`;
-            if (e.k === 'bike') return `🚴 Bike${e.v1?' '+e.v1+'mi':''}`;
+            if (e.k === 'lift') {
+                const entry = normalizeLift(e);
+                const n = entry.sets ? entry.sets.length : (e.s||'');
+                const r = entry.sets ? (entry.sets[0]?.r||'') : (e.r||'');
+                return `${entry.n}${n&&r ? ' '+n+'×'+r : ''}`;
+            }
+            if (e.k === 'swim') return `Swim${e.v1?' '+e.v1+'min':''}`;
+            if (e.k === 'run')  return `Run${e.v1?' '+e.v1+'mi':''}`;
+            if (e.k === 'bike') return `Bike${e.v1?' '+e.v1+'mi':''}`;
             return e.n || '';
         }).filter(Boolean).join('\n');
     }
@@ -2436,7 +2739,18 @@
         cell.setAttribute('ondrop', `handleCellDrop(event,'${dateStr}')`);
         const data = localDBInstance[dateStr] || {};
         const summary = buildCellSummary(data.exercises || '');
-        cell.innerHTML = `<div class="day-num-track">${label}</div>${summary ? `<div class="cell-contents-summary">${escH(summary)}</div>` : ''}`;
+        const hasContent = !!summary;
+        const isMobile = window.innerWidth <= 768;
+
+        if (isMobile && activeViewMode === 'week') {
+            // Compact strip: day initial + date number + activity dot
+            const d = new Date(dateStr + 'T00:00:00');
+            const dayAbbr = ['Su','Mo','Tu','We','Th','Fr','Sa'][d.getDay()];
+            cell.innerHTML = `<div class="cell-day-abbr">${dayAbbr}</div><div class="day-num-track">${d.getDate()}</div>${hasContent ? '<div class="cell-activity-dot"></div>' : ''}`;
+        } else {
+            cell.innerHTML = `<div class="day-num-track">${label}</div>${summary ? `<div class="cell-contents-summary">${escH(summary)}</div>` : ''}`;
+        }
+
         if (dateStr === activeDayFocusString) cell.classList.add('selected-day');
         const todayStr = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
         if (dateStr === todayStr) cell.classList.add('today-cell');
@@ -2470,7 +2784,13 @@
 
     function populateExerciseSelect() {
         const sel = document.getElementById('exerciseSelect');
-        sel.innerHTML = PRESETS[currentGroup].map(e=>`<option value="${escH(e)}">${escH(e)}</option>`).join('') + '<option value="__custom__">✏ Custom exercise...</option>';
+        const usage = getUsage()[currentGroup] || {};
+        // Most-used first (covers custom names too), then unused presets in original order
+        const usedNames    = Object.keys(usage).sort((a, b) => usage[b] - usage[a]);
+        const unusedPresets = PRESETS[currentGroup].filter(e => !usage[e]);
+        const all = [...usedNames, ...unusedPresets];
+        sel.innerHTML = all.map(e => `<option value="${escH(e)}">${escH(e)}</option>`).join('')
+                      + '<option value="__custom__">✏ Custom exercise...</option>';
         document.getElementById('customExInput').style.display = 'none';
         sel.style.display = '';
     }
@@ -2483,20 +2803,115 @@
         if (isCustom) document.getElementById('customExInput').focus();
     }
 
+    /* ── PER-SET FORM ── */
+    function adjustSets(delta) {
+        pendingSetsCount = Math.max(1, Math.min(20, pendingSetsCount + delta));
+        while (pendingSetData.length < pendingSetsCount) pendingSetData.push({r:'1',w:''});
+        if (pendingSetData.length > pendingSetsCount) pendingSetData.length = pendingSetsCount;
+        renderSetRows();
+    }
+
+    function renderSetRows() {
+        const container = document.getElementById('setRowsContainer');
+        if (!container) return;
+        document.getElementById('setsCountDisplay').textContent = pendingSetsCount;
+        container.innerHTML = '';
+
+        pendingSetData.forEach((set, i) => {
+            const row = document.createElement('div');
+            row.className = 'set-row';
+
+            const num = document.createElement('span');
+            num.className = 'set-num-label';
+            num.textContent = i + 1;
+
+            const repsIn = document.createElement('input');
+            repsIn.type = 'number';
+            repsIn.className = 'set-reps-input';
+            repsIn.value = set.r || '1';
+            repsIn.placeholder = '1';
+            repsIn.min = '1';
+            repsIn.inputMode = 'numeric';
+
+            const wtIn = document.createElement('input');
+            wtIn.type = 'text';
+            wtIn.className = 'set-weight-input';
+            wtIn.value = set.w || '';
+            wtIn.placeholder = 'e.g. 135 lbs';
+            wtIn.inputMode = 'decimal';
+
+            // Keep pendingSetData in sync
+            repsIn.addEventListener('input', () => { pendingSetData[i].r = repsIn.value; });
+            wtIn.addEventListener('input',  () => { pendingSetData[i].w = wtIn.value; });
+
+            // Auto-select all on focus so typing replaces the value immediately
+            repsIn.addEventListener('focus', () => repsIn.select());
+            wtIn.addEventListener('focus',   () => wtIn.select());
+
+            // Enter key auto-advance: reps → weight → next reps → log on last
+            repsIn.addEventListener('keydown', ev => {
+                if (ev.key === 'Enter') { ev.preventDefault(); wtIn.focus(); }
+            });
+            wtIn.addEventListener('keydown', ev => {
+                if (ev.key !== 'Enter') return;
+                ev.preventDefault();
+                pendingSetData[i].w = wtIn.value;
+                const rows = container.querySelectorAll('.set-row');
+                const nextRow = rows[i + 1];
+                if (nextRow) {
+                    nextRow.querySelector('.set-reps-input').focus();
+                } else {
+                    commitAddLift();
+                }
+            });
+
+            row.append(num, repsIn, wtIn);
+            container.appendChild(row);
+        });
+    }
+
+    /* ── LIFT DATA HELPERS ── */
+    function normalizeLift(e) {
+        if (e.sets && Array.isArray(e.sets)) return e;
+        // Legacy format: convert s/r/w → sets array
+        const count = parseInt(e.s) || 1;
+        const sets = Array.from({length: count}, () => ({r: String(e.r||'1'), w: String(e.w||'')}));
+        return {...e, sets};
+    }
+
+    function fmtSets(sets) {
+        if (!sets || !sets.length) return '—';
+        const n = sets.length;
+        const allSameReps   = sets.every(s => s.r === sets[0].r);
+        const allSameWeight = sets.every(s => s.w === sets[0].w);
+        if (allSameReps && allSameWeight) {
+            return `${n}×${sets[0].r||'—'}${sets[0].w ? ' <span style="color:var(--text-tertiary);font-weight:500">@ '+escH(sets[0].w)+'</span>' : ''}`;
+        }
+        // Mixed: list each set compactly
+        const parts = sets.map((s,i) => `<span style="color:var(--text-muted);font-size:10px">${i+1}:</span>${s.r||'—'}${s.w?'<span style="color:var(--text-tertiary)">@'+escH(s.w)+'</span>':''}`).join(' ');
+        return `${n} sets &nbsp;${parts}`;
+    }
+
     function commitAddLift() {
         const sel = document.getElementById('exerciseSelect');
         const name = sel.style.display === 'none'
             ? document.getElementById('customExInput').value.trim()
             : sel.value;
         if (!name || name === '__custom__') return;
-        const sets   = parseInt(document.getElementById('setsInput').value) || 3;
-        const reps   = document.getElementById('repsInput').value.trim() || '—';
-        const weight = document.getElementById('weightInput').value.trim();
+        bumpUsage(currentGroup, name);
+        // Snapshot current DOM values into pendingSetData before saving
+        document.querySelectorAll('.set-reps-input').forEach((inp, i) => {
+            if (pendingSetData[i]) pendingSetData[i].r = inp.value.trim() || '1';
+        });
+        document.querySelectorAll('.set-weight-input').forEach((inp, i) => {
+            if (pendingSetData[i]) pendingSetData[i].w = inp.value.trim();
+        });
         const arr = parseEx(document.getElementById('inDayExercises').value);
-        arr.push({ k:'lift', g: currentGroup, n: name, s: sets, r: reps, w: weight });
+        arr.push({ k:'lift', g: currentGroup, n: name, sets: pendingSetData.map(s => ({...s})) });
         applyExercises(arr);
-        document.getElementById('repsInput').value = '';
-        document.getElementById('weightInput').value = '';
+        // Reset weights but keep count and reps=1
+        pendingSetData = Array.from({length: pendingSetsCount}, () => ({r:'1',w:''}));
+        renderSetRows();
     }
 
     function addCardioEntry(type) {
@@ -2536,17 +2951,18 @@
         const lifts = arr.map((e,i) => ({...e,_i:i})).filter(e => e.k==='lift'||e.k==='text');
         const el = document.getElementById('liftListDisplay');
         el.innerHTML = '';
-        if (!lifts.length) { el.innerHTML = '<div class="exercise-empty">No exercises logged — select a group and add above.</div>'; return; }
+        if (!lifts.length) { el.innerHTML = '<div class="exercise-empty">No exercises logged — select a muscle group and add above.</div>'; return; }
         lifts.forEach((e, numIdx) => {
             const item = document.createElement('div');
             const grpClass = e.k === 'lift' ? `has-${e.g}` : 'has-text';
             item.className = `exercise-item ${grpClass}`;
             if (e.k === 'lift') {
+                const entry = normalizeLift(e);
                 item.innerHTML = `
                     <span class="ex-num">${numIdx+1}</span>
-                    <span class="group-badge ${e.g}">${e.g}</span>
-                    <span class="ex-text" onclick="startEditName(this,${e._i})">${escH(e.n)}</span>
-                    <span class="sr-badge" onclick="startEditSR(this,${e._i})">${e.s}×${e.r}${e.w?'<span style="color:var(--text-tertiary);font-weight:500"> @'+escH(e.w)+'</span>':''}</span>
+                    <span class="group-badge ${entry.g}">${entry.g}</span>
+                    <span class="ex-text" onclick="startEditName(this,${e._i})">${escH(entry.n)}</span>
+                    <span class="sr-badge" onclick="startEditSR(this,${e._i})">${fmtSets(entry.sets)}</span>
                     <button class="ex-del" onclick="deleteEntry(${e._i})">×</button>`;
             } else {
                 item.innerHTML = `
@@ -2598,18 +3014,36 @@
         inp.addEventListener('keydown', ev => { if(ev.key==='Enter'){ev.preventDefault();inp.blur();} if(ev.key==='Escape')renderWorkoutLog(); });
     }
 
-    /* Inline sets/reps editing */
+    /* Inline per-set editing */
     function startEditSR(badge, idx) {
         const arr = parseEx(document.getElementById('inDayExercises').value);
         const e = arr[idx]; if(!e) return;
-        const wrap = document.createElement('span'); wrap.style.cssText='display:flex;align-items:center;gap:4px;';
-        const mk = (w, val, ph) => { const i=document.createElement('input'); i.type='text'; i.value=val; i.placeholder=ph; i.style.cssText=`width:${w}px;padding:4px 8px;font-size:12px;border-radius:6px;background:var(--bg-surface-hover);border:1px solid var(--border-strong);color:var(--text-primary);outline:none;font-family:inherit;`; return i; };
-        const sI=mk(48,e.s,'3'), x=document.createElement('span'), rI=mk(64,e.r,'reps'), wI=mk(72,e.w||'','lbs');
-        x.textContent='×'; x.style.cssText='color:var(--text-tertiary);font-size:12px;';
-        const at=document.createElement('span'); at.textContent='@'; at.style.cssText='color:var(--text-tertiary);font-size:12px;margin-left:4px;';
-        wrap.append(sI,x,rI,at,wI); badge.replaceWith(wrap); rI.focus();
-        const commit = () => { const na=parseEx(document.getElementById('inDayExercises').value); if(na[idx]){na[idx].s=parseInt(sI.value)||3;na[idx].r=rI.value.trim()||'—';na[idx].w=wI.value.trim();} document.getElementById('inDayExercises').value=serializeEx(na); syncActiveDayToMemory(); renderWorkoutLog(); };
-        [sI,rI,wI].forEach(i=>{ i.addEventListener('blur',commit); i.addEventListener('keydown',ev=>{if(ev.key==='Enter')i.blur();}); });
+        const entry = normalizeLift(e);
+        const wrap = document.createElement('div'); wrap.className = 'sr-edit-wrap';
+        entry.sets.forEach((set, si) => {
+            const row = document.createElement('div'); row.className = 'sr-edit-row';
+            const num = document.createElement('span'); num.className = 'sr-edit-num'; num.textContent = si+1;
+            const sep = document.createElement('span'); sep.className = 'sr-edit-sep'; sep.textContent = '@';
+            const rI = document.createElement('input'); rI.type='text'; rI.className='sr-edit-input'; rI.value=set.r||'1'; rI.placeholder='reps'; rI.style.width='44px';
+            const wI = document.createElement('input'); wI.type='text'; wI.className='sr-edit-input'; wI.value=set.w||''; wI.placeholder='wt'; wI.style.width='64px';
+            row.append(num, rI, sep, wI);
+            wrap.appendChild(row);
+        });
+        badge.replaceWith(wrap);
+        const commit = () => {
+            const na = parseEx(document.getElementById('inDayExercises').value);
+            const ne = normalizeLift({...na[idx]});
+            wrap.querySelectorAll('.sr-edit-row').forEach((row, si) => {
+                const inputs = row.querySelectorAll('input');
+                if (ne.sets[si]) { ne.sets[si].r = inputs[0].value.trim()||'1'; ne.sets[si].w = inputs[1].value.trim(); }
+            });
+            na[idx] = ne;
+            document.getElementById('inDayExercises').value = serializeEx(na);
+            syncActiveDayToMemory(); renderWorkoutLog();
+        };
+        wrap.addEventListener('focusout', ev => { if (!wrap.contains(ev.relatedTarget)) commit(); });
+        wrap.querySelectorAll('input').forEach(i => i.addEventListener('keydown', ev => { if(ev.key==='Enter') i.blur(); }));
+        wrap.querySelector('input').focus();
     }
 
     /* ── TEMPLATE MODAL ── */
@@ -2958,9 +3392,9 @@
         const budgetVals   = allKeys.map(ds => Number(localDBInstance[ds]?.budget) || 0);
 
         const charts = {
-            weight: { canvasId:'weightChart', data: weightVals, color:'rgb(168,85,247)', unit:' lbs' },
-            burn:   { canvasId:'burnChart',   data: burnVals,   color:'rgb(245,158,11)',  unit:' kcal' },
-            budget: { canvasId:'budgetChart', data: budgetVals, color:'rgb(14,165,233)',  unit:' kcal' }
+            weight: { canvasId:'weightChart', data: weightVals, color:'rgb(139,108,247)', unit:' lbs' },
+            burn:   { canvasId:'burnChart',   data: burnVals,   color:'rgb(245,166,35)',   unit:' kcal' },
+            budget: { canvasId:'budgetChart', data: budgetVals, color:'rgb(79,142,247)',   unit:' kcal' }
         };
 
         const cfg = charts[key];
@@ -3044,7 +3478,7 @@
             values.forEach((v,i) => {
                 if (v <= 0) return;
                 ctx.beginPath(); ctx.fillStyle = color; ctx.arc(xOf(i),yOf(v),3,0,Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.fillStyle = '#030712'; ctx.arc(xOf(i),yOf(v),1.5,0,Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.fillStyle = '#070910'; ctx.arc(xOf(i),yOf(v),1.5,0,Math.PI*2); ctx.fill();
             });
         }
     }
@@ -3082,7 +3516,13 @@
             if (el) el.addEventListener('keydown', ev => { if(ev.key==='Enter'){ev.preventDefault();commitAddLift();} });
         });
 
+        // Default to week view on mobile — month grid is unreadable at small widths
+        if (window.innerWidth <= 768) {
+            activeViewMode = 'week';
+        }
+
         buildWorkoutPool();
+        renderSetRows();
         renderActiveViewLayout();
         focusCalendarDay(activeDayFocusString);
         buildDailyLog();
