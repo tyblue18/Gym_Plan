@@ -617,7 +617,7 @@ export default function CalendarScheduler() {
           </div>
 
           {/* ── Animated calendar grid — shared variants ── */}
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence mode="sync" initial={false}>
 
             {/* ── Month view ── */}
             {viewMode === 'month' && (

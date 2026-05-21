@@ -3,7 +3,8 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
 import { AuthProvider } from '@/components/auth-provider';
 import { AppProvider }  from '@/lib/AppContext';
-import { SWRegister } from '@/components/sw-register';
+import { SWRegister }  from '@/components/sw-register';
+import GlowMount       from '@/components/GlowMount';
 import './globals.css';
 
 const _geist     = Geist({ subsets: ['latin'] });
@@ -41,6 +42,8 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <AuthProvider>
           <AppProvider>
+            {/* Ambient status glow — client-only via GlowMount */}
+            <GlowMount />
             {children}
           </AppProvider>
         </AuthProvider>

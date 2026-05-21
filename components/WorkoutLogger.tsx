@@ -1346,12 +1346,11 @@ export default function WorkoutLogger() {
                 No exercises yet — pick a muscle group, set reps &amp; weight, and hit Log.
               </div>
             ) : (
-              <motion.div className="flex flex-col gap-2" layout>
+              <div className="flex flex-col gap-2">
                 <AnimatePresence initial={false}>
                   {lifts.map((entry, numIdx) => (
                     <motion.div
                       key={entry._idx}
-                      layout
                       initial={{ opacity: 0, y: 10, scale: 0.97 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, x: -24, scale: 0.95 }}
@@ -1367,7 +1366,7 @@ export default function WorkoutLogger() {
                     </motion.div>
                   ))}
                 </AnimatePresence>
-              </motion.div>
+              </div>
             )}
 
             {/* Save Workout button */}
@@ -1417,12 +1416,11 @@ export default function WorkoutLogger() {
                 No cardio yet — tap Swim, Run, or Bike to log a session.
               </div>
             ) : (
-              <motion.div className="flex flex-col gap-3" layout>
+              <div className="flex flex-col gap-3">
                 <AnimatePresence initial={false}>
                   {cardios.map(entry => (
                     <motion.div
                       key={entry._idx}
-                      layout
                       initial={{ opacity: 0, y: 10, scale: 0.97 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, x: -24, scale: 0.95 }}
@@ -1436,7 +1434,7 @@ export default function WorkoutLogger() {
                     </motion.div>
                   ))}
                 </AnimatePresence>
-              </motion.div>
+              </div>
             )}
           </div>
 

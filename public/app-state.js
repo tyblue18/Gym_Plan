@@ -160,7 +160,7 @@ function syncActiveDayToMemory(refresh=false) {
         budget:   lastBudget
     };
     localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(localDBInstance));
-    if (refresh) { renderActiveViewLayout(); buildDailyLog(); }
+    if (refresh) { renderActiveViewLayout(); buildDailyLog(); buildDayWorkoutSummary(activeDayFocusString); }
     const ind = document.getElementById('saveIndicator');
     if (ind) {
         ind.classList.add('show');

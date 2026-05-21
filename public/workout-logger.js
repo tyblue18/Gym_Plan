@@ -162,7 +162,6 @@ function renderWorkoutLog() {
     const arr = parseEx(document.getElementById('inDayExercises').value);
     renderLiftList(arr);
     renderCardioList(arr);
-    buildDayWorkoutSummary(activeDayFocusString);
 }
 
 function renderLiftList(arr) {

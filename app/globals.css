@@ -1,6 +1,20 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* ── Ambient glow pulse — CSS compositor animation, zero JS loop ── */
+@keyframes glowPulseA {
+  0%, 100% { opacity: 0.50; transform: scale(1);    }
+  50%       { opacity: 0.85; transform: scale(1.10); }
+}
+@keyframes glowPulseB {
+  0%, 100% { opacity: 0.35; transform: scale(1);    }
+  50%       { opacity: 0.65; transform: scale(1.08); }
+}
+@keyframes glowPulseC {
+  0%, 100% { opacity: 0.20; transform: scale(1);    }
+  50%       { opacity: 0.45; transform: scale(1.14); }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
