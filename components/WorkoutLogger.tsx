@@ -12,10 +12,14 @@
 import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import {
+  AnimatePresence, motion, Reorder,
+  useDragControls, useMotionValue, useTransform, animate,
+} from 'framer-motion';
 import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
 import {
-  Check, ChevronDown, Dumbbell, Edit3, Flame, Layers, Plus, Save, Trash2, X,
+  Check, ChevronDown, Dumbbell, Edit3, Flame, GripVertical,
+  Layers, Plus, Save, Trash2, X,
 } from 'lucide-react';
 import {
   useApp, PRESETS,
@@ -30,6 +34,7 @@ type CardioKind = 'run' | 'bike' | 'swim';
 interface NormalizedLift extends ExerciseEntry {
   sets: Array<{ r: string; w: string }>;
   _idx: number;
+  _key: string;
 }
 interface CardioItem extends ExerciseEntry { k: CardioKind; _idx: number; }
 interface SwmState {
@@ -42,13 +47,13 @@ const DAY_LABELS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 
 const CARDIO_CFG: Record<CardioKind, {
   code: string; label: string;
-  f1: string; f1ph: string;
-  f2: string; f2ph: string;
+  f1: string; f1ph: string; f1mode: React.HTMLInputTypeAttribute;
+  f2: string; f2ph: string; f2mode: React.HTMLInputTypeAttribute;
   notePh: string;
 }> = {
-  swim: { code: 'SWIM', label: 'Swimming', f1: 'DURATION / MIN', f1ph: '45',  f2: 'DISTANCE',    f2ph: '1500 yds', notePh: 'drills, laps, style…' },
-  run:  { code: 'RUN',  label: 'Running',  f1: 'DISTANCE / MI', f1ph: '5.2', f2: 'TIME / MIN',   f2ph: '45',       notePh: 'pace, route, effort…' },
-  bike: { code: 'BIKE', label: 'Cycling',  f1: 'DISTANCE / MI', f1ph: '20',  f2: 'TIME / MIN',   f2ph: '60',       notePh: 'route, watts, HR zone…' },
+  swim: { code: 'SWIM', label: 'Swimming', f1: 'DURATION / MIN', f1ph: '45',  f1mode: 'numeric', f2: 'DISTANCE',  f2ph: '1500 yds', f2mode: 'decimal', notePh: 'drills, laps, style…' },
+  run:  { code: 'RUN',  label: 'Running',  f1: 'DISTANCE / MI', f1ph: '5.2', f1mode: 'decimal', f2: 'TIME / MIN', f2ph: '45',       f2mode: 'numeric', notePh: 'pace, route, effort…' },
+  bike: { code: 'BIKE', label: 'Cycling',  f1: 'DISTANCE / MI', f1ph: '20',  f1mode: 'decimal', f2: 'TIME / MIN', f2ph: '60',       f2mode: 'numeric', notePh: 'route, watts, HR zone…' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,6 +73,14 @@ function normalizeSets(e: ExerciseEntry): Array<{ r: string; w: string }> {
   return Array.from({ length: count }, () => ({ r: String(e.r ?? '1'), w: String(e.w ?? '') }));
 }
 function capitalize(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/** Compare two serialised exercise lists by identity (kind + group + name),
+ *  ignoring sets/reps/weight. Returns true if they represent the same workout. */
+function isSameWorkout(jsonA: string, jsonB: string): boolean {
+  const sig = (json: string) =>
+    parseEx(json).map(e => `${e.k}|${e.g ?? ''}|${e.n ?? ''}`).join(',');
+  return sig(jsonA) === sig(jsonB);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — FormatSets / SetBadge
@@ -171,9 +184,11 @@ function SetBadge({ sets, onSave }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENT — ExerciseItem
+// SUB-COMPONENT — ReorderableExerciseItem
+// Drag handle (≡) → vertical reorder via Reorder.Item
+// Swipe right     → reveals DELETE; release past 120px deletes the entry
 // ─────────────────────────────────────────────────────────────────────────────
-function ExerciseItem({
+function ReorderableExerciseItem({
   entry, numIdx, onDelete, onUpdateName, onUpdateSets,
 }: {
   entry: NormalizedLift; numIdx: number;
@@ -181,8 +196,12 @@ function ExerciseItem({
   onUpdateName: (idx: number, name: string) => void;
   onUpdateSets: (idx: number, sets: Array<{ r: string; w: string }>) => void;
 }) {
+  const dragControls  = useDragControls();
+  const x             = useMotionValue(0);
+  const deleteOpacity = useTransform(x, [40, 110], [0, 1]);
+
   const [editingName, setEditingName] = useState(false);
-  const [nameVal, setNameVal] = useState(entry.n ?? '');
+  const [nameVal, setNameVal]         = useState(entry.n ?? '');
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const startNameEdit = () => {
@@ -195,55 +214,100 @@ function ExerciseItem({
     setEditingName(false);
   };
 
+  const handleDragEnd = (_: unknown, info: { offset: { x: number } }) => {
+    if (info.offset.x > 120) {
+      animate(x, 220, { duration: 0.18 }).then(() => onDelete(entry._idx));
+    } else {
+      animate(x, 0, { type: 'spring', stiffness: 400, damping: 35 });
+    }
+  };
+
   return (
-    <div className="group flex items-center gap-4 bg-[var(--bg-2)] border border-[var(--line)] rounded px-4 py-3 transition-all hover:border-[var(--line-2)] hover:bg-[var(--bg-3)] relative overflow-hidden">
-      {/* Accent stripe on the left */}
-      <span className="absolute left-0 top-0 bottom-0 w-[2px] bg-[var(--accent)] opacity-30 group-hover:opacity-100 transition-opacity" />
-
-      <span className="font-display tabular text-[18px] leading-none text-[var(--ink-3)] min-w-[24px] text-right">
-        {String(numIdx + 1).padStart(2, '0')}
-      </span>
-
-      {entry.k === 'lift' && entry.g && (
-        <span className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--accent)] uppercase flex-shrink-0 w-16">
-          {entry.g}
+    <Reorder.Item
+      value={entry}
+      dragListener={false}
+      dragControls={dragControls}
+      className="relative select-none"
+      layout
+    >
+      {/* Delete indicator — revealed on swipe right */}
+      <motion.div
+        className="absolute inset-0 rounded border border-[var(--danger)]/40 bg-[var(--danger-12)] flex items-center justify-end pr-4 pointer-events-none"
+        style={{ opacity: deleteOpacity }}
+        aria-hidden
+      >
+        <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold tracking-[2px] text-[var(--danger)] uppercase">
+          <Trash2 size={13} /> Delete
         </span>
-      )}
+      </motion.div>
 
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-        {editingName ? (
-          <input
-            ref={nameInputRef} autoFocus type="text" value={nameVal}
-            className="text-[14px] text-[var(--ink-0)] font-semibold bg-transparent border-b border-[var(--accent)] outline-none pb-0.5 w-full"
-            onChange={e => setNameVal(e.target.value)}
-            onBlur={commitName}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { e.preventDefault(); nameInputRef.current?.blur(); }
-              if (e.key === 'Escape') setEditingName(false);
-            }}
-          />
-        ) : (
-          <span
-            onClick={startNameEdit}
-            className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors"
-          >
-            {entry.n ?? entry.k}
+      {/* Swipeable card */}
+      <motion.div
+        drag="x"
+        dragConstraints={{ left: 0, right: 160 }}
+        dragElastic={{ left: 0, right: 0.05 }}
+        dragMomentum={false}
+        style={{ x, touchAction: 'pan-y' }}
+        onDragEnd={handleDragEnd}
+        className="group flex items-center gap-3 bg-[var(--bg-2)] border border-[var(--line)] rounded px-3 py-3 relative overflow-hidden z-10"
+      >
+        {/* Accent stripe */}
+        <span className="absolute left-0 top-0 bottom-0 w-[2px] bg-[var(--accent)] opacity-30 group-hover:opacity-100 transition-opacity" />
+
+        {/* Reorder grip — touch here to drag vertically */}
+        <div
+          className="touch-none cursor-grab active:cursor-grabbing text-[var(--ink-3)] hover:text-[var(--ink-1)] transition-colors flex-shrink-0"
+          onPointerDown={e => { e.preventDefault(); dragControls.start(e); }}
+        >
+          <GripVertical size={15} />
+        </div>
+
+        <span className="font-display tabular text-[16px] leading-none text-[var(--ink-3)] min-w-[20px] text-right flex-shrink-0">
+          {String(numIdx + 1).padStart(2, '0')}
+        </span>
+
+        {entry.k === 'lift' && entry.g && (
+          <span className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--accent)] uppercase flex-shrink-0 w-14 truncate">
+            {entry.g}
           </span>
         )}
 
-        {entry.k === 'lift' && entry.sets && (
-          <SetBadge sets={entry.sets} onSave={updated => onUpdateSets(entry._idx, updated)} />
-        )}
-      </div>
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+          {editingName ? (
+            <input
+              ref={nameInputRef} autoFocus type="text" value={nameVal}
+              className="text-[14px] text-[var(--ink-0)] font-semibold bg-transparent border-b border-[var(--accent)] outline-none pb-0.5 w-full"
+              onChange={e => setNameVal(e.target.value)}
+              onBlur={commitName}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); nameInputRef.current?.blur(); }
+                if (e.key === 'Escape') setEditingName(false);
+              }}
+            />
+          ) : (
+            <span
+              onClick={startNameEdit}
+              className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors truncate"
+            >
+              {entry.n ?? entry.k}
+            </span>
+          )}
 
-      <button
-        onClick={() => onDelete(entry._idx)}
-        className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded text-transparent group-hover:text-[var(--ink-2)] hover:!text-[var(--danger)] hover:bg-[var(--danger-12)] transition-all"
-        title="Remove"
-      >
-        <X size={16} />
-      </button>
-    </div>
+          {entry.k === 'lift' && entry.sets && (
+            <SetBadge sets={entry.sets} onSave={updated => onUpdateSets(entry._idx, updated)} />
+          )}
+        </div>
+
+        {/* Desktop-only X button (hover reveals) */}
+        <button
+          onClick={() => onDelete(entry._idx)}
+          className="flex-shrink-0 w-8 h-8 hidden md:flex items-center justify-center rounded text-transparent group-hover:text-[var(--ink-2)] hover:!text-[var(--danger)] hover:bg-[var(--danger-12)] transition-all"
+          title="Remove"
+        >
+          <X size={15} />
+        </button>
+      </motion.div>
+    </Reorder.Item>
   );
 }
 
@@ -276,13 +340,19 @@ function CardioEntryCard({
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div>
           <label className="que-label">{cfg.f1}</label>
-          <input type="text" className="que-input" value={entry.v1 ?? ''} placeholder={cfg.f1ph}
-            onChange={e => onUpdateField(entry._idx, 'v1', e.target.value)} />
+          <input
+            type="text" inputMode={cfg.f1mode as React.HTMLAttributes<HTMLInputElement>['inputMode']}
+            className="que-input" value={entry.v1 ?? ''} placeholder={cfg.f1ph}
+            onChange={e => onUpdateField(entry._idx, 'v1', e.target.value)}
+          />
         </div>
         <div>
           <label className="que-label">{cfg.f2}</label>
-          <input type="text" className="que-input" value={entry.v2 ?? ''} placeholder={cfg.f2ph}
-            onChange={e => onUpdateField(entry._idx, 'v2', e.target.value)} />
+          <input
+            type="text" inputMode={cfg.f2mode as React.HTMLAttributes<HTMLInputElement>['inputMode']}
+            className="que-input" value={entry.v2 ?? ''} placeholder={cfg.f2ph}
+            onChange={e => onUpdateField(entry._idx, 'v2', e.target.value)}
+          />
         </div>
       </div>
       <div>
@@ -295,14 +365,30 @@ function CardioEntryCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENT — TemplateModal
+// SUB-COMPONENT — PresetModal
 // ─────────────────────────────────────────────────────────────────────────────
 function PresetModal({
-  open, presets, onLoad, onClose,
+  open, presets, currentCount, onLoad, onClose,
 }: {
   open: boolean; presets: WorkoutPreset[];
-  onLoad: (preset: WorkoutPreset) => void; onClose: () => void;
+  currentCount: number;
+  onLoad: (preset: WorkoutPreset, replace: boolean) => void;
+  onClose: () => void;
 }) {
+  const [pending, setPending] = React.useState<WorkoutPreset | null>(null);
+
+  // Reset pending choice whenever the modal closes
+  React.useEffect(() => { if (!open) setPending(null); }, [open]);
+
+  function handleSelect(preset: WorkoutPreset) {
+    if (currentCount > 0) {
+      setPending(preset); // show the merge-or-replace screen
+    } else {
+      onLoad(preset, false);
+      onClose();
+    }
+  }
+
   return (
     <AnimatePresence>
       {open && (
@@ -321,59 +407,134 @@ function PresetModal({
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
           >
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-display text-[22px] md:text-[28px] tracking-[2px] uppercase text-[var(--ink-0)]">Load Preset</h3>
-              <button onClick={onClose} className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors p-1">
-                <X size={20} />
-              </button>
-            </div>
+            {pending ? (
+              /* ── Merge-or-replace screen ── */
+              <>
+                {/* Header */}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <p className="font-mono text-[9px] font-bold tracking-[3px] text-[var(--ink-3)] uppercase mb-1">
+                      Session In Progress
+                    </p>
+                    <p className="font-display text-[18px] md:text-[22px] tracking-[2px] uppercase text-[var(--ink-0)] leading-none truncate max-w-[220px] md:max-w-none">
+                      {pending.name}
+                    </p>
+                  </div>
+                  <button onClick={onClose} className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors p-1.5 flex-shrink-0 ml-3 -mt-1">
+                    <X size={20} />
+                  </button>
+                </div>
 
-            {presets.length === 0 ? (
-              <div className="text-center py-8 border border-dashed border-[var(--line-2)] rounded">
-                <p className="font-mono text-[11px] tracking-[1px] text-[var(--ink-3)] uppercase">No presets saved yet</p>
-                <p className="font-mono text-[10px] text-[var(--ink-3)] mt-1.5 tracking-[0.5px]">Log a workout and hit "Save as Preset"</p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                {presets.map(preset => {
-                  const entries = parseEx(preset.exercises);
-                  const lifts   = entries.filter(e => e.k === 'lift' || e.k === 'text');
-                  const cardios = entries.filter(e => ['run','bike','swim'].includes(e.k));
-                  const names   = lifts.slice(0, 3).map(e => e.n ?? e.k);
-                  const more    = lifts.length - names.length;
-                  return (
-                    <button
-                      key={preset.id}
-                      onClick={() => { onLoad(preset); onClose(); }}
-                      className="text-left rounded border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2.5 md:px-4 md:py-3 hover:border-[var(--accent)] hover:bg-[var(--bg-3)] transition-all group"
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <p className="font-display text-[14px] md:text-[16px] tracking-[1px] uppercase text-[var(--ink-0)] group-hover:text-[var(--accent)] transition-colors truncate">
-                          {preset.name}
-                        </p>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          {lifts.length > 0 && (
-                            <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent-ink)] bg-[var(--accent)] px-1.5 py-0.5 rounded-sm uppercase">
-                              {lifts.length} EX
-                            </span>
-                          )}
-                          {cardios.length > 0 && (
-                            <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--ink-0)] bg-[var(--bg-3)] border border-[var(--line-2)] px-1.5 py-0.5 rounded-sm uppercase">
-                              {cardios.length} CARDIO
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <p className="font-mono text-[9px] md:text-[10px] text-[var(--ink-2)] tracking-[0.5px] truncate">
-                        {names.join(' · ')}{more > 0 ? ` · +${more} more` : ''}
+                {/* Context line */}
+                <p className="font-mono text-[10px] text-[var(--ink-2)] tracking-[0.5px] mb-4 pb-4 border-b border-[var(--line)]">
+                  You have{' '}
+                  <span className="text-[var(--ink-0)] font-bold">
+                    {currentCount} exercise{currentCount !== 1 ? 's' : ''}
+                  </span>{' '}
+                  logged — how do you want to load this?
+                </p>
+
+                {/* Side-by-side action cards */}
+                <div className="grid grid-cols-2 gap-2.5 mb-4">
+                  <button
+                    onClick={() => { onLoad(pending, false); onClose(); }}
+                    className="group flex flex-col gap-3 rounded border border-[var(--line-2)] bg-[var(--bg-2)] p-3 md:p-4 text-left hover:border-[var(--accent)] active:bg-[var(--accent-12)] transition-all min-h-[120px]"
+                  >
+                    <span
+                      className="block w-8 h-[2px] bg-[var(--accent)] rounded-full flex-shrink-0"
+                      style={{ boxShadow: '0 0 6px var(--accent-40)' }}
+                    />
+                    <div>
+                      <p className="font-display text-[15px] md:text-[16px] tracking-[1px] uppercase text-[var(--ink-0)] group-hover:text-[var(--accent)] transition-colors leading-tight mb-1.5">
+                        Add On Top
                       </p>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                      <p className="font-mono text-[9px] text-[var(--ink-2)] tracking-[0.3px] leading-[1.5]">
+                        Keep current &amp; stack preset below
+                      </p>
+                    </div>
+                  </button>
 
-            <button onClick={onClose} className="que-btn-ghost mt-3 w-full">CANCEL</button>
+                  <button
+                    onClick={() => { onLoad(pending, true); onClose(); }}
+                    className="group flex flex-col gap-3 rounded border border-[var(--line-2)] bg-[var(--bg-2)] p-3 md:p-4 text-left hover:border-[var(--warn)] active:bg-[var(--bg-3)] transition-all min-h-[120px]"
+                  >
+                    <span className="block w-8 h-[2px] bg-[var(--warn)] rounded-full flex-shrink-0" />
+                    <div>
+                      <p className="font-display text-[15px] md:text-[16px] tracking-[1px] uppercase text-[var(--ink-0)] group-hover:text-[var(--warn)] transition-colors leading-tight mb-1.5">
+                        Start Fresh
+                      </p>
+                      <p className="font-mono text-[9px] text-[var(--ink-2)] tracking-[0.3px] leading-[1.5]">
+                        Clear session, load preset only
+                      </p>
+                    </div>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setPending(null)}
+                  className="que-btn-ghost w-full"
+                >
+                  ← Back to Presets
+                </button>
+              </>
+            ) : (
+              /* ── Preset list ── */
+              <>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-display text-[22px] md:text-[28px] tracking-[2px] uppercase text-[var(--ink-0)]">Load Preset</h3>
+                  <button onClick={onClose} className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors p-1">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {presets.length === 0 ? (
+                  <div className="text-center py-8 border border-dashed border-[var(--line-2)] rounded">
+                    <p className="font-mono text-[11px] tracking-[1px] text-[var(--ink-3)] uppercase">No presets saved yet</p>
+                    <p className="font-mono text-[10px] text-[var(--ink-3)] mt-1.5 tracking-[0.5px]">Log a workout and hit "Save as Preset"</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {presets.map(preset => {
+                      const entries = parseEx(preset.exercises);
+                      const lifts   = entries.filter(e => e.k === 'lift' || e.k === 'text');
+                      const cardios = entries.filter(e => ['run','bike','swim'].includes(e.k));
+                      const names   = lifts.slice(0, 3).map(e => e.n ?? e.k);
+                      const more    = lifts.length - names.length;
+                      return (
+                        <button
+                          key={preset.id}
+                          onClick={() => handleSelect(preset)}
+                          className="text-left rounded border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2.5 md:px-4 md:py-3 hover:border-[var(--accent)] hover:bg-[var(--bg-3)] transition-all group"
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <p className="font-display text-[14px] md:text-[16px] tracking-[1px] uppercase text-[var(--ink-0)] group-hover:text-[var(--accent)] transition-colors truncate">
+                              {preset.name}
+                            </p>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              {lifts.length > 0 && (
+                                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent-ink)] bg-[var(--accent)] px-1.5 py-0.5 rounded-sm uppercase">
+                                  {lifts.length} EX
+                                </span>
+                              )}
+                              {cardios.length > 0 && (
+                                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--ink-0)] bg-[var(--bg-3)] border border-[var(--line-2)] px-1.5 py-0.5 rounded-sm uppercase">
+                                  {cardios.length} CARDIO
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <p className="font-mono text-[9px] md:text-[10px] text-[var(--ink-2)] tracking-[0.5px] truncate">
+                            {names.join(' · ')}{more > 0 ? ` · +${more} more` : ''}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <button onClick={onClose} className="que-btn-ghost mt-3 w-full">CANCEL</button>
+              </>
+            )}
           </motion.div>
         </motion.div>
       )}
@@ -385,11 +546,12 @@ function PresetModal({
 // SUB-COMPONENT — SaveWorkoutModal
 // ─────────────────────────────────────────────────────────────────────────────
 function SaveWorkoutModal({
-  open, swm, lifts, onClose, onSave,
+  open, swm, lifts, dupWarning, onClose, onSave,
   onChangeName, onTogglePreset, onToggleRecurring,
   onToggleDay, onSetFreq,
 }: {
   open: boolean; swm: SwmState; lifts: NormalizedLift[];
+  dupWarning: boolean;
   onClose: () => void; onSave: () => void;
   onChangeName: (v: string) => void;
   onTogglePreset: () => void;
@@ -439,6 +601,13 @@ function SaveWorkoutModal({
                 value={swm.name} placeholder="e.g. Chest Day"
                 onChange={e => onChangeName(e.target.value)}
               />
+              {dupWarning && (
+                <div className="mt-2 flex items-center gap-2 rounded border border-[var(--danger)] bg-[var(--danger-12)] px-3 py-2">
+                  <span className="font-mono text-[11px] font-bold text-[var(--danger)] tracking-[0.5px]">
+                    Preset Already Saved — this exact workout is already in your presets
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col divide-y divide-[var(--line)]">
@@ -524,7 +693,6 @@ export default function WorkoutLogger() {
     pendingSetsCount, setPendingSetsCount,
     pendingSetData, setPendingSetData,
     getUsage, bumpUsage,
-    getTemplatePool, saveTemplatePool,
     getWorkoutPresets, saveWorkoutPresets,
     isLoaded,
   } = useApp();
@@ -540,6 +708,13 @@ export default function WorkoutLogger() {
   const [saveModal, setSaveModal] = useState(false);
   const [recurringPreset, setRecurringPreset] = useState<WorkoutPreset | null>(null);
   const [swm, setSwm] = useState<SwmState>({ name: '', isPreset: true, isRecurring: false, days: [], freq: 1 });
+  const [dupWarning, setDupWarning] = useState(false);
+  const [activeSection, setActiveSection] = useState<'lifting' | 'cardio'>('lifting');
+
+  // Stable keys for Reorder (parallel to exercises array, never derived)
+  const exerciseKeysRef = useRef<string[]>([]);
+  const keyCounterRef   = useRef(0);
+  const nextKey = useCallback(() => `k${++keyCounterRef.current}`, []);
 
   const pillsRowRef = useRef<HTMLDivElement>(null);
   const dragState = useRef({ dragging: false, startX: 0, scrollLeft: 0, moved: false });
@@ -573,8 +748,10 @@ export default function WorkoutLogger() {
   }, [persistExercises]);
 
   useEffect(() => {
-    const rec = localDB[activeDayFocus] ?? {};
-    setExercisesRaw(parseEx(rec.exercises ?? ''));
+    const rec    = localDB[activeDayFocus] ?? {};
+    const loaded = parseEx(rec.exercises ?? '');
+    setExercisesRaw(loaded);
+    exerciseKeysRef.current = loaded.map(() => nextKey());
     setNotesRaw(rec.notes ?? '');
     const dow = new Date(activeDayFocus + 'T00:00:00').getDay();
     const all = getWorkoutPresets();
@@ -584,7 +761,8 @@ export default function WorkoutLogger() {
   }, [activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lifts = useMemo<NormalizedLift[]>(() =>
-    exercises.map((e, i) => ({ ...e, sets: normalizeSets(e), _idx: i }))
+    exercises
+      .map((e, i) => ({ ...e, sets: normalizeSets(e), _idx: i, _key: exerciseKeysRef.current[i] ?? `fallback-${i}` }))
       .filter(e => e.k === 'lift' || e.k === 'text') as NormalizedLift[],
     [exercises]
   );
@@ -669,6 +847,7 @@ export default function WorkoutLogger() {
     }));
     bumpUsage(currentGroup, name);
     const next = [...exercises, { k: 'lift' as const, g: currentGroup, n: name, sets: snappedSets }];
+    exerciseKeysRef.current = [...exerciseKeysRef.current, nextKey()];
     setExercisesRaw(next);
     setPendingSetData(Array.from({ length: pendingSetsCount }, () => ({ r: '1', w: '' })));
     if (isCustomEx) setCustomName('');
@@ -686,10 +865,12 @@ export default function WorkoutLogger() {
   }, [pendingSetsCount, commitLift]);
 
   const addCardioEntry = useCallback((kind: CardioKind) => {
+    exerciseKeysRef.current = [...exerciseKeysRef.current, nextKey()];
     setExercisesRaw([...exercises, { k: kind, v1: '', v2: '', note: '' }]);
-  }, [exercises]);
+  }, [exercises, nextKey]);
 
   const deleteEntry = useCallback((idx: number) => {
+    exerciseKeysRef.current = exerciseKeysRef.current.filter((_, i) => i !== idx);
     setExercises(exercises.filter((_, i) => i !== idx));
   }, [exercises, setExercises]);
 
@@ -710,6 +891,7 @@ export default function WorkoutLogger() {
 
   const clearWorkout = useCallback(() => {
     if (!window.confirm(`Clear all workout & cardio data for ${activeDayFocus}?`)) return;
+    exerciseKeysRef.current = [];
     setExercisesRaw([]); setNotesRaw('');
     updateDayRecord(activeDayFocus, {
       exercises: '', notes: '', steps: 0,
@@ -717,56 +899,89 @@ export default function WorkoutLogger() {
     });
   }, [activeDayFocus, updateDayRecord]);
 
+  const handleLiftReorder = useCallback((reorderedLifts: NormalizedLift[]) => {
+    const cardios    = exercises.filter(e => ['run','bike','swim'].includes(e.k));
+    const cardioKeys = exercises
+      .map((e, i) => (['run','bike','swim'].includes(e.k) ? exerciseKeysRef.current[i] ?? nextKey() : null))
+      .filter(Boolean) as string[];
+    const liftEntries: ExerciseEntry[] = reorderedLifts.map(({ _idx, _key, ...rest }) => rest as ExerciseEntry);
+    const liftKeys = reorderedLifts.map(l => l._key);
+    exerciseKeysRef.current = [...liftKeys, ...cardioKeys];
+    setExercisesRaw([...liftEntries, ...cardios]);
+  }, [exercises, nextKey]);
+
   const logWorkout = useCallback(() => {
     persistExercises(exercises, notes);
     setLoggedFlash(true);
     setTimeout(() => setLoggedFlash(false), 2200);
   }, [exercises, notes, persistExercises]);
 
-  const loadPreset = useCallback((preset: WorkoutPreset) => {
-    const newEntries = parseEx(preset.exercises);
-    setExercisesRaw([...exercises, ...newEntries]);
-  }, [exercises]);
+  const loadPreset = useCallback((preset: WorkoutPreset, replace: boolean) => {
+    const incoming = parseEx(preset.exercises);
+    const next     = replace ? incoming : [...exercises, ...incoming];
+    const inKeys   = incoming.map(() => nextKey());
+    exerciseKeysRef.current = replace
+      ? inKeys
+      : [...exerciseKeysRef.current, ...inKeys];
+    setExercises(next);
+  }, [exercises, setExercises, nextKey]);
 
-  const presets = useMemo(() => getWorkoutPresets(), [getWorkoutPresets]);
+  const [presets, setPresets] = useState<WorkoutPreset[]>([]);
+  useEffect(() => {
+    if (templateModal) setPresets(getWorkoutPresets());
+  }, [templateModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadRecurringWorkout = useCallback((preset: WorkoutPreset) => {
     const newEntries = parseEx(preset.exercises);
+    exerciseKeysRef.current = [...exerciseKeysRef.current, ...newEntries.map(() => nextKey())];
     setExercisesRaw([...exercises, ...newEntries]);
     setRecurringPreset(null);
-  }, [exercises]);
+  }, [exercises, nextKey]);
 
   const openSaveModal = useCallback(() => {
     const groups = [...new Set(lifts.map(e => e.g ?? 'other'))];
     const autoName = groups.map(capitalize).join(' + ') + ' Workout';
     setSwm({ name: autoName, isPreset: true, isRecurring: false, days: [], freq: 1 });
+    setDupWarning(false);
     setSaveModal(true);
   }, [lifts]);
 
   const confirmSave = useCallback(() => {
-    const name = swm.name.trim();
-    if (!name || lifts.length === 0) return;
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    if (swm.isPreset) {
-      const pool = getTemplatePool();
-      const textLines = lifts.map(e => {
-        const n = e.sets ? e.sets.length : 1;
-        return `${e.n ?? 'Exercise'}: ${n}x`;
-      });
-      pool.push({ id, title: name, text: textLines.join('\n') });
-      saveTemplatePool(pool);
+    const baseName = swm.name.trim();
+    if (!baseName || lifts.length === 0) return;
+
+    const existing   = getWorkoutPresets();
+    const currentEx  = JSON.stringify(lifts.map(({ _idx: _, ...e }) => e));
+
+    // Block if the exact same exercises are already saved (content duplicate)
+    if (existing.some(p => isSameWorkout(p.exercises, currentEx))) {
+      setDupWarning(true);
+      return;
     }
+    setDupWarning(false);
+
+    // If the name is taken (but exercises differ), auto-version: "Name v2", "Name v3", …
+    let finalName = baseName;
+    if (existing.some(p => p.name.toLowerCase() === baseName.toLowerCase())) {
+      let v = 2;
+      while (existing.some(p => p.name.toLowerCase() === `${baseName} v${v}`.toLowerCase())) {
+        v++;
+      }
+      finalName = `${baseName} v${v}`;
+    }
+
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const preset: WorkoutPreset = {
-      id, name,
-      exercises:   JSON.stringify(lifts.map(({ _idx: _, ...e }) => e)),
+      id, name: finalName,
+      exercises:   currentEx,
       isRecurring: swm.isRecurring,
       daysOfWeek:  swm.isRecurring ? [...swm.days] : [],
       everyNWeeks: swm.freq,
       createdAt:   activeDayFocus,
     };
-    saveWorkoutPresets([...getWorkoutPresets(), preset]);
+    saveWorkoutPresets([...existing, preset]);
     setSaveModal(false);
-  }, [swm, lifts, activeDayFocus, getTemplatePool, saveTemplatePool, getWorkoutPresets, saveWorkoutPresets]);
+  }, [swm, lifts, activeDayFocus, getWorkoutPresets, saveWorkoutPresets]);
 
   const handleNotesChange = useCallback((val: string) => {
     setNotesRaw(val); persistExercises(exercises, val);
@@ -787,13 +1002,15 @@ export default function WorkoutLogger() {
     <>
       <PresetModal
         open={templateModal} presets={presets}
+        currentCount={exercises.length}
         onLoad={loadPreset} onClose={() => setTemplateModal(false)}
       />
       <SaveWorkoutModal
         open={saveModal} swm={swm} lifts={lifts}
+        dupWarning={dupWarning}
         onClose={() => setSaveModal(false)}
         onSave={confirmSave}
-        onChangeName={v => setSwm(s => ({ ...s, name: v }))}
+        onChangeName={v => { setDupWarning(false); setSwm(s => ({ ...s, name: v })); }}
         onTogglePreset={() => setSwm(s => ({ ...s, isPreset: !s.isPreset }))}
         onToggleRecurring={() => setSwm(s => ({ ...s, isRecurring: !s.isRecurring }))}
         onToggleDay={dayNum =>
@@ -849,17 +1066,44 @@ export default function WorkoutLogger() {
             <Layers size={14} /> Load Preset
           </button>
 
-          {/* ── LIFTING ── */}
-          <div className="mb-7">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-[var(--line)]">
-              <span className="font-mono text-[11px] font-extrabold uppercase tracking-[2.5px] text-[var(--accent)] flex items-center gap-2">
-                <span className="block w-1 h-3 bg-[var(--accent)]" />
-                LIFTING
-              </span>
-              <span className="font-mono text-[10px] text-[var(--ink-3)] tabular tracking-[1px]">
-                {lifts.length} EX
-              </span>
-            </div>
+          {/* ── SECTION TABS ── */}
+          <div className="flex mb-5 border-b border-[var(--line)]">
+            {(['lifting', 'cardio'] as const).map(sec => {
+              const count = sec === 'lifting' ? lifts.length : cardios.length;
+              const active = activeSection === sec;
+              return (
+                <button
+                  key={sec}
+                  onClick={() => setActiveSection(sec)}
+                  className={[
+                    'flex-1 flex items-center justify-center gap-2 py-2.5 font-mono text-[10px] font-bold tracking-[2px] uppercase transition-colors relative',
+                    active ? 'text-[var(--accent)]' : 'text-[var(--ink-3)] hover:text-[var(--ink-1)]',
+                  ].join(' ')}
+                >
+                  {sec}
+                  {count > 0 && (
+                    <span className={[
+                      'font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-sm',
+                      active
+                        ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                        : 'bg-[var(--bg-3)] text-[var(--ink-2)]',
+                    ].join(' ')}>
+                      {count}
+                    </span>
+                  )}
+                  {active && (
+                    <span
+                      className="absolute bottom-0 left-0 right-0 h-[2px] bg-[var(--accent)] rounded-t-sm"
+                      style={{ boxShadow: '0 0 6px var(--accent-40)' }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── LIFTING TAB ── */}
+          {activeSection === 'lifting' && <div className="mb-4">
 
             {/* Pills */}
             <div className="relative mb-4">
@@ -1018,26 +1262,29 @@ export default function WorkoutLogger() {
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col gap-2">
-                <AnimatePresence initial={false}>
+              <>
+                <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[1px] uppercase mb-1 md:hidden">
+                  Hold ≡ to reorder · Swipe right to delete
+                </p>
+                <Reorder.Group
+                  as="div"
+                  axis="y"
+                  values={lifts}
+                  onReorder={handleLiftReorder}
+                  className="flex flex-col gap-2"
+                >
                   {lifts.map((entry, numIdx) => (
-                    <motion.div
-                      key={entry._idx}
-                      initial={{ opacity: 0, y: 10, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, x: -24, scale: 0.95 }}
-                      transition={{ duration: 0.22, ease: 'easeOut' }}
-                    >
-                      <ExerciseItem
-                        entry={entry} numIdx={numIdx}
-                        onDelete={deleteEntry}
-                        onUpdateName={updateExerciseName}
-                        onUpdateSets={updateExerciseSets}
-                      />
-                    </motion.div>
+                    <ReorderableExerciseItem
+                      key={entry._key}
+                      entry={entry}
+                      numIdx={numIdx}
+                      onDelete={deleteEntry}
+                      onUpdateName={updateExerciseName}
+                      onUpdateSets={updateExerciseSets}
+                    />
                   ))}
-                </AnimatePresence>
-              </div>
+                </Reorder.Group>
+              </>
             )}
 
             {lifts.length > 0 && (
@@ -1048,32 +1295,27 @@ export default function WorkoutLogger() {
                 <Save size={13} /> Save as Preset
               </button>
             )}
-          </div>
+          </div>}
 
-          {/* ── CARDIO ── */}
-          <div className="mb-7">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-[var(--line)]">
-              <span className="font-mono text-[11px] font-extrabold uppercase tracking-[2.5px] text-[var(--accent)] flex items-center gap-2">
-                <span className="block w-1 h-3 bg-[var(--accent)]" />
-                CARDIO
-              </span>
-              <div className="flex gap-1.5">
-                {(['swim','run','bike'] as CardioKind[]).map(kind => (
-                  <button
-                    key={kind}
-                    onClick={() => addCardioEntry(kind)}
-                    className="font-mono text-[10px] font-bold tracking-[1.5px] uppercase px-3 py-1.5 rounded-sm border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all"
-                  >
-                    + {kind}
-                  </button>
-                ))}
-              </div>
+          {/* ── CARDIO TAB ── */}
+          {activeSection === 'cardio' && <div className="mb-4">
+            {/* Add cardio buttons */}
+            <div className="flex gap-2 mb-4">
+              {(['swim','run','bike'] as CardioKind[]).map(kind => (
+                <button
+                  key={kind}
+                  onClick={() => addCardioEntry(kind)}
+                  className="flex-1 font-mono text-[10px] font-bold tracking-[1.5px] uppercase py-2.5 rounded border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all"
+                >
+                  + {kind}
+                </button>
+              ))}
             </div>
 
             {cardios.length === 0 ? (
-              <div className="text-center py-6 border border-dashed border-[var(--line-2)] rounded">
+              <div className="text-center py-8 border border-dashed border-[var(--line-2)] rounded">
                 <p className="font-mono text-[10px] tracking-[1px] text-[var(--ink-3)] uppercase">
-                  No cardio · Tap Swim, Run or Bike above
+                  Tap Swim, Run or Bike above to log cardio
                 </p>
               </div>
             ) : (
@@ -1097,7 +1339,7 @@ export default function WorkoutLogger() {
                 </AnimatePresence>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Notes */}
           <div className="mb-6">
