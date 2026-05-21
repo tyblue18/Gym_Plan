@@ -80,7 +80,25 @@ interface AthletePlan {
   weeksTarget: number;
 }
 
-const PLAN_KEY = 'queAthletePlan';
+const PLAN_KEY  = 'queAthletePlan';
+const PHOTO_KEY = 'queProfilePhoto';
+
+function compressPhoto(file: File): Promise<string> {
+  return new Promise(resolve => {
+    const img = document.createElement('img');
+    img.onload = () => {
+      const SIZE = 200;
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE; canvas.height = SIZE;
+      const ctx = canvas.getContext('2d')!;
+      const side = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, SIZE, SIZE);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
 function loadPlan(): AthletePlan | null {
   try { const r = localStorage.getItem(PLAN_KEY); return r ? JSON.parse(r) : null; }
   catch { return null; }
@@ -184,6 +202,29 @@ function ProfilePanel({ profile, onChange, onOpenPlan }: {
   onChange: (updates: Partial<UserProfile>) => void;
   onOpenPlan: () => void;
 }) {
+  const [localPhoto, setLocalPhoto] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setLocalPhoto(localStorage.getItem(PHOTO_KEY));
+  }, []);
+
+  const handlePhotoSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const compressed = await compressPhoto(file);
+    localStorage.setItem(PHOTO_KEY, compressed);
+    setLocalPhoto(compressed);
+    window.dispatchEvent(new Event('queProfilePhotoChanged'));
+    e.target.value = '';
+  }, []);
+
+  const handleRemovePhoto = useCallback(() => {
+    localStorage.removeItem(PHOTO_KEY);
+    setLocalPhoto(null);
+    window.dispatchEvent(new Event('queProfilePhotoChanged'));
+  }, []);
+
   const activityOptions = [
     { value: '1.20', label: 'Desk job, no gym (×1.20)' },
     { value: '1.30', label: 'Desk job + light activity (×1.30)' },
@@ -196,7 +237,46 @@ function ProfilePanel({ profile, onChange, onOpenPlan }: {
   return (
     <div className="que-card que-card-accent mb-4">
       <div className="p-5">
-        <h2 className="que-section-label mb-5"><span className="dot" />ATHLETE PROFILE</h2>
+        <h2 className="que-section-label mb-4"><span className="dot" />ATHLETE PROFILE</h2>
+
+        {/* Profile photo */}
+        <div className="flex items-center gap-4 mb-4 pb-4 border-b border-[var(--line)]">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-16 h-16 rounded border border-[var(--line-2)] bg-[var(--bg-2)] flex items-center justify-center overflow-hidden flex-shrink-0 hover:border-[var(--accent)] transition-all"
+            title="Upload profile photo"
+          >
+            {localPhoto ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={localPhoto} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              <User size={26} className="text-[var(--ink-3)]" />
+            )}
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="font-mono text-[10px] font-bold tracking-[1.5px] text-[var(--ink-1)] uppercase mb-2">Profile Photo</p>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="font-mono text-[10px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)] rounded-sm px-3 py-1.5 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all"
+              >
+                {localPhoto ? 'Change' : 'Upload'}
+              </button>
+              {localPhoto && (
+                <button
+                  onClick={handleRemovePhoto}
+                  className="font-mono text-[10px] font-bold tracking-[1px] uppercase text-[var(--danger)] border border-[var(--danger)]/40 rounded-sm px-3 py-1.5 hover:border-[var(--danger)] transition-all"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1.5 tracking-[0.5px]">
+              Appears in the header · stored on device
+            </p>
+          </div>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+        </div>
 
         <div className="mb-4 font-mono text-[11px] text-[var(--ink-1)] bg-[var(--bg-2)] border-l-2 border-[var(--accent)] rounded-sm px-4 py-3 leading-relaxed tracking-[0.5px]">
           Set <strong className="text-[var(--accent)]">Activity Level</strong> to match your typical week (lifting only — cardio is tracked separately).{' '}
@@ -1049,12 +1129,14 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
           onClick={e => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="w-full md:max-w-[640px] max-h-[90dvh] overflow-y-auto rounded-t-lg md:rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] p-4 md:p-6"
+            className="w-full md:max-w-[640px] max-h-[90dvh] flex flex-col rounded-t-lg md:rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)]"
             initial={{ opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 48 }}
             transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
             style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
           >
-            <div className="flex justify-between items-center mb-5">
+            {/* ── Scrollable content ── */}
+            <div className="overflow-y-auto flex-1 p-4 md:p-6">
+            <div className="flex justify-between items-center mb-4">
               <h3 className="font-display text-[22px] md:text-[26px] tracking-[2px] uppercase text-[var(--ink-0)]">
                 Create Plan
               </h3>
@@ -1065,60 +1147,56 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
 
             {/* Step 1 — Plan Type */}
             <p className="que-label mb-2">Plan Type</p>
-            <div className="grid grid-cols-2 gap-2 mb-5">
+            <div className="grid grid-cols-2 gap-2 mb-4">
               {(['cut', 'bulk'] as const).map(type => (
                 <button key={type} onClick={() => setPlanType(type)}
                   className={[
-                    'flex flex-col gap-1.5 rounded border p-3 text-left transition-all',
+                    'flex flex-col gap-1 rounded border p-3 text-left transition-all',
                     planType === type
                       ? type === 'cut' ? 'border-[var(--accent)] bg-[var(--accent-12)]' : 'border-[var(--positive)] bg-[var(--positive-12)]'
                       : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--line-3)]',
                   ].join(' ')}
                 >
                   <span className={[
-                    'font-display text-[18px] md:text-[20px] uppercase tracking-[1px] leading-none',
+                    'font-display text-[18px] uppercase tracking-[1px] leading-none',
                     planType === type ? (type === 'cut' ? 'text-[var(--accent)]' : 'text-[var(--positive)]') : 'text-[var(--ink-0)]',
                   ].join(' ')}>
                     {type === 'cut' ? '↓ Cut' : '↑ Bulk'}
                   </span>
                   <span className="font-mono text-[9px] text-[var(--ink-2)] tracking-[0.5px]">
-                    {type === 'cut' ? 'Calorie deficit · lose body fat' : 'Calorie surplus · build muscle'}
+                    {type === 'cut' ? 'Deficit · lose fat' : 'Surplus · build muscle'}
                   </span>
                 </button>
               ))}
             </div>
 
-            {/* Step 2 — Intensity */}
+            {/* Step 2 — Intensity (3-col grid, compact) */}
             {planType && (
-              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mb-5">
+              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
                 <p className="que-label mb-2">Intensity</p>
-                <div className="flex flex-col gap-1.5">
+                <div className="grid grid-cols-3 gap-2">
                   {(['slight', 'moderate', 'aggressive'] as PlanIntensity[]).map(lvl => {
-                    const label = INTENSITY_LABELS[planType][lvl];
-                    const kcal  = INTENSITY_KCAL[lvl];
-                    const active = intensity === lvl;
+                    const label     = INTENSITY_LABELS[planType][lvl];
+                    const kcal      = INTENSITY_KCAL[lvl];
+                    const active    = intensity === lvl;
                     const accentCol = planType === 'cut' ? 'var(--accent)' : 'var(--positive)';
                     return (
                       <button key={lvl} onClick={() => setIntensity(lvl)}
                         className={[
-                          'flex items-center justify-between rounded border px-4 py-3 transition-all text-left',
+                          'flex flex-col items-center gap-1 rounded border py-3 px-2 transition-all text-center',
                           active
                             ? planType === 'cut' ? 'border-[var(--accent)] bg-[var(--accent-12)]' : 'border-[var(--positive)] bg-[var(--positive-12)]'
                             : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--line-3)]',
                         ].join(' ')}
                       >
-                        <div>
-                          <p className="font-display text-[15px] md:text-[16px] uppercase tracking-[1px] leading-none mb-1"
-                            style={{ color: active ? accentCol : 'var(--ink-0)' }}>
-                            {label}
-                          </p>
-                          <p className="font-mono text-[9px] text-[var(--ink-2)] tracking-[0.5px]">
-                            {fmt(kcal)} kcal {planType === 'cut' ? 'deficit' : 'surplus'} · ~{(kcal * 7 / 3500).toFixed(1)} lbs/wk
-                          </p>
-                        </div>
-                        <span className="font-display text-[20px] ml-4 flex-shrink-0"
-                          style={{ color: active ? accentCol : 'var(--ink-3)' }}>
+                        <span className="font-display text-[22px] leading-none"
+                          style={{ color: active ? accentCol : 'var(--ink-1)' }}>
                           {fmt(kcal)}
+                        </span>
+                        <span className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px] uppercase">kcal</span>
+                        <span className="font-mono text-[8px] tracking-[0.5px] mt-0.5"
+                          style={{ color: active ? accentCol : 'var(--ink-2)' }}>
+                          {label}
                         </span>
                       </button>
                     );
@@ -1128,7 +1206,7 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
             )}
 
             {/* Step 3 — Starting Weight */}
-            <div className="mb-4">
+            <div className="mb-3">
               <label className="que-label">Starting Weight / lbs</label>
               <input type="number" inputMode="decimal" className="que-input"
                 value={startWeight} onChange={e => setStartWeight(e.target.value)} placeholder="lbs" />
@@ -1136,7 +1214,7 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
 
             {/* Goal toggle */}
             <p className="que-label mb-2">Goal</p>
-            <div className="flex bg-[var(--bg-2)] border border-[var(--line)] rounded-sm p-1 gap-0.5 mb-3">
+            <div className="flex bg-[var(--bg-2)] border border-[var(--line)] rounded-sm p-1 gap-0.5 mb-2">
               {(['weight', 'weeks'] as const).map(mode => (
                 <button key={mode} onClick={() => setGoalMode(mode)}
                   className={[
@@ -1196,7 +1274,7 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
             {projData ? (
               <div className="mb-4">
                 <p className="que-label mb-2">Projected Progression</p>
-                <canvas ref={canvasRef} className="block w-full h-[180px] md:h-[200px] rounded" />
+                <canvas ref={canvasRef} className="block w-full h-[150px] md:h-[180px] rounded" />
                 {actualData.length > 0 && (
                   <div className="flex gap-3 mt-2 justify-center flex-wrap">
                     {[['var(--positive)', 'Ahead'], ['var(--danger)', 'Behind'], ['var(--accent)', 'Projected']].map(([col, label]) => (
@@ -1245,9 +1323,14 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
               );
             })()}
 
-            <button onClick={handleSave} disabled={!isValid} className="que-btn-primary w-full">
-              {loadPlan() ? 'Update Plan' : 'Save Plan'}
-            </button>
+            </div>{/* end scrollable content */}
+
+            {/* ── Sticky Save button — always visible ── */}
+            <div className="flex-shrink-0 p-4 md:px-6 md:pb-6 border-t border-[var(--line)] bg-[var(--bg-1)]">
+              <button onClick={handleSave} disabled={!isValid} className="que-btn-primary w-full py-4">
+                {loadPlan() ? 'Update Plan' : 'Save Plan'}
+              </button>
+            </div>
           </motion.div>
         </motion.div>
       )}

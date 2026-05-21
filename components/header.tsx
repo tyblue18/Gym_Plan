@@ -12,8 +12,11 @@
  * All visual rules live in .auth-* classes in app/globals.css.
  */
 
+import { useState, useEffect } from 'react';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import Image from 'next/image';
+
+const PHOTO_KEY = 'queProfilePhoto';
 
 function GitHubMark({ size = 15 }: { size?: number }) {
   return (
@@ -62,17 +65,29 @@ interface UserPillProps {
 
 function UserPill({ image, name, email }: UserPillProps) {
   const displayName = name ?? email ?? 'Athlete';
+  const [localPhoto, setLocalPhoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalPhoto(localStorage.getItem(PHOTO_KEY));
+    const refresh = () => setLocalPhoto(localStorage.getItem(PHOTO_KEY));
+    window.addEventListener('queProfilePhotoChanged', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('queProfilePhotoChanged', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
+
+  const avatarSrc = localPhoto ?? image;
 
   return (
     <div className="auth-user-pill" role="group" aria-label="User account controls">
-      {image && (
-        <Image
-          src={image}
+      {avatarSrc && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={avatarSrc}
           alt={`${displayName} profile picture`}
-          width={28}
-          height={28}
           className="auth-avatar"
-          priority
         />
       )}
 
