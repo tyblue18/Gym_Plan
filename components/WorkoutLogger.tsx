@@ -18,9 +18,9 @@ import {
   Check, ChevronDown, Dumbbell, Edit3, Flame, Layers, Plus, Save, Trash2, X,
 } from 'lucide-react';
 import {
-  useApp, PRESETS, DEFAULT_TEMPLATES,
+  useApp, PRESETS,
   type ExerciseEntry, type SetData,
-  type WorkoutTemplate, type WorkoutPreset,
+  type WorkoutPreset,
 } from '@/lib/AppContext';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -297,52 +297,83 @@ function CardioEntryCard({
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — TemplateModal
 // ─────────────────────────────────────────────────────────────────────────────
-function TemplateModal({
-  open, templates, onLoad, onClose,
+function PresetModal({
+  open, presets, onLoad, onClose,
 }: {
-  open: boolean; templates: WorkoutTemplate[];
-  onLoad: (text: string) => void; onClose: () => void;
+  open: boolean; presets: WorkoutPreset[];
+  onLoad: (preset: WorkoutPreset) => void; onClose: () => void;
 }) {
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-start md:items-center justify-center backdrop-blur-sm pt-[60px] md:pt-0 px-3 md:px-0"
           style={{ background: 'rgba(7,8,10,0.85)' }}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={e => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="w-full md:max-w-[600px] max-h-[88vh] overflow-y-auto rounded-t-lg md:rounded border border-[var(--line-2)] bg-[var(--bg-1)] p-6 shadow-2xl"
-            initial={{ opacity: 0, y: 64, scale: 0.97 }}
+            className="w-full md:max-w-[600px] max-h-[calc(100dvh-68px)] md:max-h-[88vh] overflow-y-auto rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] p-4 md:p-6"
+            initial={{ opacity: 0, y: 32, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 48, scale: 0.97 }}
-            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            exit={{ opacity: 0, y: 24, scale: 0.97 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
           >
-            <div className="w-10 h-1 bg-[var(--line-2)] rounded-full mx-auto mb-5 md:hidden" />
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="font-display text-[28px] tracking-[2px] uppercase text-[var(--ink-0)]">Load Template</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-display text-[22px] md:text-[28px] tracking-[2px] uppercase text-[var(--ink-0)]">Load Preset</h3>
               <button onClick={onClose} className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors p-1">
-                <X size={22} />
+                <X size={20} />
               </button>
             </div>
 
-            <div className="flex flex-col gap-2">
-              {templates.map(tmpl => (
-                <button
-                  key={tmpl.id}
-                  onClick={() => { onLoad(tmpl.text); onClose(); }}
-                  className="text-left rounded border border-[var(--line)] bg-[var(--bg-2)] px-4 py-3.5 hover:border-[var(--accent)] hover:bg-[var(--bg-3)] transition-all group"
-                >
-                  <p className="font-display text-[16px] tracking-[1px] uppercase text-[var(--ink-0)] mb-1 group-hover:text-[var(--accent)] transition-colors">{tmpl.title}</p>
-                  <p className="font-mono text-[10px] text-[var(--ink-2)] leading-relaxed line-clamp-3 whitespace-pre-line tracking-[0.5px]">{tmpl.text}</p>
-                </button>
-              ))}
-            </div>
+            {presets.length === 0 ? (
+              <div className="text-center py-8 border border-dashed border-[var(--line-2)] rounded">
+                <p className="font-mono text-[11px] tracking-[1px] text-[var(--ink-3)] uppercase">No presets saved yet</p>
+                <p className="font-mono text-[10px] text-[var(--ink-3)] mt-1.5 tracking-[0.5px]">Log a workout and hit "Save as Preset"</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {presets.map(preset => {
+                  const entries = parseEx(preset.exercises);
+                  const lifts   = entries.filter(e => e.k === 'lift' || e.k === 'text');
+                  const cardios = entries.filter(e => ['run','bike','swim'].includes(e.k));
+                  const names   = lifts.slice(0, 3).map(e => e.n ?? e.k);
+                  const more    = lifts.length - names.length;
+                  return (
+                    <button
+                      key={preset.id}
+                      onClick={() => { onLoad(preset); onClose(); }}
+                      className="text-left rounded border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2.5 md:px-4 md:py-3 hover:border-[var(--accent)] hover:bg-[var(--bg-3)] transition-all group"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="font-display text-[14px] md:text-[16px] tracking-[1px] uppercase text-[var(--ink-0)] group-hover:text-[var(--accent)] transition-colors truncate">
+                          {preset.name}
+                        </p>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {lifts.length > 0 && (
+                            <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent-ink)] bg-[var(--accent)] px-1.5 py-0.5 rounded-sm uppercase">
+                              {lifts.length} EX
+                            </span>
+                          )}
+                          {cardios.length > 0 && (
+                            <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--ink-0)] bg-[var(--bg-3)] border border-[var(--line-2)] px-1.5 py-0.5 rounded-sm uppercase">
+                              {cardios.length} CARDIO
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <p className="font-mono text-[9px] md:text-[10px] text-[var(--ink-2)] tracking-[0.5px] truncate">
+                        {names.join(' · ')}{more > 0 ? ` · +${more} more` : ''}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-            <button onClick={onClose} className="que-btn-ghost mt-4 w-full">CANCEL</button>
+            <button onClick={onClose} className="que-btn-ghost mt-3 w-full">CANCEL</button>
           </motion.div>
         </motion.div>
       )}
@@ -380,29 +411,28 @@ function SaveWorkoutModal({
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-start md:items-center justify-center backdrop-blur-sm pt-[60px] md:pt-0 px-3 md:px-0"
           style={{ background: 'rgba(7,8,10,0.85)' }}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={e => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="w-full md:max-w-[600px] max-h-[88vh] overflow-y-auto rounded-t-lg md:rounded border border-[var(--line-2)] bg-[var(--bg-1)] p-6 shadow-2xl"
-            initial={{ opacity: 0, y: 64, scale: 0.97 }}
+            className="w-full md:max-w-[600px] max-h-[calc(100dvh-68px)] md:max-h-[88vh] overflow-y-auto rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] p-4 md:p-6"
+            initial={{ opacity: 0, y: 32, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 48, scale: 0.97 }}
-            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            exit={{ opacity: 0, y: 24, scale: 0.97 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
           >
-            <div className="w-10 h-1 bg-[var(--line-2)] rounded-full mx-auto mb-5 md:hidden" />
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="font-display text-[28px] tracking-[2px] uppercase text-[var(--ink-0)]">Save Workout</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-display text-[22px] md:text-[28px] tracking-[2px] uppercase text-[var(--ink-0)]">Save Workout</h3>
               <button onClick={onClose} className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors p-1">
-                <X size={22} />
+                <X size={20} />
               </button>
             </div>
 
-            <div className="mb-5">
+            <div className="mb-4">
               <label className="que-label">Workout Name</label>
               <input
                 autoFocus type="text" className="que-input"
@@ -412,49 +442,49 @@ function SaveWorkoutModal({
             </div>
 
             <div className="flex flex-col divide-y divide-[var(--line)]">
-              <button onClick={onTogglePreset} className="flex items-center gap-4 py-4 hover:opacity-90 transition-opacity text-left w-full">
+              <button onClick={onTogglePreset} className="flex items-center gap-3 py-3 hover:opacity-90 transition-opacity text-left w-full">
                 <div className="flex-1">
-                  <p className="text-[14px] font-semibold text-[var(--ink-0)]">Save to Presets</p>
-                  <p className="font-mono text-[10px] text-[var(--ink-2)] mt-1 tracking-[0.5px]">load this workout from the template picker</p>
+                  <p className="text-[13px] md:text-[14px] font-semibold text-[var(--ink-0)]">Save to Presets</p>
+                  <p className="font-mono text-[10px] text-[var(--ink-2)] mt-0.5 tracking-[0.5px]">load this workout from the preset picker</p>
                 </div>
                 <Toggle on={swm.isPreset} />
               </button>
 
-              <button onClick={onToggleRecurring} className="flex items-center gap-4 py-4 hover:opacity-90 transition-opacity text-left w-full">
+              <button onClick={onToggleRecurring} className="flex items-center gap-3 py-3 hover:opacity-90 transition-opacity text-left w-full">
                 <div className="flex-1">
-                  <p className="text-[14px] font-semibold text-[var(--ink-0)]">Recurring Schedule</p>
-                  <p className="font-mono text-[10px] text-[var(--ink-2)] mt-1 tracking-[0.5px]">auto-suggest on selected days</p>
+                  <p className="text-[13px] md:text-[14px] font-semibold text-[var(--ink-0)]">Recurring Schedule</p>
+                  <p className="font-mono text-[10px] text-[var(--ink-2)] mt-0.5 tracking-[0.5px]">auto-suggest on selected days</p>
                 </div>
                 <Toggle on={swm.isRecurring} />
               </button>
             </div>
 
             {swm.isRecurring && (
-              <div className="mt-4 p-4 bg-[var(--bg-2)] rounded border border-[var(--line)]">
-                <p className="que-label mb-2.5">Days of Week</p>
-                <div className="flex gap-1.5 flex-wrap mb-4">
+              <div className="mt-3 p-3 bg-[var(--bg-2)] rounded border border-[var(--line)]">
+                <p className="que-label mb-2">Days of Week</p>
+                <div className="grid grid-cols-7 gap-1 mb-3">
                   {DAY_LABELS.map((d, i) => (
                     <button
                       key={d} onClick={() => onToggleDay(i)}
                       className={[
-                        'flex-1 min-w-[40px] py-2 rounded-sm font-mono text-[10px] font-bold tracking-[1px] border transition-all text-center',
+                        'py-2 rounded-sm font-mono text-[9px] md:text-[10px] font-bold tracking-[0.5px] border transition-all text-center',
                         swm.days.includes(i)
                           ? 'bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-ink)]'
                           : 'bg-[var(--bg-1)] border-[var(--line-2)] text-[var(--ink-2)] hover:text-[var(--ink-0)]',
                       ].join(' ')}
                     >
-                      {d}
+                      {d.slice(0, 2)}
                     </button>
                   ))}
                 </div>
 
-                <p className="que-label mb-2.5">Frequency</p>
+                <p className="que-label mb-2">Frequency</p>
                 <div className="flex gap-2">
                   {([1, 2] as const).map(n => (
                     <button
                       key={n} onClick={() => onSetFreq(n)}
                       className={[
-                        'flex-1 py-2 rounded-sm font-mono text-[11px] font-bold tracking-[1.5px] border transition-all uppercase',
+                        'flex-1 py-2 rounded-sm font-mono text-[10px] md:text-[11px] font-bold tracking-[1px] border transition-all uppercase',
                         swm.freq === n
                           ? 'bg-[var(--accent)] border-[var(--accent)] text-[var(--accent-ink)]'
                           : 'bg-[var(--bg-1)] border-[var(--line-2)] text-[var(--ink-2)] hover:text-[var(--ink-0)]',
@@ -470,7 +500,7 @@ function SaveWorkoutModal({
             <button
               onClick={onSave}
               disabled={!swm.name.trim() || lifts.length === 0}
-              className="que-btn-primary mt-5 w-full"
+              className="que-btn-primary mt-4 w-full"
             >
               SAVE WORKOUT
             </button>
@@ -693,12 +723,12 @@ export default function WorkoutLogger() {
     setTimeout(() => setLoggedFlash(false), 2200);
   }, [exercises, notes, persistExercises]);
 
-  const loadTemplate = useCallback((text: string) => {
-    const newEntries = text.split('\n').filter(l => l.trim()).map(l => ({ k: 'text' as const, n: l }));
+  const loadPreset = useCallback((preset: WorkoutPreset) => {
+    const newEntries = parseEx(preset.exercises);
     setExercisesRaw([...exercises, ...newEntries]);
   }, [exercises]);
 
-  const templates = useMemo(() => getTemplatePool(), [getTemplatePool]);
+  const presets = useMemo(() => getWorkoutPresets(), [getWorkoutPresets]);
 
   const loadRecurringWorkout = useCallback((preset: WorkoutPreset) => {
     const newEntries = parseEx(preset.exercises);
@@ -755,9 +785,9 @@ export default function WorkoutLogger() {
 
   return (
     <>
-      <TemplateModal
-        open={templateModal} templates={templates}
-        onLoad={loadTemplate} onClose={() => setTemplateModal(false)}
+      <PresetModal
+        open={templateModal} presets={presets}
+        onLoad={loadPreset} onClose={() => setTemplateModal(false)}
       />
       <SaveWorkoutModal
         open={saveModal} swm={swm} lifts={lifts}
@@ -816,7 +846,7 @@ export default function WorkoutLogger() {
             onClick={() => setTemplateModal(true)}
             className="w-full flex items-center justify-center gap-2.5 mb-5 px-4 py-3 rounded border border-dashed border-[var(--line-2)] bg-[var(--bg-2)] font-mono text-[11px] font-bold tracking-[2px] uppercase text-[var(--ink-1)] hover:bg-[var(--bg-3)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all"
           >
-            <Layers size={14} /> Load Template
+            <Layers size={14} /> Load Preset
           </button>
 
           {/* ── LIFTING ── */}
