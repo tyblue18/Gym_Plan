@@ -1621,27 +1621,64 @@
             display: inline-flex;
             align-items: center;
             gap: 10px;
-            background: var(--bg-surface);
-            border: 1px solid var(--border-default);
             color: var(--text-secondary);
-            padding: 10px 20px;
-            border-radius: var(--radius-sm);
             font-weight: 700;
             font-size: 13px;
-            margin-bottom: 20px;
             letter-spacing: 0.3px;
             font-family: 'JetBrains Mono', monospace;
         }
-        
+
         .active-date-banner::before {
             content: '';
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: var(--text-tertiary);
+            background: var(--accent-success);
             flex-shrink: 0;
         }
-        
+
+        /* Metrics page header row */
+        .metrics-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .profile-icon-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .profile-icon-btn:hover {
+            border-color: var(--border-strong);
+            color: var(--text-primary);
+            background: var(--bg-surface-hover);
+        }
+        .profile-icon-btn.active {
+            border-color: rgba(255,255,255,0.22);
+            background: rgba(255,255,255,0.07);
+            color: var(--text-primary);
+        }
+
+        /* Profile panel slide-down */
+        .profile-panel {
+            animation: profileSlideIn 0.22s cubic-bezier(0.4,0,0.2,1);
+        }
+        @keyframes profileSlideIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
         @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
         
         .bio-grid {
@@ -3038,12 +3075,20 @@
      PAGE: METRICS
 ══════════════════════════════════════════════════════════════════════ -->
 <div id="pageMetabolics" class="page">
-    <div class="active-date-banner" id="metabolicActiveDateText">Targeting: —</div>
-    <div class="card">
+    <!-- ── Metrics header ── -->
+    <div class="metrics-header">
+        <div class="active-date-banner" id="metabolicActiveDateText">Viewing metrics for today</div>
+        <button class="profile-icon-btn" id="profileIconBtn" onclick="toggleProfilePanel()" title="Your Profile">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        </button>
+    </div>
+
+    <!-- ── Profile panel (hidden by default) ── -->
+    <div class="card profile-panel" id="profilePanel" style="display:none">
         <h2>Your Profile <span id="profileSavedBadge" class="profile-saved-badge">saved</span></h2>
         <div style="display:flex;align-items:flex-start;gap:10px;font-size:12px;color:var(--text-secondary);margin:-10px 0 20px;line-height:1.6;background:var(--bg-surface);border-radius:var(--radius-sm);padding:14px 16px;border-left:3px solid var(--border-strong);">
             <span style="flex-shrink:0;color:var(--text-tertiary)">i</span>
-            <span>Set your <strong style="color:var(--text-primary)">Activity Level</strong> to match your typical week (gym lifting only — cardio is tracked separately below). Your food budget = Maintenance − Deficit + 60% of any cardio you log.</span>
+            <span>Set your <strong style="color:var(--text-primary)">Activity Level</strong> to match your typical week (gym lifting only — cardio is tracked separately). Your food budget = Maintenance − Deficit + 60% of any cardio you log.</span>
         </div>
         <div class="bio-grid">
             <div class="input-group"><label>Weight (lbs)</label><input type="number" id="bioWeight" value="180" oninput="runGlobalRecalculation()"></div>
@@ -3066,101 +3111,99 @@
             </div>
         </div>
     </div>
-    <div class="met-split">
-        <div class="card">
-            <h2>Daily Cardio Log</h2>
-            <div class="input-group">
-                <label>Step Count <span style="color:var(--text-muted);font-weight:500;text-transform:none;letter-spacing:0;font-size:10px;">— reference only, not added to budget</span></label>
-                <input type="number" id="metSteps" value="0" oninput="syncMetToHidden();calculateActiveMetrics()">
-                <div class="pace-chip" id="outStepCalc">Distance: 0.00 mi</div>
+
+    <!-- ── 1. Calorie Budget ── -->
+    <div class="card met-card-tinted">
+        <h2>Calorie Budget</h2>
+        <div class="budget-hero">
+            <div class="budget-hero-eyebrow">Daily Food Budget</div>
+            <div class="budget-hero-num" id="outNetBudget">— kcal</div>
+            <div class="budget-hero-sub" id="budgetHeroSub">Maintenance − Deficit + 60% Eat-Back</div>
+        </div>
+        <div class="budget-math">
+            <div class="bm-row">
+                <span class="bm-label">BMR (Mifflin-St Jeor)</span>
+                <span class="bm-val" id="outCalculatedBMR">— kcal</span>
             </div>
-            <div class="cardio-section">
-                <h3>Running</h3>
-                <div class="two-col">
-                    <div class="input-group"><label>Distance (mi)</label><input type="number" id="metRunDist" step="0.01" value="0" oninput="syncMetToHidden();calculateActiveMetrics()"></div>
-                    <div class="input-group"><label>Time (min)</label><input type="number" id="metRunTime" step="1" value="0" oninput="syncMetToHidden();calculateActiveMetrics()"></div>
-                </div>
-                <div class="pace-chip" id="outRunPace">Pace: — /mi</div>
+            <div class="bm-row bm-indent">
+                <span class="bm-label">× Activity Multiplier</span>
+                <span class="bm-val" id="outActMult">× 1.55</span>
             </div>
-            <div class="cardio-section">
-                <h3>Cycling</h3>
-                <div class="two-col">
-                    <div class="input-group"><label>Distance (mi)</label><input type="number" id="metBikeDist" step="0.01" value="0" oninput="syncMetToHidden();calculateActiveMetrics()"></div>
-                    <div class="input-group"><label>Time (min)</label><input type="number" id="metBikeTime" step="1" value="0" oninput="syncMetToHidden();calculateActiveMetrics()"></div>
-                </div>
-                <div class="pace-chip" id="outBikeSpeed">Speed: — mph</div>
+            <div class="bm-row bm-emphasized">
+                <span class="bm-label">= Maintenance (TDEE)</span>
+                <span class="bm-val" id="outTDEE">— kcal</span>
             </div>
-            <div class="cardio-section">
-                <h3>Swimming</h3>
-                <div class="input-group">
-                    <label>Duration (min)</label>
-                    <input type="number" id="metSwimTime" step="1" value="0" oninput="syncMetToHidden();calculateActiveMetrics()">
-                </div>
-                <div class="pace-chip" id="outSwimBurn">Burn: — kcal</div>
+            <div class="bm-sep"></div>
+            <div class="bm-row">
+                <span class="bm-label">− Deficit Goal</span>
+                <span class="bm-val bm-red" id="outDeficitLine">−0 kcal</span>
             </div>
-            <div style="margin-top:18px;font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:8px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Changes save automatically
+            <div class="bm-row bm-indent">
+                <span class="bm-label">Tracked cardio burn (run + bike + swim)</span>
+                <span class="bm-val" id="outTotalBurnLine" style="color:var(--accent-warning)">— kcal</span>
+            </div>
+            <div class="bm-row">
+                <span class="bm-label">+ 60% Eat-Back (cardio only)</span>
+                <span class="bm-val bm-green" id="outEatBack">+0 kcal</span>
             </div>
         </div>
-        <div class="card met-card-tinted">
-            <h2>Calorie Budget</h2>
-            <!-- Hero budget number -->
-            <div class="budget-hero">
-                <div class="budget-hero-eyebrow">Daily Food Budget</div>
-                <div class="budget-hero-num" id="outNetBudget">— kcal</div>
-                <div class="budget-hero-sub" id="budgetHeroSub">Maintenance − Deficit + 60% Eat-Back</div>
+        <div class="stat-tiles" style="margin-top:18px;">
+            <div class="stat-tile t-amber">
+                <div class="stat-tile-lbl">🏃 Running</div>
+                <div class="stat-tile-val" id="outRunBurnTile">— kcal</div>
             </div>
-            <!-- Step-by-step math -->
-            <div class="budget-math">
-                <div class="bm-row">
-                    <span class="bm-label">BMR (Mifflin-St Jeor)</span>
-                    <span class="bm-val" id="outCalculatedBMR">— kcal</span>
-                </div>
-                <div class="bm-row bm-indent">
-                    <span class="bm-label">× Activity Multiplier</span>
-                    <span class="bm-val" id="outActMult">× 1.55</span>
-                </div>
-                <div class="bm-row bm-emphasized">
-                    <span class="bm-label">= Maintenance (TDEE)</span>
-                    <span class="bm-val" id="outTDEE">— kcal</span>
-                </div>
-                <div class="bm-sep"></div>
-                <div class="bm-row">
-                    <span class="bm-label">− Deficit Goal</span>
-                    <span class="bm-val bm-red" id="outDeficitLine">−0 kcal</span>
-                </div>
-                <div class="bm-row bm-indent">
-                    <span class="bm-label">Tracked cardio burn (run + bike + swim)</span>
-                    <span class="bm-val" id="outTotalBurnLine" style="color:var(--accent-warning)">— kcal</span>
-                </div>
-                <div class="bm-row">
-                    <span class="bm-label">+ 60% Eat-Back (cardio only)</span>
-                    <span class="bm-val bm-green" id="outEatBack">+0 kcal</span>
-                </div>
+            <div class="stat-tile t-amber">
+                <div class="stat-tile-lbl">🚴 Cycling</div>
+                <div class="stat-tile-val" id="outBikeBurnTile">— kcal</div>
             </div>
-            <!-- Per-activity burn tiles -->
-            <div class="stat-tiles" style="margin-top:18px;">
-                <div class="stat-tile t-amber">
-                    <div class="stat-tile-lbl">🏃 Running</div>
-                    <div class="stat-tile-val" id="outRunBurnTile">— kcal</div>
-                </div>
-                <div class="stat-tile t-amber">
-                    <div class="stat-tile-lbl">🚴 Cycling</div>
-                    <div class="stat-tile-val" id="outBikeBurnTile">— kcal</div>
-                </div>
-                <div class="stat-tile t-amber">
-                    <div class="stat-tile-lbl">🏊 Swimming</div>
-                    <div class="stat-tile-val" id="outSwimBurnTile">— kcal</div>
-                </div>
-                <div class="stat-tile" style="opacity:0.6;" title="Steps are already included in your Maintenance via the Activity Level multiplier. This is for reference only.">
-                    <div class="stat-tile-lbl">Steps (info only)</div>
-                    <div class="stat-tile-val" id="outStepBurn" style="color:var(--text-muted)">— kcal</div>
-                    <div style="font-size:9px;color:var(--text-muted);margin-top:4px;line-height:1.3;">Covered by ×multiplier</div>
-                </div>
+            <div class="stat-tile t-amber">
+                <div class="stat-tile-lbl">🏊 Swimming</div>
+                <div class="stat-tile-val" id="outSwimBurnTile">— kcal</div>
             </div>
-            <!-- Hidden total for JS compatibility -->
-            <span id="outBurn" style="display:none">0</span>
+            <div class="stat-tile" style="opacity:0.6;" title="Steps are already included in your Maintenance via the Activity Level multiplier.">
+                <div class="stat-tile-lbl">Steps (info only)</div>
+                <div class="stat-tile-val" id="outStepBurn" style="color:var(--text-muted)">— kcal</div>
+                <div style="font-size:9px;color:var(--text-muted);margin-top:4px;line-height:1.3;">Covered by ×multiplier</div>
+            </div>
+        </div>
+        <span id="outBurn" style="display:none">0</span>
+    </div>
+
+    <!-- ── 2. Daily Cardio Log ── -->
+    <div class="card">
+        <h2>Daily Cardio Log</h2>
+        <div class="input-group">
+            <label>Step Count <span style="color:var(--text-muted);font-weight:500;text-transform:none;letter-spacing:0;font-size:10px;">— reference only, not added to budget</span></label>
+            <input type="number" id="metSteps" value="0" oninput="syncMetToHidden();calculateActiveMetrics()">
+            <div class="pace-chip" id="outStepCalc">Distance: 0.00 mi</div>
+        </div>
+        <div class="cardio-section">
+            <h3>Running</h3>
+            <div class="two-col">
+                <div class="input-group"><label>Distance (mi)</label><input type="number" id="metRunDist" step="0.01" value="0" oninput="syncMetToHidden();calculateActiveMetrics()"></div>
+                <div class="input-group"><label>Time (min)</label><input type="number" id="metRunTime" step="1" value="0" oninput="syncMetToHidden();calculateActiveMetrics()"></div>
+            </div>
+            <div class="pace-chip" id="outRunPace">Pace: — /mi</div>
+        </div>
+        <div class="cardio-section">
+            <h3>Cycling</h3>
+            <div class="two-col">
+                <div class="input-group"><label>Distance (mi)</label><input type="number" id="metBikeDist" step="0.01" value="0" oninput="syncMetToHidden();calculateActiveMetrics()"></div>
+                <div class="input-group"><label>Time (min)</label><input type="number" id="metBikeTime" step="1" value="0" oninput="syncMetToHidden();calculateActiveMetrics()"></div>
+            </div>
+            <div class="pace-chip" id="outBikeSpeed">Speed: — mph</div>
+        </div>
+        <div class="cardio-section">
+            <h3>Swimming</h3>
+            <div class="input-group">
+                <label>Duration (min)</label>
+                <input type="number" id="metSwimTime" step="1" value="0" oninput="syncMetToHidden();calculateActiveMetrics()">
+            </div>
+            <div class="pace-chip" id="outSwimBurn">Burn: — kcal</div>
+        </div>
+        <div style="margin-top:18px;font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Changes save automatically
         </div>
     </div>
 
@@ -4685,6 +4728,15 @@
         localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(localDBInstance));
         renderActiveViewLayout();
         if (dateStr === activeDayFocusString) loadTargetDayFromMemory(dateStr);
+    }
+
+    /* ── PROFILE PANEL TOGGLE ── */
+    function toggleProfilePanel() {
+        const panel = document.getElementById('profilePanel');
+        const btn   = document.getElementById('profileIconBtn');
+        const open  = panel.style.display === 'none' || panel.style.display === '';
+        panel.style.display = open ? 'block' : 'none';
+        btn.classList.toggle('active', open);
     }
 
     /* ── METABOLIC SYNC ── */
