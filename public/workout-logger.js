@@ -139,10 +139,16 @@ function addCardioEntry(type) {
 function deleteEntry(idx) {
     const arr = parseEx(document.getElementById('inDayExercises').value);
     arr.splice(idx, 1);
-    applyExercises(arr);
-    // Deletion is always intentional — reflect it immediately everywhere
-    buildDayWorkoutSummary(activeDayFocusString);
-    renderActiveViewLayout();
+    // Write the new array to the hidden input first
+    document.getElementById('inDayExercises').value = serializeEx(arr);
+    // Re-render the workout log list immediately
+    renderWorkoutLog();
+    // Sync cardio totals to the hidden metabolic inputs
+    syncCardioToMetabolic(arr);
+    // Persist AND trigger a full UI refresh (calendar + summary + activity log)
+    // syncActiveDayToMemory(true) calls buildDayWorkoutSummary immediately
+    // after writing to localDBInstance — guaranteed fresh read
+    syncActiveDayToMemory(true);
 }
 
 function updateCardioField(idx, field, val) {
