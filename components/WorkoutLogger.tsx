@@ -129,7 +129,11 @@ function SetBadge({ sets, onSave }: {
   const [editSets, setEditSets] = useState<Array<{ r: string; w: string }>>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const startEdit = () => { setEditSets(sets.map(s => ({ ...s }))); setEditing(true); };
+  const startEdit = () => {
+    setEditSets(sets.map(s => ({ ...s })));
+    setEditing(true);
+    setTimeout(() => wrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350);
+  };
   const commit = useCallback(() => { onSave(editSets); setEditing(false); }, [editSets, onSave]);
 
   const updateSet = (i: number, field: 'r' | 'w', val: string) => {
@@ -147,17 +151,20 @@ function SetBadge({ sets, onSave }: {
           <div key={i} className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-[var(--ink-3)] min-w-[14px] text-right">{i + 1}</span>
             <input
-              autoFocus={i === 0} type="text" value={s.r} placeholder="reps"
+              autoFocus={i === 0}
+              type="text" inputMode="numeric" value={s.r} placeholder="reps"
               className="w-12 rounded-sm px-1.5 py-1 font-mono text-[12px] bg-[var(--bg-1)] border border-[var(--line-2)] text-[var(--ink-0)] outline-none focus:border-[var(--accent)]"
               onChange={e => updateSet(i, 'r', e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') commit(); }}
+              onFocus={e => { const el = e.target; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350); }}
             />
             <span className="text-[var(--ink-3)] text-[11px]">@</span>
             <input
-              type="text" value={s.w} placeholder="wt"
+              type="text" inputMode="decimal" value={s.w} placeholder="wt"
               className="w-20 rounded-sm px-1.5 py-1 font-mono text-[12px] bg-[var(--bg-1)] border border-[var(--line-2)] text-[var(--ink-0)] outline-none focus:border-[var(--accent)]"
               onChange={e => updateSet(i, 'w', e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') commit(); }}
+              onFocus={e => { const el = e.target; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350); }}
             />
           </div>
         ))}
@@ -710,6 +717,7 @@ export default function WorkoutLogger() {
   const [swm, setSwm] = useState<SwmState>({ name: '', isPreset: true, isRecurring: false, days: [], freq: 1 });
   const [dupWarning, setDupWarning] = useState(false);
   const [activeSection, setActiveSection] = useState<'lifting' | 'cardio'>('lifting');
+  const [confirmClear, setConfirmClear] = useState(false);
 
   // Stable keys for Reorder (parallel to exercises array, never derived)
   const exerciseKeysRef = useRef<string[]>([]);
@@ -890,7 +898,6 @@ export default function WorkoutLogger() {
   }, [exercises]);
 
   const clearWorkout = useCallback(() => {
-    if (!window.confirm(`Clear all workout & cardio data for ${activeDayFocus}?`)) return;
     exerciseKeysRef.current = [];
     setExercisesRaw([]); setNotesRaw('');
     updateDayRecord(activeDayFocus, {
@@ -1005,6 +1012,47 @@ export default function WorkoutLogger() {
         currentCount={exercises.length}
         onLoad={loadPreset} onClose={() => setTemplateModal(false)}
       />
+
+      {/* ── Clear session confirm ── */}
+      <AnimatePresence>
+        {confirmClear && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-5 backdrop-blur-sm"
+            style={{ background: 'rgba(7,8,10,0.85)' }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            onClick={e => { if (e.target === e.currentTarget) setConfirmClear(false); }}
+          >
+            <motion.div
+              className="w-full max-w-[320px] rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] p-5"
+              initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 12 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              style={{ boxShadow: '0 0 0 1px var(--line-2), 0 24px 48px rgba(0,0,0,0.55)' }}
+            >
+              <p className="font-display text-[20px] tracking-[1px] uppercase text-[var(--ink-0)] mb-1">
+                Clear Session
+              </p>
+              <p className="font-mono text-[11px] text-[var(--ink-2)] tracking-[0.3px] leading-relaxed mb-5">
+                This will remove all exercises and cardio logged for this day.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmClear(false)}
+                  className="flex-1 que-btn-ghost"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { setConfirmClear(false); clearWorkout(); }}
+                  className="flex-1 py-2.5 rounded font-mono text-[11px] font-bold tracking-[1.5px] uppercase border border-[var(--danger)]/50 bg-[var(--danger-12)] text-[var(--danger)] hover:border-[var(--danger)] transition-all"
+                >
+                  Clear
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <SaveWorkoutModal
         open={saveModal} swm={swm} lifts={lifts}
         dupWarning={dupWarning}
@@ -1049,7 +1097,7 @@ export default function WorkoutLogger() {
                 {dayLabel}
               </span>
               <button
-                onClick={clearWorkout}
+                onClick={() => setConfirmClear(true)}
                 title="Clear this day's workout"
                 className="w-8 h-8 flex items-center justify-center rounded bg-[var(--danger-12)] border border-[var(--danger)]/30 text-[var(--danger)] hover:bg-[var(--danger)]/20 hover:border-[var(--danger)] transition-all"
               >

@@ -422,15 +422,21 @@ export default function CalendarScheduler() {
     });
   }, [viewMode, setCurrentDisplayDate]);
 
+  const [confirmClearDate, setConfirmClearDate] = useState<string | null>(null);
+
   const goToday   = useCallback(() => setActiveDayFocus(todayStr), [todayStr, setActiveDayFocus]);
   const selectDay = useCallback((d: string) => setActiveDayFocus(d), [setActiveDayFocus]);
   const clearDay  = useCallback((dateStr: string) => {
-    if (!window.confirm(`Remove all workouts for ${dateStr}?`)) return;
-    updateDayRecord(dateStr, {
+    setConfirmClearDate(dateStr);
+  }, []);
+  const confirmClear = useCallback(() => {
+    if (!confirmClearDate) return;
+    updateDayRecord(confirmClearDate, {
       exercises: '', notes: '', steps: 0,
       runDist: 0, runTime: 0, bikeDist: 0, bikeTime: 0, swimTime: 0, burn: 0,
     });
-  }, [updateDayRecord]);
+    setConfirmClearDate(null);
+  }, [confirmClearDate, updateDayRecord]);
 
   const cells = useMemo<CellData[]>(() => {
     const year  = currentDisplayDate.getFullYear();
@@ -474,8 +480,28 @@ export default function CalendarScheduler() {
   }, [currentDisplayDate, viewMode, localDB, activeDayFocus, todayStr]);
 
   const activeDayRec = localDB[activeDayFocus] ?? {};
-  const weekLabels = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-  const spotlight = useSpotlightBorder({ color: '79,195,247', size: 280, opacity: 0.45 });
+  const weekLabels   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const spotlight    = useSpotlightBorder({ color: '79,195,247', size: 280, opacity: 0.45 });
+
+  // True when today's date falls within the currently displayed period
+  const isViewingToday = useMemo(() => {
+    const t = new Date(todayStr + 'T00:00:00');
+    const d = currentDisplayDate;
+    if (viewMode === 'month') {
+      return t.getFullYear() === d.getFullYear() && t.getMonth() === d.getMonth();
+    }
+    if (viewMode === 'week') {
+      const sow = new Date(d); sow.setDate(d.getDate() - d.getDay());
+      const eow = new Date(sow); eow.setDate(sow.getDate() + 6);
+      return t >= sow && t <= eow;
+    }
+    return toDateStr(d) === todayStr;
+  }, [todayStr, currentDisplayDate, viewMode]);
+
+  const todayLabel = useMemo(() => {
+    const t = new Date(todayStr + 'T00:00:00');
+    return `${MONTHS[t.getMonth()].slice(0, 3)} ${t.getDate()}`;
+  }, [todayStr]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -494,54 +520,58 @@ export default function CalendarScheduler() {
         {spotlight.Overlay}
         <div className="p-5">
 
-          {/* Navigation header */}
-          <div className="flex items-center gap-3 mb-5">
+          {/* Navigation — Row 1: prev / title / next */}
+          <div className="flex items-center gap-2 mb-3">
             <button
               onClick={() => navigate(-1)}
-              className="w-10 h-10 flex items-center justify-center rounded border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all"
+              className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all"
               aria-label="Previous"
             >
-              <ChevronLeft size={18} />
+              <ChevronLeft size={16} />
             </button>
 
-            <div className="flex-1 flex items-baseline gap-3 min-w-0">
-              <span className="font-display text-[22px] lg:text-[26px] tracking-[2px] uppercase text-[var(--ink-0)] truncate">
-                {navTitle(viewMode, currentDisplayDate)}
-              </span>
-              {activeDayFocus !== todayStr && (
-                <button
-                  onClick={goToday}
-                  className="font-mono text-[10px] font-bold text-[var(--accent)] border border-[var(--accent)] rounded-sm px-2 py-0.5 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all uppercase tracking-[2px]"
-                >
-                  TODAY
-                </button>
-              )}
-            </div>
+            <span className="flex-1 font-display text-[20px] lg:text-[26px] tracking-[2px] uppercase text-[var(--ink-0)] truncate text-center">
+              {navTitle(viewMode, currentDisplayDate)}
+            </span>
 
             <button
               onClick={() => navigate(1)}
-              className="w-10 h-10 flex items-center justify-center rounded border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all"
+              className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all"
               aria-label="Next"
             >
-              <ChevronRight size={18} />
+              <ChevronRight size={16} />
             </button>
+          </div>
 
-            <div className="hidden md:flex bg-[var(--bg-2)] border border-[var(--line)] rounded-sm p-1 gap-0.5">
+          {/* Navigation — Row 2: view switcher + today button */}
+          <div className="flex items-center gap-2 mb-5">
+            <div className="flex flex-1 bg-[var(--bg-2)] border border-[var(--line)] rounded-sm p-1 gap-0.5">
               {(['day','week','month'] as ViewMode[]).map(m => (
                 <button
                   key={m}
                   onClick={() => setViewMode(m)}
                   className={[
-                    'px-3 py-1.5 rounded-sm font-mono text-[10px] font-bold tracking-[1.5px] uppercase transition-all',
+                    'flex-1 py-1.5 rounded-sm font-mono text-[10px] font-bold tracking-[1px] uppercase transition-all',
                     viewMode === m
                       ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
                       : 'text-[var(--ink-2)] hover:text-[var(--ink-0)]',
                   ].join(' ')}
                 >
-                  {m}
+                  <span className="sm:hidden">{m[0]}</span>
+                  <span className="hidden sm:inline">{m}</span>
                 </button>
               ))}
             </div>
+
+            {!isViewingToday && (
+              <button
+                onClick={goToday}
+                className="flex items-center gap-1.5 font-mono text-[10px] font-bold text-[var(--accent)] border border-[var(--accent)] rounded-sm px-2.5 py-1.5 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all uppercase tracking-[1px] whitespace-nowrap flex-shrink-0"
+              >
+                <span className="block w-1.5 h-1.5 rounded-full bg-current" />
+                {todayLabel}
+              </button>
+            )}
           </div>
 
           {/* Grid */}
@@ -646,6 +676,48 @@ export default function CalendarScheduler() {
       >
         <TodaysWorkoutSummary dateStr={activeDayFocus} rec={activeDayRec} />
       </motion.div>
+
+      {/* ── Clear day confirm ── */}
+      <AnimatePresence>
+        {confirmClearDate && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center px-5 backdrop-blur-sm"
+            style={{ background: 'rgba(7,8,10,0.85)' }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            onClick={e => { if (e.target === e.currentTarget) setConfirmClearDate(null); }}
+          >
+            <motion.div
+              className="w-full max-w-[320px] rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] p-5"
+              initial={{ scale: 0.94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 12 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              style={{ boxShadow: '0 0 0 1px var(--line-2), 0 24px 48px rgba(0,0,0,0.55)' }}
+            >
+              <p className="font-display text-[20px] tracking-[1px] uppercase text-[var(--ink-0)] mb-1">
+                Remove Workout
+              </p>
+              <p className="font-mono text-[11px] text-[var(--ink-2)] tracking-[0.3px] leading-relaxed mb-5">
+                Remove all activity logged for{' '}
+                <span className="text-[var(--ink-0)] font-bold">{confirmClearDate}</span>?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmClearDate(null)}
+                  className="flex-1 que-btn-ghost"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmClear}
+                  className="flex-1 py-2.5 rounded font-mono text-[11px] font-bold tracking-[1.5px] uppercase border border-[var(--danger)]/50 bg-[var(--danger-12)] text-[var(--danger)] hover:border-[var(--danger)] transition-all"
+                >
+                  Remove
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
