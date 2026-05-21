@@ -2,24 +2,9 @@
 
 import { signIn } from 'next-auth/react';
 import { useState } from 'react';
+import Image from 'next/image';
+import queLogo from '../../../public/Que_logo.png';
 
-/* ── Q logo mark (inline SVG — mirrors the Que_logo.png geometry) ── */
-function QueLogoMark({ size = 96 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 100 100"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <circle cx="50" cy="49" r="36" stroke="currentColor" strokeWidth="5.5" />
-      <line x1="38" y1="26" x2="54" y2="73" stroke="currentColor" strokeWidth="5.5" strokeLinecap="round" />
-      <line x1="51" y1="23" x2="67" y2="70" stroke="currentColor" strokeWidth="5.5" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 /* ── GitHub wordmark SVG ────────────────────────────────────────────── */
 function GitHubMark({ size = 16 }: { size?: number }) {
@@ -56,7 +41,14 @@ export default function SignInPage() {
 
         {/* ── Logo ────────────────────────────────────────────────── */}
         <div className="si-logo-wrap" aria-hidden="true">
-          <QueLogoMark size={96} />
+          <Image
+            src={queLogo}
+            alt=""
+            width={110}
+            height={110}
+            className="si-logo-img"
+            priority
+          />
         </div>
 
         {/* ── App name ────────────────────────────────────────────── */}

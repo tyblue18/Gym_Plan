@@ -49,7 +49,7 @@ export default function WorkoutPage() {
            * Omitting allow-top-navigation prevents the iframe from
            * redirecting the parent window.
            */
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
         />
       </main>
 

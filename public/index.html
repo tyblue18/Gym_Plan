@@ -686,16 +686,36 @@
             margin: 28px 0;
         }
         
-        /* Group Pills — horizontal scroll, no wrap */
+        /* ── Muscle group scroll strip ─────────────────────────────────── */
+        .muscle-group-scroll-wrap {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        /* Right-fade: signals more pills off-screen */
+        .muscle-group-scroll-wrap::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 52px;
+            background: linear-gradient(to right, transparent, var(--bg-elevated));
+            pointer-events: none;
+        }
+
         .group-pills-row {
             display: flex;
-            gap: 6px;
+            gap: 8px;
             flex-wrap: nowrap;
-            overflow-x: auto;
-            margin-bottom: 16px;
-            padding-bottom: 4px;
+            overflow-x: scroll;
+            padding-bottom: 2px;
+            padding-right: 48px;
             scrollbar-width: none;
             -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
+            cursor: grab;
+            touch-action: pan-x;
         }
         .group-pills-row::-webkit-scrollbar { display: none; }
         
@@ -703,20 +723,21 @@
             background: var(--bg-surface);
             border: 1px solid var(--border-default);
             color: var(--text-tertiary);
-            padding: 8px 18px;
+            padding: 10px 20px;
             border-radius: 99px;
             cursor: pointer;
-            font-size: 12px;
-            font-weight: 700;
+            font-size: 13px;
+            font-weight: 600;
             font-family: inherit;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.18s ease-in-out;
             white-space: nowrap;
+            min-height: 40px;
+            flex-shrink: 0;
         }
-        
+
         .group-pill:hover {
             color: var(--text-primary);
             border-color: var(--border-strong);
-            transform: scale(1.03);
         }
         
         .group-pill.active {
@@ -901,21 +922,53 @@
         .group-badge.other { background: rgba(255,255,255,0.07); color: var(--text-secondary); }
         
         /* Sets/Reps Badge */
+        /* ex-main wraps name + sets in a column so sets never squeeze the name */
+        .ex-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
         .sr-badge {
             font-size: 12px;
             font-weight: 700;
             color: var(--text-primary);
             background: var(--bg-surface-hover);
-            padding: 4px 12px;
+            padding: 4px 10px;
             border-radius: 6px;
-            white-space: nowrap;
-            flex-shrink: 0;
+            white-space: normal;   /* allow wrapping */
             cursor: pointer;
             transition: all 0.2s;
             border: 1px solid transparent;
             font-family: 'JetBrains Mono', monospace;
             font-variant-numeric: tabular-nums;
+            align-self: flex-start; /* don't stretch full width */
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px;
+            line-height: 1.5;
         }
+
+        /* Individual set chips for mixed-set display */
+        .set-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 11px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 2px 7px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .set-chip-n   { font-size: 9px; color: var(--text-muted); }
+        .set-chip-wt  { color: var(--text-tertiary); }
+        .set-count-lbl { font-size: 10px; color: var(--text-muted); }
         
         .sr-badge:hover {
             border-color: var(--accent-primary-glow);
@@ -1808,6 +1861,105 @@
         @media (min-width: 769px) { .trend-canvas { height: 260px; } }
         
         /* ══════════════════════════════════════════════════════════════════
+           LOG DAY BUTTON
+        ══════════════════════════════════════════════════════════════════ */
+        .log-day-btn {
+            width: 100%;
+            background: #f0f0f0;
+            color: #0a0a0a;
+            border: none;
+            padding: 13px;
+            border-radius: var(--radius-sm);
+            font-weight: 700;
+            font-family: inherit;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.18s;
+        }
+        .log-day-btn:hover { background: #ffffff; transform: scale(1.01); }
+        .log-day-btn:active { transform: scale(0.98); }
+
+        /* ══════════════════════════════════════════════════════════════════
+           WEIGHT PROJECTION
+        ══════════════════════════════════════════════════════════════════ */
+        .projection-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+        .projection-stat {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+        }
+        .projection-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            display: block;
+            margin-bottom: 6px;
+        }
+        .projection-val {
+            font-size: 18px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            display: block;
+        }
+        .projection-milestones {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-top: 16px;
+            margin-bottom: 14px;
+        }
+        @media (min-width: 500px) { .projection-milestones { grid-template-columns: repeat(4, 1fr); } }
+        .proj-milestone {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .proj-ms-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .proj-ms-weight {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .proj-ms-diff {
+            font-size: 11px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .proj-no-data {
+            color: var(--text-tertiary);
+            font-size: 13px;
+            text-align: center;
+            padding: 28px;
+        }
+        .projection-note {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
            LOAD MORE
         ══════════════════════════════════════════════════════════════════ */
         .load-more-btn {
@@ -1916,6 +2068,19 @@
         
         .save-indicator.show { opacity: 1; }
         .save-indicator svg { width: 14px; height: 14px; }
+
+        .profile-saved-badge {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--accent-success);
+            opacity: 0;
+            transition: opacity 0.4s;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .profile-saved-badge.show { opacity: 1; }
         
         /* ══════════════════════════════════════════════════════════════════
            TEMPLATE TRIGGER
@@ -1947,42 +2112,111 @@
         }
         
         /* ══════════════════════════════════════════════════════════════════
-           DAILY LOG
+           DIARY LOG
         ══════════════════════════════════════════════════════════════════ */
-        .log-header-row,
-        .daily-log-row {
-            display: grid;
-            grid-template-columns: 72px 100px 1fr 1fr;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 14px;
+        .diary-entry {
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            margin-bottom: 8px;
+            overflow: hidden;
         }
-        
-        .log-header-row { margin-bottom: 4px; }
-        
-        .log-header-row span {
+        .diary-entry.active-log-row {
+            border-color: var(--border-strong);
+        }
+        .diary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-surface);
+            cursor: pointer;
+            user-select: none;
+        }
+        .diary-header:hover { background: var(--bg-surface-hover); }
+        .diary-date-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .diary-net {
+            font-size: 13px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .diary-net.net-under { color: var(--accent-success); }
+        .diary-net.net-over  { color: var(--accent-danger); }
+        .diary-net.net-none  { color: var(--text-muted); }
+        .diary-body {
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            border-top: 1px solid var(--border-subtle);
+        }
+        .diary-stats-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .diary-stat label {
             font-size: 10px;
             font-weight: 700;
             color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.8px;
+            display: block;
+            margin-bottom: 6px;
         }
-        
-        .daily-log-row {
+        .diary-stat-input-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .diary-stat-input-row input {
+            flex: 1;
+            padding: 9px 12px;
+            font-size: 15px;
+            font-weight: 600;
+            min-width: 0;
+        }
+        .diary-unit {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .diary-section-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 6px;
+        }
+        .diary-workout-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+        .diary-notes-input {
+            width: 100%;
+            background: var(--bg-inset);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            padding: 10px 12px;
             border-radius: var(--radius-sm);
-            transition: all 0.15s;
-            border: 1px solid transparent;
+            font-size: 13px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 60px;
+            line-height: 1.6;
+            transition: border-color 0.2s;
         }
-        
-        .daily-log-row:hover {
-            background: var(--bg-surface);
+        .diary-notes-input:focus {
+            outline: none;
+            border-color: var(--border-focus);
         }
-        
-        .daily-log-row.active-log-row {
-            background: var(--accent-primary-dim);
-            border-color: var(--accent-primary-glow);
-            box-shadow: var(--shadow-glow-primary);
-        }
+        .diary-notes-input::placeholder { color: var(--text-muted); }
         
         .log-date-block { display: flex; flex-direction: column; }
         
@@ -2044,6 +2278,308 @@
         }
         
         .log-empty { color: var(--text-muted); font-size: 12px; }
+
+        /* ── Save Workout trigger button ────────────────────────────────── */
+        .save-workout-trigger {
+            width: 100%;
+            background: transparent;
+            border: 1px dashed var(--border-default);
+            color: var(--text-tertiary);
+            padding: 11px;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            font-family: inherit;
+            font-size: 12px;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.18s;
+        }
+        .save-workout-trigger:hover {
+            border-color: var(--border-strong);
+            color: var(--text-primary);
+            background: var(--bg-surface);
+        }
+
+        /* ── Save Workout Modal ──────────────────────────────────────────── */
+        .swm-options { display: flex; flex-direction: column; }
+        .swm-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border-subtle);
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .swm-row:last-child { border-bottom: none; }
+        .swm-row:hover { opacity: 0.85; }
+        .swm-info { flex: 1; }
+        .swm-label { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .swm-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+        .swm-toggle {
+            width: 38px;
+            height: 22px;
+            border-radius: 99px;
+            background: var(--bg-surface-hover);
+            border: 1px solid var(--border-default);
+            position: relative;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        .swm-toggle::after {
+            content: '';
+            position: absolute;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            top: 2px; left: 2px;
+            transition: all 0.2s;
+        }
+        .swm-toggle.on { background: #f0f0f0; border-color: #f0f0f0; }
+        .swm-toggle.on::after { background: #0a0a0a; left: 18px; }
+
+        /* ── Day picker ──────────────────────────────────────────────────── */
+        .day-picker-row { display: flex; gap: 6px; flex-wrap: wrap; }
+        .day-pick-btn {
+            flex: 1;
+            min-width: 38px;
+            padding: 9px 4px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            color: var(--text-tertiary);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            font-family: inherit;
+            transition: all 0.15s;
+            text-align: center;
+        }
+        .day-pick-btn.selected {
+            background: rgba(255,255,255,0.10);
+            border-color: rgba(255,255,255,0.28);
+            color: var(--text-primary);
+        }
+
+        /* ── Recurring banner ────────────────────────────────────────────── */
+        .recurring-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            padding: 11px 14px;
+            margin-bottom: 12px;
+        }
+        .recurring-banner-text { font-size: 12px; color: var(--text-secondary); flex: 1; }
+        .recurring-banner-text strong { color: var(--text-primary); }
+        .recurring-load-btn {
+            background: #f0f0f0; color: #0a0a0a;
+            border: none; padding: 6px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 11px; font-weight: 700;
+            font-family: inherit; cursor: pointer;
+            white-space: nowrap; text-transform: uppercase;
+            letter-spacing: 0.5px; flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .recurring-load-btn:hover { background: #fff; }
+
+        /* ── Calendar cell delete button ───────────────────────────────── */
+        .cell-del-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: rgba(217,112,112,0.12);
+            border: 1px solid rgba(217,112,112,0.35);
+            color: #d97070;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.15s;
+            pointer-events: none;
+            z-index: 5;
+            flex-shrink: 0;
+        }
+        .calendar-day-cell:hover .cell-del-btn {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .cell-del-btn:hover {
+            background: rgba(217,112,112,0.25);
+            border-color: #d97070;
+        }
+
+        /* ── Today's Workouts summary card ──────────────────────────────── */
+        .day-workout-group { margin-bottom: 18px; }
+        .day-workout-group:last-child { margin-bottom: 0; }
+        .day-workout-group-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-subtle);
+            margin-bottom: 8px;
+        }
+        .day-workout-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            padding: 9px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .day-workout-item:last-child { border-bottom: none; }
+        .day-workout-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .day-workout-sets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        .day-set-chip {
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 2px 8px;
+            white-space: nowrap;
+        }
+        .day-set-chip-label {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-right: 3px;
+        }
+
+        /* ── Calorie History Trigger ─────────────────────────────────────── */
+        .cal-hist-trigger { cursor: pointer; transition: border-color 0.18s, background 0.18s; }
+        .cal-hist-trigger:hover { border-color: var(--border-strong); background: var(--bg-surface-hover); }
+
+        /* ── Card streak badge ───────────────────────────────────────────── */
+        .card-streak-num {
+            font-size: 30px;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+            line-height: 1;
+            margin-bottom: 3px;
+        }
+        .card-streak-label {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            white-space: nowrap;
+        }
+
+        /* Pop — spring bounce when streak gained or increased */
+        @keyframes streakPop {
+            0%   { transform: scale(0.2) rotate(-12deg); opacity: 0; }
+            45%  { transform: scale(1.25) rotate(4deg);  opacity: 1; }
+            65%  { transform: scale(0.88) rotate(-2deg); }
+            80%  { transform: scale(1.06) rotate(1deg); }
+            100% { transform: scale(1)    rotate(0deg); opacity: 1; }
+        }
+        .streak-anim-pop {
+            animation: streakPop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        /* Lost — shake then drain to gray when streak is broken */
+        @keyframes streakShake {
+            0%,100% { transform: translateX(0) rotate(0deg); }
+            15%     { transform: translateX(-7px) rotate(-4deg); }
+            30%     { transform: translateX(7px)  rotate(4deg); }
+            45%     { transform: translateX(-5px) rotate(-2deg); }
+            60%     { transform: translateX(5px)  rotate(2deg); }
+            75%     { transform: translateX(-2px); }
+        }
+        @keyframes streakDrain {
+            0%   { opacity: 1;    filter: grayscale(0) brightness(1); }
+            40%  { filter: grayscale(0.4) brightness(0.8); }
+            100% { opacity: 0.25; filter: grayscale(1)   brightness(0.5); }
+        }
+        .streak-anim-lost {
+            animation:
+                streakShake 0.65s ease-in-out,
+                streakDrain 0.9s 0.35s ease-out forwards;
+        }
+
+        .streak-banner {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            padding: 14px 18px;
+        }
+        .streak-num {
+            font-size: 28px;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+        .streak-info { display: flex; flex-direction: column; gap: 2px; }
+        .streak-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .streak-sub { font-size: 11px; color: var(--text-muted); }
+
+        /* ── Calorie History Modal ───────────────────────────────────────── */
+        .cal-hist-sheet { max-height: 92vh; }
+        @media (min-width: 769px) { .cal-hist-sheet { max-width: 700px; border: 1px solid var(--border-default); } }
+
+        .cal-hist-list-hdr {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr 1fr;
+            padding: 6px 14px;
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 4px;
+        }
+        .cal-hist-list-hdr.four-col,
+        .cal-hist-row.four-col { grid-template-columns: 1.4fr 1fr 1fr 0.6fr; }
+
+        .cal-hist-row {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr 1fr;
+            padding: 11px 14px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            transition: background 0.15s;
+            align-items: center;
+        }
+        .cal-hist-row:hover { background: var(--bg-surface); }
+        .cal-hist-row + .cal-hist-row { border-top: 1px solid var(--border-subtle); }
+        .cal-date  { color: var(--text-secondary); font-size: 13px; }
+        .cal-eaten { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .cal-net   { font-family: 'JetBrains Mono', monospace; font-weight: 600; text-align: right; }
+        .cal-sub   { font-size: 11px; color: var(--text-muted); text-align: right; }
         
         .log-no-data {
             color: var(--text-tertiary);
@@ -2223,6 +2759,11 @@
         </div>
         <div class="calendar-grid view-mode-month" id="calendarGridBox"></div>
     </div>
+    <!-- Today's Workouts summary -->
+    <div class="card" id="dayWorkoutCard">
+        <h2 id="dayWorkoutTitle" style="margin-bottom:12px;">Today's Workouts</h2>
+        <div id="dayWorkoutContent"><div class="exercise-empty">Select a day to view workouts.</div></div>
+    </div>
 </div><!-- /bento-main -->
 <div class="bento-side">
     <!-- Workout Log -->
@@ -2258,19 +2799,21 @@
                 </div>
             </div>
             <div class="add-lift-form">
-                <div class="group-pills-row" id="groupPillsRow">
-                    <button class="group-pill active" data-g="chest"     onclick="selectGroup('chest')">Chest</button>
-                    <button class="group-pill" data-g="back"      onclick="selectGroup('back')">Back</button>
-                    <button class="group-pill" data-g="shoulders" onclick="selectGroup('shoulders')">Shoulders</button>
-                    <button class="group-pill" data-g="tricep"    onclick="selectGroup('tricep')">Tricep</button>
-                    <button class="group-pill" data-g="bicep"     onclick="selectGroup('bicep')">Bicep</button>
-                    <button class="group-pill" data-g="forearms"  onclick="selectGroup('forearms')">Forearms</button>
-                    <button class="group-pill" data-g="abs"       onclick="selectGroup('abs')">Abs</button>
-                    <button class="group-pill" data-g="quads"     onclick="selectGroup('quads')">Quads</button>
-                    <button class="group-pill" data-g="hamstring" onclick="selectGroup('hamstring')">Hamstring</button>
-                    <button class="group-pill" data-g="glutes"    onclick="selectGroup('glutes')">Glutes</button>
-                    <button class="group-pill" data-g="calfs"     onclick="selectGroup('calfs')">Calfs</button>
-                    <button class="group-pill" data-g="adductors" onclick="selectGroup('adductors')">Adductors</button>
+                <div class="muscle-group-scroll-wrap">
+                    <div class="group-pills-row" id="groupPillsRow">
+                        <button class="group-pill active" data-g="chest"     onclick="selectGroup('chest')">Chest</button>
+                        <button class="group-pill" data-g="back"      onclick="selectGroup('back')">Back</button>
+                        <button class="group-pill" data-g="shoulders" onclick="selectGroup('shoulders')">Shoulders</button>
+                        <button class="group-pill" data-g="tricep"    onclick="selectGroup('tricep')">Tricep</button>
+                        <button class="group-pill" data-g="bicep"     onclick="selectGroup('bicep')">Bicep</button>
+                        <button class="group-pill" data-g="forearms"  onclick="selectGroup('forearms')">Forearms</button>
+                        <button class="group-pill" data-g="abs"       onclick="selectGroup('abs')">Abs</button>
+                        <button class="group-pill" data-g="quads"     onclick="selectGroup('quads')">Quads</button>
+                        <button class="group-pill" data-g="hamstring" onclick="selectGroup('hamstring')">Hamstring</button>
+                        <button class="group-pill" data-g="glutes"    onclick="selectGroup('glutes')">Glutes</button>
+                        <button class="group-pill" data-g="calfs"     onclick="selectGroup('calfs')">Calfs</button>
+                        <button class="group-pill" data-g="adductors" onclick="selectGroup('adductors')">Adductors</button>
+                    </div>
                 </div>
                 <div class="lift-name-row">
                     <select id="exerciseSelect" onchange="handleExSelect()"></select>
@@ -2294,8 +2837,14 @@
                 </div>
                 <button class="add-lift-btn" onclick="commitAddLift()">+ Log Exercise</button>
             </div>
+            <!-- Recurring workout banner (shown when a recurring workout matches today) -->
+            <div id="recurringBanner" style="display:none;"></div>
             <div class="exercise-list" id="liftListDisplay">
                 <div class="exercise-empty">Nothing logged yet — pick a muscle group above, choose an exercise, and hit Log. Or load a full template with the button above.</div>
+            </div>
+            <!-- Save Workout button — shown when exercises are logged -->
+            <div id="saveWorkoutBtnWrap" style="display:none;margin-top:10px;">
+                <button class="save-workout-trigger" id="saveWorkoutBtn" onclick="openSaveWorkoutModal()">Save Workout</button>
             </div>
         </div>
 
@@ -2326,6 +2875,10 @@
             <label>Session Notes</label>
             <textarea id="inDayNotes" class="notes-area" rows="2" placeholder="PRs hit, fatigue level, form cues…" oninput="syncActiveDayToMemory()"></textarea>
         </div>
+
+        <div class="section-divider"></div>
+
+        <button class="save-btn" id="logWorkoutBtn" onclick="logWorkoutForDate()">Log Workout</button>
     </div>
 </div><!-- /bento-side -->
 </div><!-- /bento-row -->
@@ -2383,9 +2936,9 @@
 <div id="pageMetabolics" class="page">
     <div class="active-date-banner" id="metabolicActiveDateText">Targeting: —</div>
     <div class="card">
-        <h2>Your Profile</h2>
-        <div style="display:flex;align-items:flex-start;gap:10px;font-size:12px;color:var(--text-secondary);margin:-10px 0 20px;line-height:1.6;background:var(--bg-surface);border-radius:var(--radius-sm);padding:14px 16px;border-left:3px solid var(--accent-primary);">
-            <span style="font-size:16px;flex-shrink:0;">💡</span>
+        <h2>Your Profile <span id="profileSavedBadge" class="profile-saved-badge">saved</span></h2>
+        <div style="display:flex;align-items:flex-start;gap:10px;font-size:12px;color:var(--text-secondary);margin:-10px 0 20px;line-height:1.6;background:var(--bg-surface);border-radius:var(--radius-sm);padding:14px 16px;border-left:3px solid var(--border-strong);">
+            <span style="flex-shrink:0;color:var(--text-tertiary)">i</span>
             <span>Set your <strong style="color:var(--text-primary)">Activity Level</strong> to match your typical week (gym lifting only — cardio is tracked separately below). Your food budget = Maintenance − Deficit + 60% of any cardio you log.</span>
         </div>
         <div class="bio-grid">
@@ -2510,10 +3063,44 @@
     <!-- Activity Log -->
     <div class="card">
         <h2>Activity Log — All Time</h2>
-        <div class="log-header-row">
-            <span>Day</span><span>Weight (lbs)</span><span>Activity Burn</span><span>Food Budget</span>
-        </div>
         <div id="dailyLogDisplay"><div class="log-no-data">No logged days yet.</div></div>
+    </div>
+
+    <!-- Calorie History trigger -->
+    <div class="card cal-hist-trigger" onclick="openCalHistory()">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <div style="flex:1;min-width:0;">
+                <h2 style="margin-bottom:6px;">Calorie History</h2>
+                <span id="calHistSummary" style="font-size:12px;color:var(--text-secondary);">Tap to view</span>
+            </div>
+            <!-- Streak badge — shown/animated by _updateCalHistCard() -->
+            <div id="calHistCardStreak" style="display:none;text-align:center;flex-shrink:0;min-width:48px;">
+                <div class="card-streak-num" id="calHistCardStreakNum">0</div>
+                <div class="card-streak-label">day streak</div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-tertiary);flex-shrink:0;"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+    </div>
+
+    <!-- Weight Projection — hidden until Log Today is pressed -->
+    <div class="card" id="projectionCard" style="display:none">
+        <h2>Weight Projection <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted);margin-left:6px;">estimate</span></h2>
+        <div id="projectionEmpty" class="proj-no-data">Enter calories eaten in the Activity Log above to see your weight projection.</div>
+        <div id="projectionContent" style="display:none">
+            <div class="projection-summary">
+                <div class="projection-stat">
+                    <span class="projection-label">Daily Net</span>
+                    <span class="projection-val" id="projNetVal">—</span>
+                </div>
+                <div class="projection-stat">
+                    <span class="projection-label">Est. ±/week</span>
+                    <span class="projection-val" id="projWeekVal">—</span>
+                </div>
+            </div>
+            <canvas id="projectionChart" class="trend-canvas"></canvas>
+            <div class="projection-milestones" id="projectionMilestones"></div>
+            <p class="projection-note">3,500 kcal ≈ 1 lb. Budget eats back 60% of cardio; the remaining 40% is counted as additional deficit in this projection. Actual results vary.</p>
+        </div>
     </div>
 
     <!-- Trends -->
@@ -2546,6 +3133,89 @@
             <div class="p-card" style="border-left-color:var(--accent-cyan)"><span class="p-day-badge">Day 7</span><div class="p-title">Endurance Capacity Peak</div><div class="p-body">• Long Bike: 1.5–5.5 hrs continuous aero posture<br>• Long Run: 4 mi progressing to 16–18 mi at Zone 2</div></div>
             <div class="p-card" style="border-left-color:var(--accent-danger)"><span class="p-day-badge">Day 8</span><div class="p-title">Systemic CNS Reset</div><div class="p-body">Full rest block. CNS downregulation. Rebuild deep tissue.</div><div class="p-cardio red">No training — total rest</div></div>
         </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     CALORIE HISTORY MODAL
+══════════════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="calHistModal" onclick="handleCalHistBgClick(event)">
+    <div class="modal-sheet cal-hist-sheet">
+        <div class="modal-handle"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <div class="modal-title" style="margin:0;">Calorie History</div>
+            <button onclick="closeCalHistory()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:24px;line-height:1;padding:4px 8px;">×</button>
+        </div>
+        <div id="calHistStreakBanner" style="display:none;margin-bottom:16px;"></div>
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;" id="calHistModalTabs">
+            <button class="chart-tab active" onclick="switchCalHistTab('list',this)">List</button>
+            <button class="chart-tab" onclick="switchCalHistTab('weekly',this)">Weekly</button>
+            <button class="chart-tab" onclick="switchCalHistTab('monthly',this)">Monthly</button>
+            <button class="chart-tab" onclick="switchCalHistTab('alltime',this)">All Time</button>
+        </div>
+        <div id="calHistModalContent" style="overflow-y:auto;max-height:calc(88vh - 160px);"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SAVE WORKOUT MODAL
+══════════════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="saveWorkoutModal" onclick="handleSWMBgClick(event)">
+    <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+            <div class="modal-title" style="margin:0;">Save Workout</div>
+            <button onclick="closeSaveWorkoutModal()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:24px;line-height:1;padding:4px 8px;">×</button>
+        </div>
+
+        <!-- Name -->
+        <div class="input-group" style="margin-bottom:20px;">
+            <label>Workout Name</label>
+            <input type="text" id="swmName" placeholder="e.g. Chest Day">
+        </div>
+
+        <!-- Toggles -->
+        <div class="swm-options">
+            <div class="swm-row" onclick="swmToggle('preset')">
+                <div class="swm-info">
+                    <div class="swm-label">Save to Presets</div>
+                    <div class="swm-sub">Load this workout anytime from the template picker</div>
+                </div>
+                <div class="swm-toggle" id="swmTogglePreset"></div>
+            </div>
+            <div class="swm-row" onclick="swmToggle('recurring')">
+                <div class="swm-info">
+                    <div class="swm-label">Make Recurring</div>
+                    <div class="swm-sub">Auto-suggest this workout on selected days each week</div>
+                </div>
+                <div class="swm-toggle" id="swmToggleRecurring"></div>
+            </div>
+        </div>
+
+        <!-- Recurring settings -->
+        <div id="swmRecurringSection" style="display:none;margin-top:18px;padding-top:18px;border-top:1px solid var(--border-subtle);">
+            <div class="input-group" style="margin-bottom:16px;">
+                <label>Repeat on</label>
+                <div class="day-picker-row">
+                    <button class="day-pick-btn" data-day="0" onclick="swmToggleDay(0)">Sun</button>
+                    <button class="day-pick-btn" data-day="1" onclick="swmToggleDay(1)">Mon</button>
+                    <button class="day-pick-btn" data-day="2" onclick="swmToggleDay(2)">Tue</button>
+                    <button class="day-pick-btn" data-day="3" onclick="swmToggleDay(3)">Wed</button>
+                    <button class="day-pick-btn" data-day="4" onclick="swmToggleDay(4)">Thu</button>
+                    <button class="day-pick-btn" data-day="5" onclick="swmToggleDay(5)">Fri</button>
+                    <button class="day-pick-btn" data-day="6" onclick="swmToggleDay(6)">Sat</button>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>Frequency</label>
+                <div style="display:flex;gap:8px;">
+                    <button class="view-btn active" id="swmFreqWeekly"    onclick="swmSetFreq(1)">Every week</button>
+                    <button class="view-btn"         id="swmFreqBiweekly" onclick="swmSetFreq(2)">Every 2 weeks</button>
+                </div>
+            </div>
+        </div>
+
+        <button class="save-btn" onclick="confirmSaveWorkout()" style="margin-top:22px;">Save Workout</button>
     </div>
 </div>
 
@@ -2658,6 +3328,511 @@
         }).filter(Boolean).join('\n');
     }
 
+    /* ── CALORIE HISTORY MODAL ── */
+    function _calcStreak(data) {
+        if (!data.length) return 0;
+        const logged = new Set(data.map(d => d.ds));
+        const todayStr = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
+
+        // Walk back from today. If today isn't logged yet allow starting from yesterday
+        // (gives user the current calendar day to log without breaking their streak).
+        const cur = new Date(_today.getFullYear(), _today.getMonth(), _today.getDate());
+        if (!logged.has(todayStr)) cur.setDate(cur.getDate() - 1); // start from yesterday
+
+        let streak = 0;
+        while (true) {
+            const ds = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+            if (!logged.has(ds)) break;
+            streak++;
+            cur.setDate(cur.getDate() - 1);
+        }
+        return streak;
+    }
+
+    function _getCalData() {
+        return Object.keys(localDBInstance).sort().map(ds => {
+            const d = localDBInstance[ds];
+            if (!d.calsEaten) return null;
+            const eaten = parseFloat(d.calsEaten) || 0;
+            const budget = parseFloat(d.budget)   || 0;
+            return { ds, eaten, budget, net: eaten - budget };
+        }).filter(d => d && d.eaten > 0);
+    }
+
+    function _updateCalHistCard() {
+        const data   = _getCalData();
+        const streak = _calcStreak(data);
+        const last   = parseInt(localStorage.getItem('queLastStreak') ?? '-1');
+
+        const cardEl = document.getElementById('calHistCardStreak');
+        const numEl  = document.getElementById('calHistCardStreakNum');
+
+        if (streak > 0) {
+            if (cardEl) cardEl.style.display = '';
+            if (numEl)  numEl.textContent = streak;
+            // Animate if streak is new or just changed
+            if (streak !== last && cardEl) {
+                cardEl.classList.remove('streak-anim-pop', 'streak-anim-lost');
+                void cardEl.offsetWidth; // force reflow so animation restarts
+                cardEl.classList.add('streak-anim-pop');
+            }
+        } else if (last > 0) {
+            // Streak was just broken — show old number shaking out
+            if (cardEl && numEl) {
+                numEl.textContent = last;
+                cardEl.style.display = '';
+                cardEl.classList.remove('streak-anim-pop', 'streak-anim-lost');
+                void cardEl.offsetWidth;
+                cardEl.classList.add('streak-anim-lost');
+                setTimeout(() => { if (cardEl) cardEl.style.display = 'none'; }, 1400);
+            }
+        } else {
+            if (cardEl) cardEl.style.display = 'none';
+        }
+
+        // Update the summary line on the card
+        const summaryEl = document.getElementById('calHistSummary');
+        if (summaryEl && data.length) {
+            const avg = data.reduce((s,d) => s+d.net, 0) / data.length;
+            const c   = avg <= 0 ? '#80b99a' : '#d97070';
+            summaryEl.innerHTML = `${data.length} days logged &middot; avg <span style="color:${c};font-weight:600">${avg>0?'+':''}${Math.round(avg).toLocaleString()} kcal/day</span>`;
+        }
+
+        // Persist so next visit can compare
+        localStorage.setItem('queLastStreak', streak);
+        return { data, streak };
+    }
+
+    function openCalHistory() {
+        const data   = _getCalData();
+        const streak = _calcStreak(data);
+
+        // Streak banner inside modal
+        const bannerEl = document.getElementById('calHistStreakBanner');
+        if (bannerEl) {
+            if (streak > 0) {
+                const sub = streak === 1 ? 'Log again tomorrow to continue' : `${streak} consecutive days logged`;
+                bannerEl.innerHTML = `<div class="streak-banner">
+                    <span class="streak-num">${streak}</span>
+                    <div class="streak-info">
+                        <span class="streak-label">Day Streak</span>
+                        <span class="streak-sub">${sub}</span>
+                    </div>
+                </div>`;
+                bannerEl.style.display = '';
+            } else {
+                bannerEl.style.display = 'none';
+            }
+        }
+
+        document.getElementById('calHistModal').classList.add('open');
+        document.body.style.overflow = 'hidden';
+        const firstTab = document.querySelector('#calHistModalTabs .chart-tab');
+        switchCalHistTab('list', firstTab);
+    }
+
+    function closeCalHistory() {
+        document.getElementById('calHistModal').classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    function handleCalHistBgClick(e) {
+        if (e.target === document.getElementById('calHistModal')) closeCalHistory();
+    }
+
+    function switchCalHistTab(tab, btn) {
+        document.querySelectorAll('#calHistModalTabs .chart-tab').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        const data = _getCalData();
+        const el   = document.getElementById('calHistModalContent');
+        if (!data.length) {
+            el.innerHTML = '<div class="proj-no-data">No calorie data yet — log calories eaten on daily entries.</div>';
+            return;
+        }
+        if (tab === 'list')    _calHistList(data, el);
+        else if (tab === 'weekly')  _calHistPeriod(data, el, 'weekly');
+        else if (tab === 'monthly') _calHistPeriod(data, el, 'monthly');
+        else                        _calHistAllTime(data, el);
+    }
+
+    function _calHistList(data, el) {
+        const rows = [...data].reverse().map(d => {
+            const dt = new Date(d.ds+'T00:00:00');
+            const mm = String(dt.getMonth()+1).padStart(2,'0');
+            const dd = String(dt.getDate()).padStart(2,'0');
+            const yy = String(dt.getFullYear()).slice(2);
+            const label = `${mm}/${dd}/${yy}`;
+            const nc = d.net<=0 ? '#80b99a' : '#d97070';
+            const ns = (d.net>0?'+':'')+Math.round(d.net).toLocaleString();
+            return `<div class="cal-hist-row">
+                <span class="cal-date">${label}</span>
+                <span class="cal-eaten">${d.eaten.toLocaleString()} kcal</span>
+                <span class="cal-net" style="color:${nc}">${ns} kcal</span>
+            </div>`;
+        }).join('');
+        el.innerHTML = `<div class="cal-hist-list-hdr"><span>Date</span><span>Eaten</span><span style="text-align:right">Net</span></div>${rows}`;
+    }
+
+    function _calHistPeriod(data, el, mode) {
+        // Group by week (Mon start) or month
+        const groups = {};
+        data.forEach(d => {
+            const dt  = new Date(d.ds+'T00:00:00');
+            let key;
+            if (mode === 'weekly') {
+                const day = dt.getDay(); // 0=Sun
+                const mon = new Date(dt); mon.setDate(dt.getDate() - (day===0?6:day-1));
+                key = mon.toISOString().slice(0,10);
+            } else {
+                key = d.ds.slice(0,7); // YYYY-MM
+            }
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(d);
+        });
+
+        const periods = Object.keys(groups).sort().map(k => {
+            const days = groups[k];
+            const avgE = days.reduce((s,d)=>s+d.eaten,0)/days.length;
+            const bd   = days.filter(d=>d.budget>0);
+            const avgB = bd.length ? bd.reduce((s,d)=>s+d.budget,0)/bd.length : 0;
+            const avgN = days.reduce((s,d)=>s+d.net,0)/days.length;
+            return { key: k, avgE, avgB, avgN, count: days.length };
+        });
+
+        const fmtK = k => {
+            if (mode === 'weekly') {
+                const dt = new Date(k+'T00:00:00');
+                return `${dt.getMonth()+1}/${dt.getDate()}`;
+            }
+            const [y,m] = k.split('-');
+            return `${'JanFebMarAprMayJunJulAugSepOctNovDec'.slice((+m-1)*3,(+m-1)*3+3)} '${y.slice(2)}`;
+        };
+
+        const tableRows = [...periods].reverse().map(p => {
+            const nc = p.avgN<=0 ? '#80b99a' : '#d97070';
+            return `<div class="cal-hist-row four-col">
+                <span class="cal-date">${fmtK(p.key)}</span>
+                <span class="cal-eaten">${Math.round(p.avgE).toLocaleString()}</span>
+                <span class="cal-net" style="color:${nc}">${p.avgN>0?'+':''}${Math.round(p.avgN).toLocaleString()}</span>
+                <span class="cal-sub">${p.count}d</span>
+            </div>`;
+        }).join('');
+
+        el.innerHTML = `
+            <canvas id="chPeriodEat" class="trend-canvas"></canvas>
+            <div style="display:flex;gap:16px;margin-top:8px;margin-bottom:20px;align-items:center;">
+                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);"><span style="width:12px;height:2px;background:#e8e8e8;display:inline-block;border-radius:1px;"></span>Avg Eaten</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);"><span style="width:12px;border-top:2px dashed rgba(255,255,255,0.30);display:inline-block;"></span>Avg Budget</span>
+            </div>
+            <h3 style="margin-bottom:10px;">Net per ${mode==='weekly'?'Week':'Month'}</h3>
+            <canvas id="chPeriodNet" class="trend-canvas" style="margin-bottom:20px;"></canvas>
+            <div class="cal-hist-list-hdr four-col"><span>${mode==='weekly'?'Week of':'Month'}</span><span>Avg Eaten</span><span style="text-align:right">Avg Net</span><span style="text-align:right">Days</span></div>
+            ${tableRows}`;
+
+        requestAnimationFrame(() => {
+            _drawEatLine('chPeriodEat', periods.map(p => ({eaten:p.avgE, budget:p.avgB, label:fmtK(p.key)})));
+            _drawNetBars('chPeriodNet', periods.map(p => ({net:p.avgN, label:fmtK(p.key)})));
+        });
+    }
+
+    function _calHistAllTime(data, el) {
+        const avgE = data.reduce((s,d)=>s+d.eaten,0)/data.length;
+        const bd   = data.filter(d=>d.budget>0);
+        const avgB = bd.length ? bd.reduce((s,d)=>s+d.budget,0)/bd.length : 0;
+        const avgN = data.reduce((s,d)=>s+d.net,0)/data.length;
+        const unc  = data.filter(d=>d.net<=0).length;
+        const nc   = avgN<=0 ? '#80b99a' : '#d97070';
+
+        el.innerHTML = `
+            <div class="stat-tiles" style="margin-bottom:18px;">
+                <div class="stat-tile"><div class="stat-tile-lbl">Avg Eaten</div><div class="stat-tile-val">${Math.round(avgE).toLocaleString()}</div></div>
+                <div class="stat-tile"><div class="stat-tile-lbl">Avg Budget</div><div class="stat-tile-val">${avgB?Math.round(avgB).toLocaleString():'—'}</div></div>
+                <div class="stat-tile"><div class="stat-tile-lbl">Avg Net</div><div class="stat-tile-val" style="color:${nc}">${avgN>0?'+':''}${Math.round(avgN).toLocaleString()}</div></div>
+                <div class="stat-tile"><div class="stat-tile-lbl">Under Budget</div><div class="stat-tile-val" style="color:#80b99a">${unc}<span style="font-size:13px;color:var(--text-muted)"> / ${data.length}</span></div></div>
+            </div>
+            <canvas id="chAllEat" class="trend-canvas"></canvas>
+            <div style="display:flex;gap:16px;margin-top:8px;margin-bottom:20px;align-items:center;">
+                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);"><span style="width:12px;height:2px;background:#e8e8e8;display:inline-block;border-radius:1px;"></span>Eaten</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);"><span style="width:12px;border-top:2px dashed rgba(255,255,255,0.30);display:inline-block;"></span>Budget</span>
+            </div>
+            <h3 style="margin-bottom:10px;">Net Calories — All Time</h3>
+            <canvas id="chAllNet" class="trend-canvas"></canvas>`;
+
+        requestAnimationFrame(() => {
+            _drawEatLine('chAllEat', data.map(d => ({eaten:d.eaten, budget:d.budget, label:`${new Date(d.ds+'T00:00:00').getMonth()+1}/${new Date(d.ds+'T00:00:00').getDate()}`})));
+            _drawNetBars('chAllNet', data.map(d => ({net:d.net, label:`${new Date(d.ds+'T00:00:00').getMonth()+1}/${new Date(d.ds+'T00:00:00').getDate()}`})));
+        });
+    }
+
+    /* Generic canvas helpers shared by all calorie history views */
+    function _drawEatLine(id, pts) {
+        const canvas = document.getElementById(id); if (!canvas||!pts.length) return;
+        const ctx=canvas.getContext('2d'), dpr=window.devicePixelRatio||1;
+        const W=canvas.offsetWidth||300, H=160;
+        canvas.width=W*dpr; canvas.height=H*dpr; ctx.scale(dpr,dpr); ctx.clearRect(0,0,W,H);
+        const n=pts.length, PAD={t:12,b:28,l:54,r:16};
+        const allV=[...pts.map(p=>p.eaten),...pts.filter(p=>p.budget>0).map(p=>p.budget)];
+        const minV=Math.min(...allV)*0.92, maxV=Math.max(...allV)*1.05, span=(maxV-minV)||1;
+        const xOf=i=>PAD.l+(n===1?(W-PAD.l-PAD.r)/2:(i/(n-1))*(W-PAD.l-PAD.r));
+        const yOf=v=>H-PAD.b-((v-minV)/span)*(H-PAD.t-PAD.b);
+        // Y labels
+        [minV,(minV+maxV)/2,maxV].forEach(v=>{ctx.fillStyle='rgba(255,255,255,0.22)';ctx.font='9px system-ui,sans-serif';ctx.textAlign='right';ctx.fillText(Math.round(v).toLocaleString(),PAD.l-4,yOf(v)+3);});
+        // X labels
+        const step=Math.max(1,Math.ceil(n/6));
+        pts.forEach((p,i)=>{if(i%step===0||i===n-1){ctx.fillStyle='rgba(255,255,255,0.25)';ctx.font='9px system-ui,sans-serif';ctx.textAlign='center';ctx.fillText(p.label,xOf(i),H-8);}});
+        // Budget dashed
+        let fb=true; ctx.strokeStyle='rgba(255,255,255,0.22)';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.beginPath();
+        pts.forEach((p,i)=>{if(!p.budget){fb=true;return;}if(fb){ctx.moveTo(xOf(i),yOf(p.budget));fb=false;}else ctx.lineTo(xOf(i),yOf(p.budget));});
+        ctx.stroke();ctx.setLineDash([]);
+        // Fill
+        const grad=ctx.createLinearGradient(0,PAD.t,0,H-PAD.b);grad.addColorStop(0,'rgba(255,255,255,0.10)');grad.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.beginPath();pts.forEach((p,i)=>{if(i===0)ctx.moveTo(xOf(i),yOf(p.eaten));else ctx.lineTo(xOf(i),yOf(p.eaten));});
+        ctx.lineTo(xOf(n-1),H-PAD.b);ctx.lineTo(xOf(0),H-PAD.b);ctx.closePath();ctx.fillStyle=grad;ctx.fill();
+        // Line
+        ctx.beginPath();pts.forEach((p,i)=>{if(i===0)ctx.moveTo(xOf(i),yOf(p.eaten));else ctx.lineTo(xOf(i),yOf(p.eaten));});
+        ctx.strokeStyle='#e8e8e8';ctx.lineWidth=2;ctx.lineJoin='round';ctx.stroke();
+        if(n<=45){pts.forEach((p,i)=>{ctx.beginPath();ctx.arc(xOf(i),yOf(p.eaten),3,0,Math.PI*2);ctx.fillStyle='#e8e8e8';ctx.fill();});}
+    }
+
+    function _drawNetBars(id, pts) {
+        const canvas=document.getElementById(id); if(!canvas||!pts.length) return;
+        const ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1;
+        const W=canvas.offsetWidth||300,H=120;
+        canvas.width=W*dpr;canvas.height=H*dpr;ctx.scale(dpr,dpr);ctx.clearRect(0,0,W,H);
+        const n=pts.length,PAD={t:10,b:28,l:54,r:16};
+        const maxAbs=Math.max(...pts.map(p=>Math.abs(p.net)))||500;
+        const minV=-maxAbs*1.18,maxV=maxAbs*1.18,span=maxV-minV;
+        const xOf=i=>PAD.l+(n===1?(W-PAD.l-PAD.r)/2:(i/(n-1))*(W-PAD.l-PAD.r));
+        const yOf=v=>H-PAD.b-((v-minV)/span)*(H-PAD.t-PAD.b);
+        const y0=yOf(0);
+        const half=Math.round(maxAbs/100)*100||100;
+        [-half,0,half].forEach(v=>{ctx.fillStyle='rgba(255,255,255,0.22)';ctx.font='9px system-ui,sans-serif';ctx.textAlign='right';ctx.fillText((v>0?'+':'')+v.toLocaleString(),PAD.l-4,yOf(v)+3);});
+        ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(PAD.l,y0);ctx.lineTo(W-PAD.r,y0);ctx.stroke();
+        const step=Math.max(1,Math.ceil(n/6));
+        pts.forEach((p,i)=>{if(i%step===0||i===n-1){ctx.fillStyle='rgba(255,255,255,0.25)';ctx.font='9px system-ui,sans-serif';ctx.textAlign='center';ctx.fillText(p.label,xOf(i),H-8);}});
+        const barW=Math.max(2,Math.min(22,(W-PAD.l-PAD.r)/n-2));
+        pts.forEach((p,i)=>{ctx.fillStyle=p.net<=0?'rgba(128,185,154,0.80)':'rgba(217,112,112,0.80)';const bt=Math.min(y0,yOf(p.net)),bh=Math.max(1,Math.abs(y0-yOf(p.net)));ctx.fillRect(xOf(i)-barW/2,bt,barW,bh);});
+    }
+
+    /* ── WEIGHT PROJECTION ── */
+    let _proj = null; // stored so hover can redraw without recomputing
+
+    function buildProjectionGraph() {
+        const todayStr = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
+        const data    = localDBInstance[todayStr] || {};
+        const eaten   = parseFloat(data.calsEaten) || 0;
+        const budget  = parseFloat(data.budget) || parseFloat(lastBudget) || 0;
+        const startWt = parseFloat(document.getElementById('bioWeight').value) || 0;
+
+        const emptyEl   = document.getElementById('projectionEmpty');
+        const contentEl = document.getElementById('projectionContent');
+        if (!emptyEl || !contentEl) return;
+
+        if (!data.calsEaten || !budget || !startWt) {
+            emptyEl.style.display = ''; contentEl.style.display = 'none';
+            _proj = null; return;
+        }
+        emptyEl.style.display = 'none'; contentEl.style.display = '';
+
+        // 60% of cardio burn is already added back into the food budget.
+        // The remaining 40% is an additional calorie deficit — include it in projection.
+        const cardioBurn    = parseFloat(data.burn) || lastBurn || 0;
+        const uneatenCardio = Math.round(cardioBurn * 0.40);
+        const foodNet       = Math.round(eaten - budget);          // net vs food budget
+        const dailyNet      = foodNet - uneatenCardio;             // effective net incl. cardio
+        const lbsPerDay  = dailyNet / 3500;
+        const lbsPerWeek = lbsPerDay * 7;
+        const col        = dailyNet <= 0 ? '#80b99a' : '#d97070';
+        const rgb        = dailyNet <= 0 ? '128,185,154' : '217,112,112';
+
+        // Stat tiles
+        const nEl = document.getElementById('projNetVal');
+        if (nEl) {
+            nEl.style.color = col;
+            nEl.innerHTML = `${dailyNet > 0?'+':''}${dailyNet.toLocaleString()} kcal`
+                + (uneatenCardio > 0
+                    ? `<span style="display:block;font-size:10px;font-weight:500;color:var(--text-muted);margin-top:3px;">food ${foodNet > 0?'+':''}${foodNet.toLocaleString()} · cardio −${uneatenCardio.toLocaleString()}</span>`
+                    : '');
+        }
+        const wEl = document.getElementById('projWeekVal');
+        if (wEl) { wEl.textContent = `${lbsPerWeek > 0?'+':''}${lbsPerWeek.toFixed(2)} lbs`; wEl.style.color = col; }
+
+        // Milestones
+        const msEl = document.getElementById('projectionMilestones');
+        if (msEl) msEl.innerHTML = [30,60,90,180].map(d => {
+            const proj = startWt + lbsPerDay * d;
+            const diff = proj - startWt;
+            const dc   = diff <= 0 ? '#80b99a' : '#d97070';
+            return `<div class="proj-milestone">
+                <span class="proj-ms-label">${d} days</span>
+                <span class="proj-ms-weight">${proj.toFixed(1)} lbs</span>
+                <span class="proj-ms-diff" style="color:${dc}">${diff>0?'+':''}${diff.toFixed(1)} lbs</span>
+            </div>`;
+        }).join('');
+
+        const canvas = document.getElementById('projectionChart');
+        if (!canvas) return;
+
+        const DAYS = 91; // 13 weeks
+        const pts  = Array.from({length: DAYS}, (_, i) => startWt + lbsPerDay * i);
+        const minW = Math.min(...pts), maxW = Math.max(...pts);
+        const span = (maxW - minW) || 1;
+        const PAD  = {t:20, b:32, l:52, r:16};
+
+        const W = canvas.offsetWidth || 300, H = 200;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = W * dpr; canvas.height = H * dpr;
+
+        const xOf = i => PAD.l + (i / (DAYS - 1)) * (W - PAD.l - PAD.r);
+        const yOf = v => H - PAD.b - ((v - minW) / span) * (H - PAD.t - PAD.b);
+
+        _proj = { canvas, pts, xOf, yOf, PAD, W, H, dpr, col, rgb, startWt, DAYS };
+        _drawProjection(null);
+
+        // Attach hover events once
+        if (!canvas._projHoverInit) {
+            canvas.addEventListener('mousemove', e => {
+                if (!_proj) return;
+                const rect = canvas.getBoundingClientRect();
+                const mx   = e.clientX - rect.left;
+                const day  = Math.round(((mx - _proj.PAD.l) / (_proj.W - _proj.PAD.l - _proj.PAD.r)) * (_proj.DAYS - 1));
+                if (day >= 0 && day < _proj.DAYS) _drawProjection(day);
+            });
+            canvas.addEventListener('mouseleave', () => { if (_proj) _drawProjection(null); });
+            canvas._projHoverInit = true;
+        }
+    }
+
+    function _drawProjection(hoverDay) {
+        if (!_proj) return;
+        const {canvas, pts, xOf, yOf, PAD, W, H, dpr, col, rgb, startWt, DAYS} = _proj;
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+
+        // Week grid lines (every 7 days = 13 weeks)
+        for (let w = 1; w <= 13; w++) {
+            const d = w * 7;
+            if (d >= DAYS) break;
+            const x = xOf(d);
+            const isMajor = w % 4 === 0; // bold every 4 weeks
+            ctx.strokeStyle = isMajor ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)';
+            ctx.lineWidth = 1; ctx.setLineDash([]);
+            ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H - PAD.b); ctx.stroke();
+            if (isMajor || w === 1 || w === 13) {
+                ctx.fillStyle = 'rgba(255,255,255,0.28)';
+                ctx.font = '9px system-ui,sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(`W${w}`, x, H - 10);
+            }
+        }
+        // Always label W1 and last week
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
+        ctx.font = '9px system-ui,sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('W1', xOf(7), H - 10);
+
+        // Dashed baseline at starting weight
+        ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(PAD.l, yOf(startWt)); ctx.lineTo(W - PAD.r, yOf(startWt)); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Y-axis labels
+        [startWt, pts[DAYS - 1]].forEach(v => {
+            ctx.fillStyle = 'rgba(255,255,255,0.30)'; ctx.font = '9px system-ui,sans-serif'; ctx.textAlign = 'right';
+            ctx.fillText(`${v.toFixed(1)}`, PAD.l - 4, yOf(v) + 3);
+        });
+
+        // Gradient fill under line
+        const grad = ctx.createLinearGradient(0, PAD.t, 0, H - PAD.b);
+        grad.addColorStop(0, `rgba(${rgb},0.18)`); grad.addColorStop(1, `rgba(${rgb},0)`);
+        ctx.beginPath();
+        ctx.moveTo(xOf(0), yOf(pts[0]));
+        pts.forEach((v,i) => ctx.lineTo(xOf(i), yOf(v)));
+        ctx.lineTo(xOf(DAYS-1), H-PAD.b); ctx.lineTo(xOf(0), H-PAD.b); ctx.closePath();
+        ctx.fillStyle = grad; ctx.fill();
+
+        // Projection line
+        ctx.beginPath();
+        ctx.moveTo(xOf(0), yOf(pts[0]));
+        pts.forEach((v,i) => ctx.lineTo(xOf(i), yOf(v)));
+        ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+
+        // Today dot + label
+        ctx.beginPath(); ctx.arc(xOf(0), yOf(pts[0]), 4, 0, Math.PI*2);
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '9px system-ui,sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('Today', xOf(0) + 7, yOf(pts[0]) - 4);
+
+        // Hover indicator
+        if (hoverDay !== null && hoverDay < DAYS) {
+            const hx = xOf(hoverDay);
+            const hy = yOf(pts[hoverDay]);
+            const week = Math.ceil(hoverDay / 7) || 0;
+
+            // Vertical crosshair
+            ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = 1; ctx.setLineDash([]);
+            ctx.beginPath(); ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, H - PAD.b); ctx.stroke();
+
+            // Dot on line
+            ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI*2);
+            ctx.fillStyle = '#fff'; ctx.fill();
+            ctx.beginPath(); ctx.arc(hx, hy, 3, 0, Math.PI*2);
+            ctx.fillStyle = col; ctx.fill();
+
+            // Tooltip
+            const label = hoverDay === 0 ? 'Today' : `Day ${hoverDay} · W${week}`;
+            const wt    = `${pts[hoverDay].toFixed(1)} lbs`;
+            const diff  = pts[hoverDay] - startWt;
+            const ds    = `${diff > 0?'+':''}${diff.toFixed(1)} lbs`;
+            const text  = `${label} — ${wt} (${ds})`;
+
+            ctx.font = '11px system-ui,sans-serif';
+            const tw = ctx.measureText(text).width + 20;
+            const th = 26;
+            const tx = Math.min(hx + 10, W - PAD.r - tw);
+            const ty = Math.max(PAD.t, hy - th - 6);
+
+            ctx.fillStyle = 'rgba(17,17,17,0.92)';
+            ctx.beginPath();
+            ctx.roundRect(tx, ty, tw, th, 5);
+            ctx.fill();
+
+            ctx.fillStyle = '#f0f0f0';
+            ctx.textAlign = 'left';
+            ctx.fillText(text, tx + 10, ty + 17);
+        }
+    }
+
+    function logWorkoutForDate() {
+        syncActiveDayToMemory(true); // true = refresh calendar + log
+
+        // Button feedback
+        const btn = document.getElementById('logWorkoutBtn');
+        if (btn) {
+            btn.textContent = '✓ Logged';
+            btn.style.background = 'var(--accent-success)';
+            btn.disabled = true;
+            setTimeout(() => {
+                btn.textContent = 'Log Workout';
+                btn.style.background = '';
+                btn.disabled = false;
+            }, 2000);
+        }
+    }
+
+    function logTodayAndShowProjection() {
+        syncActiveDayToMemory();
+
+        // Reveal projection card (hidden until this is clicked)
+        const card = document.getElementById('projectionCard');
+        if (card) card.style.display = '';
+
+        showPage('pageMetabolics', 1);
+        setTimeout(() => {
+            buildProjectionGraph();
+            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
+    }
+
     /* ── PAGE NAV ── */
     function showPage(id, idx) {
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -2670,6 +3845,7 @@
             document.getElementById('metabolicActiveDateText').innerText = `Viewing metrics for ${fmtDate(activeDayFocusString)}`;
             syncHiddenToMet();
             buildDailyLog();
+            _updateCalHistCard();
             buildTrendCharts('weight');
         }
     }
@@ -2742,13 +3918,17 @@
         const hasContent = !!summary;
         const isMobile = window.innerWidth <= 768;
 
+        // X button — appears on hover, removes the day's workout
+        const delBtn = hasContent
+            ? `<button class="cell-del-btn" onclick="clearCalendarDayWorkout(event,'${dateStr}')" title="Remove workout">×</button>`
+            : '';
+
         if (isMobile && activeViewMode === 'week') {
-            // Compact strip: day initial + date number + activity dot
             const d = new Date(dateStr + 'T00:00:00');
             const dayAbbr = ['Su','Mo','Tu','We','Th','Fr','Sa'][d.getDay()];
             cell.innerHTML = `<div class="cell-day-abbr">${dayAbbr}</div><div class="day-num-track">${d.getDate()}</div>${hasContent ? '<div class="cell-activity-dot"></div>' : ''}`;
         } else {
-            cell.innerHTML = `<div class="day-num-track">${label}</div>${summary ? `<div class="cell-contents-summary">${escH(summary)}</div>` : ''}`;
+            cell.innerHTML = `${delBtn}<div class="day-num-track">${label}</div>${summary ? `<div class="cell-contents-summary">${escH(summary)}</div>` : ''}`;
         }
 
         if (dateStr === activeDayFocusString) cell.classList.add('selected-day');
@@ -2766,7 +3946,8 @@
         currentDisplayDate = new Date(+p[0],+p[1]-1,+p[2]);
         document.getElementById('activeDayLabel').innerText = fmtDate(dateStr);
         loadTargetDayFromMemory(dateStr);
-        // On mobile scroll the workout editor into view after a short delay
+        buildDayWorkoutSummary(dateStr);
+        checkAndShowRecurringBanner(dateStr);
         if (window.innerWidth <= 768) {
             setTimeout(() => {
                 const card = document.getElementById('workoutLogCard');
@@ -2775,10 +3956,136 @@
         }
     }
 
+    function clearCalendarDayWorkout(event, dateStr) {
+        event.stopPropagation();
+        if (!confirm(`Remove all workouts for ${fmtDate(dateStr)}?`)) return;
+        if (!localDBInstance[dateStr]) return;
+        Object.assign(localDBInstance[dateStr], {
+            exercises:'', notes:'', steps:0,
+            runDist:0, runTime:0, bikeDist:0, bikeTime:0, swimTime:0, burn:0
+        });
+        localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(localDBInstance));
+        if (dateStr === activeDayFocusString) {
+            document.getElementById('inDayExercises').value = '';
+            document.getElementById('inDayNotes').value = '';
+            ['inSteps','inRunDist','inRunTime','inBikeDist','inBikeTime','inSwimTime']
+                .forEach(id => { document.getElementById(id).value = 0; });
+            renderWorkoutLog();
+        }
+        renderActiveViewLayout();
+        buildDayWorkoutSummary(dateStr);
+    }
+
+    function buildDayWorkoutSummary(dateStr) {
+        const content = document.getElementById('dayWorkoutContent');
+        const title   = document.getElementById('dayWorkoutTitle');
+        if (!content) return;
+
+        const todayStr = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
+        if (title) title.textContent = dateStr === todayStr ? "Today's Workouts" : `${fmtDate(dateStr)}'s Workouts`;
+
+        const data = localDBInstance[dateStr] || {};
+        const arr  = parseEx(data.exercises || '');
+        if (!arr.length) {
+            content.innerHTML = '<div class="exercise-empty">No workouts logged for this day.</div>';
+            return;
+        }
+
+        const lifts  = arr.filter(e => e.k === 'lift');
+        const cardio = arr.filter(e => ['swim','run','bike'].includes(e.k));
+        let html = '';
+
+        if (lifts.length) {
+            // Group by muscle group
+            const groups = {};
+            lifts.forEach(e => {
+                const entry = normalizeLift(e);
+                const g = entry.g || 'other';
+                if (!groups[g]) groups[g] = [];
+                groups[g].push(entry);
+            });
+            Object.keys(groups).forEach(g => {
+                html += `<div class="day-workout-group"><div class="day-workout-group-label">${g.charAt(0).toUpperCase()+g.slice(1)}</div>`;
+                groups[g].forEach(e => {
+                    const chips = (e.sets||[]).map((s,i) =>
+                        `<span class="day-set-chip"><span class="day-set-chip-label">S${i+1}</span>${s.r||'—'}${s.w?' @ '+escH(s.w):''}</span>`
+                    ).join('');
+                    html += `<div class="day-workout-item">
+                        <span class="day-workout-name">${escH(e.n)}</span>
+                        ${chips ? `<div class="day-workout-sets">${chips}</div>` : ''}
+                    </div>`;
+                });
+                html += '</div>';
+            });
+        }
+
+        if (cardio.length) {
+            const cfg = {
+                swim: {label:'Swimming'},
+                run:  {label:'Running'},
+                bike: {label:'Cycling'}
+            };
+            html += '<div class="day-workout-group"><div class="day-workout-group-label">Cardio</div>';
+            cardio.forEach(e => {
+                const c = cfg[e.k];
+                const dist = e.v1 ? `${e.v1}${e.k==='swim'?' min':' mi'}` : '';
+                const time = e.v2 && e.k!=='swim' ? ` · ${e.v2} min` : '';
+                const note = e.note ? ` — ${escH(e.note)}` : '';
+                html += `<div class="day-workout-item">
+                    <span class="day-workout-name">${c.label}${dist?' — '+dist:''}${time}${note}</span>
+                </div>`;
+            });
+            html += '</div>';
+        }
+
+        content.innerHTML = html;
+    }
+
+    /* ── MUSCLE GROUP SCROLL ── */
+    function initGroupPillsScroll() {
+        const row = document.getElementById('groupPillsRow');
+        if (!row) return;
+
+        let startX = 0, scrollOrigin = 0, moved = false;
+
+        // Mouse drag
+        row.addEventListener('mousedown', e => {
+            startX = e.pageX;
+            scrollOrigin = row.scrollLeft;
+            moved = false;
+            row.style.cursor = 'grabbing';
+            row.style.userSelect = 'none';
+        });
+        document.addEventListener('mousemove', e => {
+            if (!row.style.cursor || row.style.cursor !== 'grabbing') return;
+            const dx = e.pageX - startX;
+            if (Math.abs(dx) > 3) moved = true;
+            if (moved) row.scrollLeft = scrollOrigin - dx;
+        });
+        document.addEventListener('mouseup', () => {
+            row.style.cursor = 'grab';
+            row.style.userSelect = '';
+        });
+
+        // Suppress the click that fires after a drag so we don't change the group
+        row.addEventListener('click', e => {
+            if (moved) { e.stopImmediatePropagation(); moved = false; }
+        }, true);
+
+        // Mouse wheel: vertical delta → horizontal scroll
+        row.addEventListener('wheel', e => {
+            e.preventDefault();
+            row.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
+        }, { passive: false });
+    }
+
     /* ── WORKOUT LOG ── */
     function selectGroup(g) {
         currentGroup = g;
         document.querySelectorAll('.group-pill').forEach(p => p.classList.toggle('active', p.dataset.g === g));
+        // Scroll the active pill into view within the strip
+        const active = document.querySelector(`.group-pill[data-g="${g}"]`);
+        if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         populateExerciseSelect();
     }
 
@@ -2887,9 +4194,11 @@
         if (allSameReps && allSameWeight) {
             return `${n}×${sets[0].r||'—'}${sets[0].w ? ' <span style="color:var(--text-tertiary);font-weight:500">@ '+escH(sets[0].w)+'</span>' : ''}`;
         }
-        // Mixed: list each set compactly
-        const parts = sets.map((s,i) => `<span style="color:var(--text-muted);font-size:10px">${i+1}:</span>${s.r||'—'}${s.w?'<span style="color:var(--text-tertiary)">@'+escH(s.w)+'</span>':''}`).join(' ');
-        return `${n} sets &nbsp;${parts}`;
+        // Mixed sets: compact chips that wrap naturally
+        const chips = sets.map((s,i) =>
+            `<span class="set-chip"><span class="set-chip-n">S${i+1}</span>${s.r||'—'}${s.w?`<span class="set-chip-wt"> @${escH(s.w)}</span>`:''}</span>`
+        ).join('');
+        return `<span class="set-count-lbl">${n} sets</span>${chips}`;
     }
 
     function commitAddLift() {
@@ -2945,13 +4254,20 @@
         const arr = parseEx(document.getElementById('inDayExercises').value);
         renderLiftList(arr);
         renderCardioList(arr);
+        buildDayWorkoutSummary(activeDayFocusString);
     }
 
     function renderLiftList(arr) {
         const lifts = arr.map((e,i) => ({...e,_i:i})).filter(e => e.k==='lift'||e.k==='text');
         const el = document.getElementById('liftListDisplay');
+        const btnWrap = document.getElementById('saveWorkoutBtnWrap');
         el.innerHTML = '';
-        if (!lifts.length) { el.innerHTML = '<div class="exercise-empty">No exercises logged — select a muscle group and add above.</div>'; return; }
+        if (!lifts.length) {
+            el.innerHTML = '<div class="exercise-empty">No exercises logged — select a muscle group and add above.</div>';
+            if (btnWrap) btnWrap.style.display = 'none';
+            return;
+        }
+        if (btnWrap) btnWrap.style.display = '';
         lifts.forEach((e, numIdx) => {
             const item = document.createElement('div');
             const grpClass = e.k === 'lift' ? `has-${e.g}` : 'has-text';
@@ -2961,8 +4277,10 @@
                 item.innerHTML = `
                     <span class="ex-num">${numIdx+1}</span>
                     <span class="group-badge ${entry.g}">${entry.g}</span>
-                    <span class="ex-text" onclick="startEditName(this,${e._i})">${escH(entry.n)}</span>
-                    <span class="sr-badge" onclick="startEditSR(this,${e._i})">${fmtSets(entry.sets)}</span>
+                    <div class="ex-main">
+                        <span class="ex-text" onclick="startEditName(this,${e._i})">${escH(entry.n)}</span>
+                        <span class="sr-badge" onclick="startEditSR(this,${e._i})">${fmtSets(entry.sets)}</span>
+                    </div>
                     <button class="ex-del" onclick="deleteEntry(${e._i})">×</button>`;
             } else {
                 item.innerHTML = `
@@ -3044,6 +4362,144 @@
         wrap.addEventListener('focusout', ev => { if (!wrap.contains(ev.relatedTarget)) commit(); });
         wrap.querySelectorAll('input').forEach(i => i.addEventListener('keydown', ev => { if(ev.key==='Enter') i.blur(); }));
         wrap.querySelector('input').focus();
+    }
+
+    /* ── SAVE WORKOUT MODAL ── */
+    let _swm = { isPreset: true, isRecurring: false, days: [], freq: 1 };
+
+    function openSaveWorkoutModal() {
+        const lifts = parseEx(document.getElementById('inDayExercises').value).filter(e => e.k === 'lift');
+        if (!lifts.length) return;
+        // Auto-name from muscle groups
+        const groups = [...new Set(lifts.map(e => e.g || 'other'))];
+        const autoName = groups.map(g => g.charAt(0).toUpperCase()+g.slice(1)).join(' + ') + ' Workout';
+        document.getElementById('swmName').value = autoName;
+        // Reset state
+        _swm = { isPreset: true, isRecurring: false, days: [], freq: 1 };
+        _swmRefreshUI();
+        document.getElementById('saveWorkoutModal').classList.add('open');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => { const el=document.getElementById('swmName'); if(el){el.select();} }, 80);
+    }
+
+    function closeSaveWorkoutModal() {
+        document.getElementById('saveWorkoutModal').classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    function handleSWMBgClick(e) {
+        if (e.target === document.getElementById('saveWorkoutModal')) closeSaveWorkoutModal();
+    }
+
+    function swmToggle(which) {
+        if (which === 'preset') {
+            _swm.isPreset = !_swm.isPreset;
+        } else {
+            _swm.isRecurring = !_swm.isRecurring;
+            document.getElementById('swmRecurringSection').style.display = _swm.isRecurring ? '' : 'none';
+        }
+        _swmRefreshUI();
+    }
+
+    function swmToggleDay(d) {
+        const i = _swm.days.indexOf(d);
+        if (i === -1) _swm.days.push(d); else _swm.days.splice(i, 1);
+        document.querySelectorAll('.day-pick-btn').forEach(btn =>
+            btn.classList.toggle('selected', _swm.days.includes(parseInt(btn.dataset.day)))
+        );
+    }
+
+    function swmSetFreq(n) {
+        _swm.freq = n;
+        document.getElementById('swmFreqWeekly').classList.toggle('active', n===1);
+        document.getElementById('swmFreqBiweekly').classList.toggle('active', n===2);
+    }
+
+    function _swmRefreshUI() {
+        document.getElementById('swmTogglePreset').classList.toggle('on', _swm.isPreset);
+        document.getElementById('swmToggleRecurring').classList.toggle('on', _swm.isRecurring);
+    }
+
+    function confirmSaveWorkout() {
+        const name = document.getElementById('swmName').value.trim();
+        if (!name) { document.getElementById('swmName').focus(); return; }
+
+        const lifts = parseEx(document.getElementById('inDayExercises').value).filter(e => e.k === 'lift');
+        if (!lifts.length) { closeSaveWorkoutModal(); return; }
+
+        const preset = {
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+            name,
+            exercises: JSON.stringify(lifts),
+            isRecurring: _swm.isRecurring,
+            daysOfWeek:  _swm.isRecurring ? [..._swm.days] : [],
+            everyNWeeks: _swm.freq,
+            createdAt:   activeDayFocusString
+        };
+
+        // Add to template pool if "Save to Presets" is on
+        if (_swm.isPreset) {
+            const pool = JSON.parse(localStorage.getItem('ironmanTemplatesPool')) || defaultTemplates;
+            const textLines = lifts.map(e => {
+                const entry = normalizeLift(e);
+                const n = entry.sets ? entry.sets.length : 1;
+                return `${entry.n}: ${n}x`;
+            });
+            pool.push({ id: preset.id, title: name, text: textLines.join('\n') });
+            localStorage.setItem('ironmanTemplatesPool', JSON.stringify(pool));
+            buildWorkoutPool();
+        }
+
+        // Save recurring preset
+        const allPresets = JSON.parse(localStorage.getItem('queWorkoutPresets') || '[]');
+        allPresets.push(preset);
+        localStorage.setItem('queWorkoutPresets', JSON.stringify(allPresets));
+
+        closeSaveWorkoutModal();
+
+        // Flash confirmation on button
+        const btn = document.getElementById('saveWorkoutBtn');
+        if (btn) {
+            btn.textContent = '✓ Saved';
+            btn.style.color = 'var(--accent-success)';
+            btn.style.borderColor = 'var(--accent-success)';
+            setTimeout(() => {
+                btn.textContent = 'Save Workout';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }, 2200);
+        }
+    }
+
+    /* ── RECURRING WORKOUT BANNER ── */
+    function checkAndShowRecurringBanner(dateStr) {
+        const bannerEl = document.getElementById('recurringBanner');
+        if (!bannerEl) return;
+        const all = JSON.parse(localStorage.getItem('queWorkoutPresets') || '[]');
+        const dow = new Date(dateStr+'T00:00:00').getDay();
+        const matches = all.filter(p => p.isRecurring && p.daysOfWeek.includes(dow));
+        const hasLifts = parseEx(localDBInstance[dateStr]?.exercises || '').some(e => e.k === 'lift');
+        if (matches.length && !hasLifts) {
+            const m = matches[0];
+            bannerEl.innerHTML = `<div class="recurring-banner">
+                <span class="recurring-banner-text">Recurring: <strong>${escH(m.name)}</strong></span>
+                <button class="recurring-load-btn" onclick="loadRecurringWorkout('${escH(m.id)}')">Load</button>
+            </div>`;
+            bannerEl.style.display = '';
+        } else {
+            bannerEl.style.display = 'none';
+        }
+    }
+
+    function loadRecurringWorkout(id) {
+        const all = JSON.parse(localStorage.getItem('queWorkoutPresets') || '[]');
+        const preset = all.find(p => p.id === id);
+        if (!preset) return;
+        const arr = parseEx(document.getElementById('inDayExercises').value);
+        parseEx(preset.exercises).forEach(e => arr.push(e));
+        applyExercises(arr);
+        const bannerEl = document.getElementById('recurringBanner');
+        if (bannerEl) bannerEl.style.display = 'none';
     }
 
     /* ── TEMPLATE MODAL ── */
@@ -3228,7 +4684,9 @@
     /* ── DATA PERSISTENCE ── */
     function syncActiveDayToMemory(refresh=false) {
         if (!activeDayFocusString) return;
+        // Spread existing record first so fields like calsEaten aren't wiped
         localDBInstance[activeDayFocusString] = {
+            ...(localDBInstance[activeDayFocusString] || {}),
             steps:    document.getElementById('inSteps').value,
             runDist:  document.getElementById('inRunDist').value,
             runTime:  document.getElementById('inRunTime').value,
@@ -3277,13 +4735,26 @@
     function runGlobalRecalculation() {
         calculateActiveMetrics();
         localStorage.setItem('ironmanProfileSettings_v2', JSON.stringify({w:document.getElementById('bioWeight').value,h:document.getElementById('bioHeight').value,a:document.getElementById('bioAge').value,s:document.getElementById('bioSex').value,b:document.getElementById('deficitBase').value,l:document.getElementById('actLevel').value}));
-        // Persist weight change to today's day record
+        // Flash "saved" badge next to the section heading
+        const badge = document.getElementById('profileSavedBadge');
+        if (badge) {
+            badge.classList.add('show');
+            clearTimeout(badge._t);
+            badge._t = setTimeout(() => badge.classList.remove('show'), 1800);
+        }
+        // Always write the profile weight to today's diary entry so they stay in sync
+        const todayStr = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
+        const wVal = document.getElementById('bioWeight').value;
+        if (wVal) {
+            if (!localDBInstance[todayStr]) localDBInstance[todayStr] = {exercises:'',notes:'',burn:0,budget:0};
+            localDBInstance[todayStr].weight = wVal;
+        }
+        // Persist burn/budget to the currently focused day
         if (localDBInstance[activeDayFocusString]) {
-            localDBInstance[activeDayFocusString].weight = document.getElementById('bioWeight').value;
             localDBInstance[activeDayFocusString].burn   = lastBurn;
             localDBInstance[activeDayFocusString].budget = lastBudget;
-            localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(localDBInstance));
         }
+        localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(localDBInstance));
         buildDailyLog();
     }
 
@@ -3312,6 +4783,14 @@
     /* ── DAILY LOG (paginated, all history) ── */
     let _logPage = 30;
 
+    // Returns the most recently recorded weight on or before dateStr
+    function getLastKnownWeight(dateStr) {
+        const hit = Object.keys(localDBInstance)
+            .filter(ds => ds <= dateStr && localDBInstance[ds].weight)
+            .sort((a, b) => b.localeCompare(a))[0];
+        return hit ? localDBInstance[hit].weight : '';
+    }
+
     function buildDailyLog() {
         _logPage = 30;
         _renderLog();
@@ -3323,7 +4802,6 @@
         const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
         const todayStr = `${_today.getFullYear()}-${String(_today.getMonth()+1).padStart(2,'0')}-${String(_today.getDate()).padStart(2,'0')}`;
 
-        // All days with data + always include today, sorted newest first
         const allKeys = Object.keys(localDBInstance).sort((a,b) => b.localeCompare(a));
         if (!allKeys.includes(todayStr)) allKeys.unshift(todayStr);
 
@@ -3337,36 +4815,101 @@
             const data = localDBInstance[ds] || {};
             const d = new Date(ds + 'T00:00:00');
             const dayIdx = Math.round((_today - d) / 86400000);
-            // Use compact labels for the log row: "Today", "Yesterday", "Mon 5/20"
-            const dowLabel = dayIdx === 0 ? 'Today' : dayIdx === 1 ? 'Yesterday' : `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
+            const dowLabel = dayIdx === 0 ? 'Today' : dayIdx === 1 ? 'Yesterday'
+                : `${DOW[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}`;
             const isActive = ds === activeDayFocusString;
 
-            const row = document.createElement('div');
-            row.className = 'daily-log-row' + (isActive ? ' active-log-row' : '');
-            const burnDisp   = data.burn   ? `<span class="log-burn-val">${Number(data.burn).toLocaleString()}</span> <span class="log-unit">kcal</span>` : '<span class="log-empty">—</span>';
-            const budgetDisp = data.budget ? `<span class="log-budget-val">${Number(data.budget).toLocaleString()}</span> <span class="log-unit">kcal</span>` : '<span class="log-empty">—</span>';
-            row.innerHTML = `
-                <div class="log-date-block">
-                    <span class="log-dow">${dowLabel}</span>
-                    ${dayIdx > 1 ? '' : `<span class="log-date">${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}</span>`}
+            // Net calories: eaten − budget. Green = under budget, Red = over.
+            const eaten  = parseFloat(data.calsEaten) || 0;
+            const budget = parseFloat(data.budget)    || 0;
+            let netClass = 'net-none', netText = '—';
+            if (data.calsEaten && budget) {
+                const net = Math.round(eaten - budget);
+                netClass = net <= 0 ? 'net-under' : 'net-over';
+                netText  = (net > 0 ? '+' : '') + net.toLocaleString() + ' kcal';
+            }
+
+            // Workout summary from stored exercises
+            const summary = buildCellSummary(data.exercises || '');
+            const workoutBlock = summary
+                ? `<div><div class="diary-section-label">Workout</div><div class="diary-workout-text">${escH(summary).replace(/\n/g,'<br>')}</div></div>`
+                : '';
+
+            const entry = document.createElement('div');
+            entry.className = 'diary-entry' + (isActive ? ' active-log-row' : '');
+            entry.innerHTML = `
+                <div class="diary-header" onclick="focusCalendarDay('${ds}')">
+                    <span class="diary-date-label">${dowLabel}</span>
+                    <span class="diary-net ${netClass}" data-net-badge="${ds}">${netText}</span>
                 </div>
-                <div class="log-weight-wrap">
-                    <input class="log-weight-inp" type="number" value="${data.weight||''}" placeholder="—"
-                        oninput="updateDayWeight('${ds}',this.value)">
-                    <span class="log-unit">lbs</span>
-                </div>
-                <div>${burnDisp}</div>
-                <div>${budgetDisp}</div>`;
-            el.appendChild(row);
+                <div class="diary-body">
+                    <div class="diary-stats-row">
+                        <div class="diary-stat">
+                            <label>Weight</label>
+                            <div class="diary-stat-input-row">
+                                <input type="number" value="${escH(String(data.weight || getLastKnownWeight(ds) || ''))}" placeholder="—"
+                                    oninput="updateDayWeight('${ds}',this.value)">
+                                <span class="diary-unit">lbs</span>
+                            </div>
+                        </div>
+                        <div class="diary-stat">
+                            <label>Calories Eaten</label>
+                            <div class="diary-stat-input-row">
+                                <input type="number" value="${escH(String(data.calsEaten||''))}" placeholder="—"
+                                    oninput="updateDayCalsEaten('${ds}',this.value)">
+                                <span class="diary-unit">kcal</span>
+                            </div>
+                        </div>
+                    </div>
+                    ${workoutBlock}
+                    <div>
+                        <div class="diary-section-label">Notes</div>
+                        <textarea class="diary-notes-input"
+                            placeholder="How did it go? Energy, PRs, how you felt…"
+                            oninput="updateDayNotes('${ds}',this.value)">${escH(data.notes||'')}</textarea>
+                    </div>
+                    ${ds === todayStr ? `<button class="log-day-btn" onclick="logTodayAndShowProjection()">Log Today &amp; View Projection →</button>` : ''}
+                </div>`;
+            el.appendChild(entry);
         });
 
         if (remaining > 0) {
             const btn = document.createElement('button');
             btn.className = 'load-more-btn';
-            btn.textContent = `Load ${Math.min(30, remaining)} more days (${remaining} remaining)`;
+            btn.textContent = `Load ${Math.min(30,remaining)} more (${remaining} remaining)`;
             btn.onclick = () => { _logPage += 30; _renderLog(); };
             el.appendChild(btn);
         }
+    }
+
+    function updateDayCalsEaten(dateStr, val) {
+        if (!localDBInstance[dateStr]) localDBInstance[dateStr] = {exercises:'',notes:'',burn:0,budget:0};
+        localDBInstance[dateStr].calsEaten = val;
+        localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(localDBInstance));
+        // Update net badge inline — no full re-render so cursor stays in input
+        const badge  = document.querySelector(`[data-net-badge="${dateStr}"]`);
+        const budget = parseFloat(localDBInstance[dateStr].budget) || 0;
+        const eaten  = parseFloat(val) || 0;
+        if (badge) {
+            if (val && budget) {
+                const net = Math.round(eaten - budget);
+                badge.className = `diary-net ${net <= 0 ? 'net-under' : 'net-over'}`;
+                badge.textContent = (net > 0 ? '+' : '') + net.toLocaleString() + ' kcal';
+            } else {
+                badge.className = 'diary-net net-none';
+                badge.textContent = '—';
+            }
+        }
+        // If Metrics page is visible, refresh projection live
+        if (document.getElementById('pageMetabolics').classList.contains('active')) {
+            buildProjectionGraph();
+        }
+    }
+
+    function updateDayNotes(dateStr, val) {
+        if (!localDBInstance[dateStr]) localDBInstance[dateStr] = {exercises:'',notes:'',burn:0,budget:0};
+        localDBInstance[dateStr].notes = val;
+        localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(localDBInstance));
     }
 
     /* ── TREND CHARTS ── */
@@ -3501,8 +5044,33 @@
         populateExerciseSelect();
         window.addEventListener('resize', renderActiveViewLayout);
 
-        const profile = localStorage.getItem('ironmanProfileSettings_v2');
-        if (profile) { const p=JSON.parse(profile); document.getElementById('bioWeight').value=p.w; document.getElementById('bioHeight').value=p.h; document.getElementById('bioAge').value=p.a; document.getElementById('bioSex').value=p.s; document.getElementById('deficitBase').value=p.b; if(p.l) document.getElementById('actLevel').value=p.l; }
+        const _savedProfile = localStorage.getItem('ironmanProfileSettings_v2');
+        if (_savedProfile) {
+            try {
+                const p = JSON.parse(_savedProfile);
+                // Only apply a saved value if it's a non-empty string — never overwrite the
+                // HTML default with an empty string from a partially-saved record
+                if (p.w) document.getElementById('bioWeight').value   = p.w;
+                if (p.h) document.getElementById('bioHeight').value   = p.h;
+                if (p.a) document.getElementById('bioAge').value      = p.a;
+                if (p.s) document.getElementById('bioSex').value      = p.s;
+                if (p.b) document.getElementById('deficitBase').value = p.b;
+                if (p.l) document.getElementById('actLevel').value    = p.l;
+            } catch(e) { /* corrupted localStorage — fall through to defaults */ }
+        }
+        // Always persist the current values (loaded or defaults) so first-visit
+        // defaults are saved and subsequent loads see the user's numbers
+        localStorage.setItem('ironmanProfileSettings_v2', JSON.stringify({
+            w: document.getElementById('bioWeight').value,
+            h: document.getElementById('bioHeight').value,
+            a: document.getElementById('bioAge').value,
+            s: document.getElementById('bioSex').value,
+            b: document.getElementById('deficitBase').value,
+            l: document.getElementById('actLevel').value
+        }));
+        // Run calculations immediately with the loaded profile so Metrics
+        // shows correct numbers on the first render, before any day is focused
+        calculateActiveMetrics();
 
         const db = localStorage.getItem('ironmanCoreDB_v2');
         if (db) localDBInstance = JSON.parse(db);
@@ -3523,6 +5091,7 @@
 
         buildWorkoutPool();
         renderSetRows();
+        initGroupPillsScroll();
         renderActiveViewLayout();
         focusCalendarDay(activeDayFocusString);
         buildDailyLog();

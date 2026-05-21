@@ -393,9 +393,10 @@ body {
   margin-bottom: 36px;
 }
 
-.si-logo-wrap svg {
-  color: #ffffff;
+.si-logo-img {
   display: block;
+  /* Logo is black-on-white; invert makes it white-on-black to match dark background */
+  filter: invert(1);
 }
 
 /* ── App title ───────────────────────────────────────────────────────── */
