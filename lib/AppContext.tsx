@@ -27,7 +27,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { queueSync, pullFromCloud } from '@/lib/syncEngine';
+import { queueSync, pullFromCloud, restoreSettings } from '@/lib/syncEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -377,6 +377,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           });
           try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch { /* noop */ }
         }
+      }
+      // Restore settings (profile photo, presets, plan, etc.)
+      if (remote.settings && typeof remote.settings === 'object') {
+        restoreSettings(remote.settings as Record<string, unknown>);
       }
     }).catch(() => { /* offline — no-op */ });
   }, []);

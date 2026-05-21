@@ -68,21 +68,27 @@ export async function POST(req: Request): Promise<NextResponse> {
     update: { name: session.user.name ?? undefined },
   });
 
-  // Merge only the fields that were sent — a partial push (e.g. profile only)
-  // will not overwrite fields that weren't included.
+  // Read existing row so we can deep-merge settings (never discard keys like
+  // queProfilePhoto that might not be in every push payload).
+  const existing = await prisma.workoutData.findUnique({ where: { userId: user.id } });
+  const existingSettings = (existing?.settings ?? {}) as Record<string, unknown>;
+  const mergedSettings   = body.settings !== undefined
+    ? { ...existingSettings, ...body.settings }
+    : existingSettings;
+
   await prisma.workoutData.upsert({
     where:  { userId: user.id },
     create: {
       userId:   user.id,
       localDB:  (body.localDB  ?? {}) as never,
       profile:  (body.profile  ?? {}) as never,
-      settings: (body.settings ?? {}) as never,
+      settings: mergedSettings as never,
       syncedAt: new Date(),
     },
     update: {
-      ...(body.localDB  !== undefined && { localDB:  body.localDB  as never }),
-      ...(body.profile  !== undefined && { profile:  body.profile  as never }),
-      ...(body.settings !== undefined && { settings: body.settings as never }),
+      ...(body.localDB !== undefined && { localDB: body.localDB as never }),
+      ...(body.profile !== undefined && { profile: body.profile as never }),
+      settings: mergedSettings as never,
       syncedAt: new Date(),
     },
   });

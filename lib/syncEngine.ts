@@ -3,13 +3,12 @@
  *
  * Strategy:
  *  • localStorage is the primary source of truth (offline-first).
- *  • Every persist call queues a debounced push to /api/sync.
+ *  • Every localDB change queues a debounced push (includes settings snapshot).
  *  • On app start (after localStorage hydration), pullFromCloud() is called.
- *    Remote data is merged in — remote wins for any day that exists in both,
- *    so the most recently-synced device always wins.
+ *    Remote data is merged in — remote wins, so the most recently-synced device wins.
  *  • All failures are silent — the app works identically offline.
  *
- * Debounce: 4 s — prevents hitting the API on every keystroke in a form.
+ * Debounce: 4 s — prevents hitting the API on every keystroke.
  */
 
 export type SyncPayload = {
@@ -20,36 +19,87 @@ export type SyncPayload = {
 
 type SyncStatus = 'idle' | 'syncing' | 'error' | 'ok';
 
-// Module-level state (not React state — no re-renders needed)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let _status: SyncStatus = 'idle';
 
 const DEBOUNCE_MS = 4_000;
+
+// All localStorage keys that belong in the synced "settings" blob
+const SETTINGS_KEYS = [
+  'queProfilePhoto',       // base64 profile photo
+  'queAthletePlan',        // cut/bulk plan
+  'queWorkoutPresets',     // saved workout presets
+  'ironmanTemplatesPool',  // custom templates
+  'queExerciseUsage',      // exercise frequency (for sorting)
+  'queLastStreak',         // calorie streak
+] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Queue a push to the cloud. Debounced — safe to call on every keystroke.
- * No-op if called on the server or if the user is not signed in.
+ * Reads all synced settings keys from localStorage and returns them as an object.
+ * Included in every push so settings are always up-to-date on every device.
+ */
+export function gatherSettings(): Record<string, unknown> {
+  if (typeof window === 'undefined') return {};
+  const out: Record<string, unknown> = {};
+  for (const key of SETTINGS_KEYS) {
+    const raw = localStorage.getItem(key);
+    if (raw === null) continue;
+    try { out[key] = JSON.parse(raw); }
+    catch { out[key] = raw; } // keep as string if not valid JSON
+  }
+  return out;
+}
+
+/**
+ * Restores all settings keys from a remote settings object into localStorage
+ * and fires any necessary events (e.g. profile photo change).
+ */
+export function restoreSettings(settings: Record<string, unknown>): void {
+  if (typeof window === 'undefined') return;
+  for (const [key, val] of Object.entries(settings)) {
+    if (val === null || val === undefined) continue;
+    try {
+      const str = typeof val === 'string' ? val : JSON.stringify(val);
+      localStorage.setItem(key, str);
+    } catch { /* storage full */ }
+  }
+  if (settings['queProfilePhoto']) {
+    window.dispatchEvent(new Event('queProfilePhotoChanged'));
+  }
+}
+
+/**
+ * Queue a debounced push. Always includes a fresh settings snapshot so
+ * profile photo, presets, and plan stay in sync across devices.
  */
 export function queueSync(payload: SyncPayload): void {
   if (typeof window === 'undefined') return;
+  const withSettings: SyncPayload = {
+    ...payload,
+    settings: { ...gatherSettings(), ...(payload.settings ?? {}) },
+  };
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    void _push(payload);
+    void _push(withSettings);
     debounceTimer = null;
   }, DEBOUNCE_MS);
 }
 
 /**
- * Flush any pending queued sync immediately (call on beforeunload / tab hide).
+ * Immediate push — bypasses debounce. Use for photo uploads and other
+ * one-shot settings changes that don't go through localDB.
  */
-export function flushSync(payload: SyncPayload): void {
+export function pushNow(payload: SyncPayload): void {
   if (typeof window === 'undefined') return;
   if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
-  void _push(payload);
+  void _push({
+    ...payload,
+    settings: { ...gatherSettings(), ...(payload.settings ?? {}) },
+  });
 }
 
 /**
@@ -60,7 +110,7 @@ export async function pullFromCloud(): Promise<SyncPayload | null> {
   if (typeof window === 'undefined') return null;
   try {
     const res = await fetch('/api/sync', { credentials: 'include' });
-    if (res.status === 401) return null;  // not signed in — expected
+    if (res.status === 401) return null;
     if (!res.ok) return null;
     return await res.json() as SyncPayload;
   } catch {
@@ -68,7 +118,6 @@ export async function pullFromCloud(): Promise<SyncPayload | null> {
   }
 }
 
-/** Last known sync status — readable from components if needed. */
 export function getSyncStatus(): SyncStatus { return _status; }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,6 +136,5 @@ async function _push(payload: SyncPayload): Promise<void> {
     _status = res.ok ? 'ok' : 'error';
   } catch {
     _status = 'error';
-    // Fail silently — localStorage remains the source of truth
   }
 }

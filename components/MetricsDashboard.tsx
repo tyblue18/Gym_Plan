@@ -24,6 +24,7 @@ import {
   type DayRecord, type UserProfile,
 } from '@/lib/AppContext';
 import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
+import { pushNow } from '@/lib/syncEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES — unchanged
@@ -277,6 +278,8 @@ function ProfilePanel({ profile, onChange, onOpenPlan }: {
     localStorage.setItem(PHOTO_KEY, compressed);
     setLocalPhoto(compressed);
     window.dispatchEvent(new Event('queProfilePhotoChanged'));
+    // Immediately push to cloud — photo changes don't go through localDB
+    pushNow({});
     e.target.value = '';
   }, []);
 
