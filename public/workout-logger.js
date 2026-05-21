@@ -140,6 +140,9 @@ function deleteEntry(idx) {
     const arr = parseEx(document.getElementById('inDayExercises').value);
     arr.splice(idx, 1);
     applyExercises(arr);
+    // Deletion is always intentional — reflect it immediately everywhere
+    buildDayWorkoutSummary(activeDayFocusString);
+    renderActiveViewLayout();
 }
 
 function updateCardioField(idx, field, val) {
