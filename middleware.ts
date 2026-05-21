@@ -1,17 +1,20 @@
 /**
  * middleware.ts
  *
- * Runs on the Edge runtime before every matched request.
- * withAuth checks for a valid NextAuth JWT cookie; if absent it
- * redirects to the custom sign-in page defined in `pages.signIn`.
+ * Auth guard — runs on the Edge runtime before every matched request.
+ * withAuth checks for a valid NextAuth JWT; absent → redirect to sign-in.
  *
- * Protected:   /          (the workout shell)
- *              /index.html (iframe src — same-origin auth cookie is sent)
+ * ⚠️  PWA CRITICAL — the following must NEVER be intercepted:
+ *   sw.js          Service worker must be reachable by the browser at all times.
+ *                  If the SW registration fetch is redirected to the sign-in
+ *                  page it will register the HTML as the worker script and
+ *                  break caching entirely.
+ *   manifest.json  Browser fetches this without cookies — redirect breaks
+ *                  PWA install prompts and the "Add to Home Screen" flow.
+ *   Que_logo.png   Icons referenced by the manifest must load unauthenticated.
  *
- * Excluded:    /api/auth/* — NextAuth handlers must stay public
- *              /auth/*     — sign-in page itself (would cause redirect loop)
- *              /_next/*    — Next.js compiled assets
- *              favicon / icons / manifest
+ * Protected:  /   /index.html  (all app pages)
+ * Excluded:   see negative-lookahead in matcher below
  */
 import { withAuth } from 'next-auth/middleware';
 
@@ -23,10 +26,6 @@ export default withAuth({
 
 export const config = {
   matcher: [
-    /*
-     * Negative lookahead: skip anything that starts with the paths below.
-     * Everything else (including / and /index.html) is protected.
-     */
-    '/((?!api/auth|auth/|_next/static|_next/image|favicon\\.ico|icon|apple-icon|manifest\\.json|placeholder).*)',
+    '/((?!api/auth|auth/|_next/static|_next/image|favicon\\.ico|icon|apple-icon|manifest\\.json|sw\\.js|Que_logo\\.png|placeholder).*)',
   ],
 };
