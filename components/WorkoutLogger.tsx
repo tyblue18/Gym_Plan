@@ -496,6 +496,7 @@ export default function WorkoutLogger() {
     getUsage, bumpUsage,
     getTemplatePool, saveTemplatePool,
     getWorkoutPresets, saveWorkoutPresets,
+    isLoaded,
   } = useApp();
 
   const [exercises, setExercisesRaw] = useState<ExerciseEntry[]>([]);
@@ -564,12 +565,14 @@ export default function WorkoutLogger() {
   );
 
   const exerciseOptions = useMemo(() => {
+    const presets = PRESETS[currentGroup as keyof typeof PRESETS] ?? [];
+    // Only read localStorage after hydration — prevents server/client mismatch
+    if (!isLoaded) return presets;
     const usage = getUsage()[currentGroup] ?? {};
     const usedNames = Object.keys(usage).sort((a, b) => (usage[b] ?? 0) - (usage[a] ?? 0));
-    const unusedPresets = (PRESETS[currentGroup as keyof typeof PRESETS] ?? [])
-      .filter(e => !usage[e]);
+    const unusedPresets = presets.filter(e => !usage[e]);
     return [...usedNames, ...unusedPresets];
-  }, [currentGroup, getUsage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentGroup, getUsage, isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setSelectedEx(exerciseOptions[0] ?? '');
@@ -636,13 +639,13 @@ export default function WorkoutLogger() {
     }));
     bumpUsage(currentGroup, name);
     const next = [...exercises, { k: 'lift' as const, g: currentGroup, n: name, sets: snappedSets }];
-    setExercises(next);
+    setExercisesRaw(next);
     setPendingSetData(Array.from({ length: pendingSetsCount }, () => ({ r: '1', w: '' })));
     if (isCustomEx) setCustomName('');
   }, [
     isCustomEx, customName, selectedEx, pendingSetData,
     currentGroup, exercises, pendingSetsCount,
-    bumpUsage, setExercises, setPendingSetData,
+    bumpUsage, setPendingSetData,
   ]);
 
   const handleWeightKeyDown = useCallback((e: React.KeyboardEvent, idx: number) => {
@@ -653,8 +656,8 @@ export default function WorkoutLogger() {
   }, [pendingSetsCount, commitLift]);
 
   const addCardioEntry = useCallback((kind: CardioKind) => {
-    setExercises([...exercises, { k: kind, v1: '', v2: '', note: '' }]);
-  }, [exercises, setExercises]);
+    setExercisesRaw([...exercises, { k: kind, v1: '', v2: '', note: '' }]);
+  }, [exercises]);
 
   const deleteEntry = useCallback((idx: number) => {
     setExercises(exercises.filter((_, i) => i !== idx));
@@ -662,19 +665,18 @@ export default function WorkoutLogger() {
 
   const updateCardioField = useCallback(
     (idx: number, field: 'v1' | 'v2' | 'note', val: string) => {
-      const next = exercises.map((e, i) => i === idx ? { ...e, [field]: val } : e);
-      setExercisesRaw(next); persistExercises(next);
+      setExercisesRaw(exercises.map((e, i) => i === idx ? { ...e, [field]: val } : e));
     },
-    [exercises, persistExercises]
+    [exercises]
   );
 
   const updateExerciseName = useCallback((idx: number, name: string) => {
-    setExercises(exercises.map((e, i) => i === idx ? { ...e, n: name } : e));
-  }, [exercises, setExercises]);
+    setExercisesRaw(exercises.map((e, i) => i === idx ? { ...e, n: name } : e));
+  }, [exercises]);
 
   const updateExerciseSets = useCallback((idx: number, sets: Array<{ r: string; w: string }>) => {
-    setExercises(exercises.map((e, i) => i === idx ? { ...e, sets } : e));
-  }, [exercises, setExercises]);
+    setExercisesRaw(exercises.map((e, i) => i === idx ? { ...e, sets } : e));
+  }, [exercises]);
 
   const clearWorkout = useCallback(() => {
     if (!window.confirm(`Clear all workout & cardio data for ${activeDayFocus}?`)) return;
@@ -693,16 +695,16 @@ export default function WorkoutLogger() {
 
   const loadTemplate = useCallback((text: string) => {
     const newEntries = text.split('\n').filter(l => l.trim()).map(l => ({ k: 'text' as const, n: l }));
-    setExercises([...exercises, ...newEntries]);
-  }, [exercises, setExercises]);
+    setExercisesRaw([...exercises, ...newEntries]);
+  }, [exercises]);
 
   const templates = useMemo(() => getTemplatePool(), [getTemplatePool]);
 
   const loadRecurringWorkout = useCallback((preset: WorkoutPreset) => {
     const newEntries = parseEx(preset.exercises);
-    setExercises([...exercises, ...newEntries]);
+    setExercisesRaw([...exercises, ...newEntries]);
     setRecurringPreset(null);
-  }, [exercises, setExercises]);
+  }, [exercises]);
 
   const openSaveModal = useCallback(() => {
     const groups = [...new Set(lifts.map(e => e.g ?? 'other'))];
@@ -744,9 +746,10 @@ export default function WorkoutLogger() {
   const isTodayFocus = activeDayFocus === todayStr;
   const spotlight = useSpotlightBorder({ color: '79,195,247', size: 280, opacity: 0.45 });
 
-  const today2 = new Date();
-  const d = new Date(activeDayFocus + 'T00:00:00');
-  const diff = Math.round((today2.getTime() - d.getTime()) / 86400000);
+  const today2   = new Date();
+  const d        = new Date(activeDayFocus + 'T00:00:00');
+  const todayMid = new Date(today2.getFullYear(), today2.getMonth(), today2.getDate());
+  const diff     = Math.round((todayMid.getTime() - d.getTime()) / 86400000);
   const dayLabel = diff === 0 ? 'TODAY' : diff === 1 ? 'YESTERDAY'
     : `${['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;
 

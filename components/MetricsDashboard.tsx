@@ -518,8 +518,9 @@ function ActivityLogCard() {
           <div className="flex flex-col">
             {visible.map(ds => {
               const rec    = localDB[ds] ?? {};
-              const d      = new Date(ds + 'T00:00:00');
-              const dayIdx = Math.round((today.getTime() - d.getTime()) / 86400000);
+              const d        = new Date(ds + 'T00:00:00');
+              const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+              const dayIdx   = Math.round((todayMid.getTime() - d.getTime()) / 86400000);
               const label  = dayIdx === 0 ? 'TODAY'
                 : dayIdx === 1 ? 'YESTERDAY'
                 : `${DOW[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;

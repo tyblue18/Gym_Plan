@@ -24,7 +24,6 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 
@@ -259,9 +258,10 @@ const AppContext = createContext<AppContextValue | null>(null);
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  // ── Stable "today" reference (never re-created) ──────────────────────────
-  const today    = useRef(new Date()).current;
-  const todayStr = useRef(toDateStr(today)).current;
+  // ── Today — state so the hydration effect can correct it to the client's
+  //    local clock (useRef captures the server's UTC time during SSR).
+  const [today, setTodayInternal] = useState<Date>(() => new Date());
+  const todayStr = toDateStr(today);
 
   // ── Loading gate — becomes true after localStorage is hydrated ───────────
   const [isLoaded, setIsLoaded] = useState(false);
@@ -303,6 +303,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Mirrors bootstrapper() from app-state.js
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // ── Correct SSR timezone mismatch ─────────────────────────────────────
+    //    The server runs UTC; the client has the user's actual local date.
+    //    Re-derive today from the client clock and reset navigation state.
+    const clientNow = new Date();
+    const clientStr = toDateStr(clientNow);
+    setTodayInternal(clientNow);
+    setActiveDayFocusRaw(clientStr);
+    setCurrentDisplayDate(
+      new Date(clientNow.getFullYear(), clientNow.getMonth(), clientNow.getDate())
+    );
+
     // ── Load user profile ─────────────────────────────────────────────────
     try {
       const raw = localStorage.getItem(PROFILE_KEY);
@@ -516,7 +527,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       getLastKnownWeight,
     }),
     [
-      today, todayStr,
+      today,
       localDB, activeDayFocus, currentDisplayDate,
       viewMode, currentGroup,
       lastBurn, lastBudget,

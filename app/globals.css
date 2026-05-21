@@ -136,44 +136,73 @@ html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var
   font-family: var(--font-sans);
 }
 
-/* ── Tab navigation ──────────────────────────────────────────────────── */
+/* ── Bottom tab navigation ───────────────────────────────────────────── */
 
 .app-tabs {
   flex-shrink: 0;
   display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 16px;
-  height: 44px;
-  background: var(--bg-0);
-  border-bottom: 1px solid var(--line);
+  align-items: stretch;
+  border-top: 1px solid var(--line);
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
   position: relative;
   z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .app-tab {
-  display: inline-flex;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border: 0;
   background: transparent;
-  color: var(--ink-2);
+  color: var(--ink-3);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 1px;
   text-transform: uppercase;
   cursor: pointer;
-  transition: all 160ms ease;
-  white-space: nowrap;
+  transition: color 160ms ease;
+  position: relative;
 }
-.app-tab:hover { color: var(--ink-0); }
-.app-tab[data-active="true"] {
-  background: var(--bg-2);
-  color: var(--accent);
-  border-color: var(--line);
+.app-tab:hover { color: var(--ink-1); }
+.app-tab[data-active="true"] { color: var(--accent); }
+.app-tab[data-active="true"]::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 32px; height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-40);
+  border-radius: 0 0 2px 2px;
+}
+
+/* Desktop: compact horizontal layout */
+@media (min-width: 768px) {
+  .app-tabs {
+    justify-content: center;
+    gap: 4px;
+    padding: 0 24px;
+    padding-bottom: 0;
+  }
+  .app-tab {
+    flex: 0;
+    flex-direction: row;
+    gap: 6px;
+    padding: 12px 16px;
+    font-size: 11px;
+  }
+  .app-tab svg { width: 14px; height: 14px; }
+  .app-tab[data-active="true"]::after {
+    width: 100%; left: 0; transform: none;
+  }
 }
 
 /* ── Scrollable content area ─────────────────────────────────────────── */
@@ -191,7 +220,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var
   grid-template-columns: 1fr;
   gap: 16px;
   padding: 16px;
-  padding-bottom: 80px;
+  padding-bottom: 32px;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
@@ -208,7 +237,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var
 
 .app-protocol-layout {
   padding: 16px;
-  padding-bottom: 80px;
+  padding-bottom: 32px;
   max-width: 720px;
   margin: 0 auto;
   width: 100%;

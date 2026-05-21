@@ -22,22 +22,6 @@ export default function WorkoutPage() {
     <div className="app-shell">
       <AuthHeader />
 
-      <nav className="app-tabs" role="tablist" aria-label="App navigation">
-        {TABS.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            data-active={tab === id}
-            onClick={() => setTab(id)}
-            className="app-tab"
-          >
-            <Icon size={13} aria-hidden="true" />
-            {label}
-          </button>
-        ))}
-      </nav>
-
       <main className="app-content" role="tabpanel">
         {tab === 'calendar' && (
           <div className="app-calendar-layout">
@@ -52,6 +36,22 @@ export default function WorkoutPage() {
           </div>
         )}
       </main>
+
+      <nav className="app-tabs" role="tablist" aria-label="App navigation">
+        {TABS.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={tab === id}
+            data-active={tab === id}
+            onClick={() => setTab(id)}
+            className="app-tab"
+          >
+            <Icon size={20} aria-hidden="true" />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

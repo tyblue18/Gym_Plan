@@ -296,7 +296,8 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
   const todayStr = toDateStr(today);
   const isToday  = dateStr === todayStr;
   const d        = new Date(dateStr + 'T00:00:00');
-  const diffDays = Math.round((today.getTime() - d.getTime()) / 86400000);
+  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diffDays = Math.round((todayMid.getTime() - d.getTime()) / 86400000);
   const label    = diffDays === 0 ? "TODAY'S SESSION"
     : diffDays === 1 ? "YESTERDAY'S SESSION"
     : `${DOW_SHORT[d.getDay()]} ${MONTHS[d.getMonth()].slice(0,3).toUpperCase()} ${d.getDate()}`;
