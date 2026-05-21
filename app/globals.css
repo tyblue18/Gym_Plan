@@ -275,10 +275,6 @@ html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var
   letter-spacing: 6px; text-transform: uppercase;
   color: var(--ink-0); user-select: none;
 }
-.auth-wordmark::before {
-  content: ''; width: 10px; height: 10px; border-radius: 1px;
-  background: var(--accent); box-shadow: var(--accent-glow);
-}
 
 .auth-controls { display: flex; align-items: center; gap: 10px; }
 

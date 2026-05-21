@@ -101,6 +101,18 @@ export function AuthHeader() {
     <header className="auth-header" role="banner">
       <div className="auth-header-inner">
         <span className="auth-wordmark" aria-label="Que">
+          <Image
+            src="/Que_logo.png"
+            alt=""
+            width={32}
+            height={32}
+            style={{
+              objectFit: 'contain',
+              filter: 'invert(1)',
+              mixBlendMode: 'screen',
+            }}
+            priority
+          />
           QUE
         </span>
 

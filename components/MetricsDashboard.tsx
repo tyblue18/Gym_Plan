@@ -15,8 +15,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Activity, BarChart2, ChevronRight, Clock, Flame, Scale, TrendingUp, User,
+  Activity, BarChart2, ChevronRight, Flame, Plus, Scale, TrendingUp, User, X,
 } from 'lucide-react';
 import {
   useApp, MONTHS,
@@ -51,6 +52,42 @@ function parseNum(v: string | number | undefined): number {
   return parseFloat(String(v ?? '0')) || 0;
 }
 function fmt(n: number): string { return Math.round(n).toLocaleString(); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ATHLETE PLAN — storage + types
+// ─────────────────────────────────────────────────────────────────────────────
+
+type PlanIntensity = 'slight' | 'moderate' | 'aggressive';
+
+const INTENSITY_KCAL: Record<PlanIntensity, number> = {
+  slight:     250,
+  moderate:   500,
+  aggressive: 1000,
+};
+
+const INTENSITY_LABELS: Record<'cut' | 'bulk', Record<PlanIntensity, string>> = {
+  cut:  { slight: 'Slight Deficit', moderate: 'Cut',  aggressive: 'Aggressive Cut'  },
+  bulk: { slight: 'Lean Bulk',      moderate: 'Bulk', aggressive: 'Dirty Bulk'       },
+};
+
+interface AthletePlan {
+  type:      'cut' | 'bulk';
+  intensity: PlanIntensity;
+  dailyKcal: number;        // kcal deficit (cut) or surplus (bulk)
+  startDate:   string;      // YYYY-MM-DD
+  startWeight: number;      // lbs
+  goalWeight:  number;      // lbs
+  weeksTarget: number;
+}
+
+const PLAN_KEY = 'queAthletePlan';
+function loadPlan(): AthletePlan | null {
+  try { const r = localStorage.getItem(PLAN_KEY); return r ? JSON.parse(r) : null; }
+  catch { return null; }
+}
+function savePlanToStorage(p: AthletePlan) {
+  try { localStorage.setItem(PLAN_KEY, JSON.stringify(p)); } catch { /* noop */ }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CALCULATION ENGINE — preserved exactly
@@ -142,9 +179,10 @@ function useBudgetMetrics(profile: UserProfile, cardio: CardioFields): BudgetMet
 // SUB-COMPONENT — ProfilePanel
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProfilePanel({ profile, onChange }: {
+function ProfilePanel({ profile, onChange, onOpenPlan }: {
   profile: UserProfile;
   onChange: (updates: Partial<UserProfile>) => void;
+  onOpenPlan: () => void;
 }) {
   const activityOptions = [
     { value: '1.20', label: 'Desk job, no gym (×1.20)' },
@@ -214,6 +252,12 @@ function ProfilePanel({ profile, onChange }: {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="flex justify-end mt-4 pt-4 border-t border-[var(--line)]">
+          <button onClick={onOpenPlan} className="que-btn-ghost flex items-center gap-2">
+            <Plus size={13} /> Create Plan
+          </button>
         </div>
       </div>
     </div>
@@ -345,25 +389,61 @@ function CalorieBudgetCard({ m }: { m: BudgetMetrics }) {
             </div>
           ))}
         </div>
+
+        {/* ── Active Plan Progress ─────────────────────────────────────── */}
+        {(() => {
+          if (typeof window === 'undefined') return null;
+          const plan = loadPlan(); if (!plan) return null;
+          const daysSince  = Math.round((Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / 86400000);
+          const weeksSince = Math.max(0, daysSince / 7);
+          const weeklyRate = plan.type === 'cut'
+            ? -(plan.dailyKcal * 7 / 3500)
+            :  (plan.dailyKcal * 7 / 3500);
+          const projNow      = plan.startWeight + weeklyRate * weeksSince;
+          const weeksLeft    = Math.max(0, plan.weeksTarget - weeksSince);
+          const planAccent   = plan.type === 'cut' ? 'var(--accent)' : 'var(--positive)';
+          const planBg       = plan.type === 'cut' ? 'var(--accent-12)' : 'var(--positive-12)';
+          const planBorder   = plan.type === 'cut' ? 'var(--accent)' : 'var(--positive)';
+          const intensityLbl = plan.intensity ? INTENSITY_LABELS[plan.type][plan.intensity] : plan.type.toUpperCase();
+          return (
+            <div className="mt-4 rounded border p-4" style={{ borderColor: planBorder, background: planBg }}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] uppercase">Active Plan</p>
+                <span className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase px-2 py-0.5 rounded-sm"
+                  style={{ color: planAccent, border: `1px solid ${planAccent}` }}>
+                  {intensityLbl} · {fmt(plan.dailyKcal)} kcal
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { label: 'Week',    value: `${Math.ceil(weeksSince)}/${plan.weeksTarget}`, color: 'var(--ink-0)' },
+                  { label: 'Proj Now', value: `${projNow.toFixed(1)} lb`,                   color: planAccent      },
+                  { label: 'Goal',    value: `${plan.goalWeight.toFixed(1)} lb`,             color: planAccent      },
+                  { label: 'Left',    value: `${Math.ceil(weeksLeft)} wks`,                  color: 'var(--ink-0)' },
+                ].map(s => (
+                  <div key={s.label}>
+                    <p className="font-mono text-[8px] font-bold tracking-[1px] text-[var(--ink-3)] uppercase mb-1">{s.label}</p>
+                    <p className="font-display text-[14px] leading-none" style={{ color: s.color }}>{s.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENT — CardioLogCard
+// SUB-COMPONENT — DailyLogCard (weight + calories eaten only)
+// Cardio is logged in the Calendar / WorkoutLogger section.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CardioLogCard({
-  cardio, m, todayLabel,
-  todayWeight, todayCals,
-  onChange, onWeightChange, onCalsChange, onLogToday,
-}: {
-  cardio: CardioFields; m: BudgetMetrics;
+function DailyLogCard({ todayLabel, todayWeight, todayCals, onWeightChange, onCalsChange, onLogToday }: {
   todayLabel: string; todayWeight: string; todayCals: string;
-  onChange: (field: keyof CardioFields, val: string) => void;
   onWeightChange: (v: string) => void;
-  onCalsChange: (v: string) => void;
+  onCalsChange:   (v: string) => void;
   onLogToday: () => void;
 }) {
   const spotlight = useSpotlightBorder({ color: '79,195,247', size: 260, opacity: 0.45 });
@@ -379,71 +459,31 @@ function CardioLogCard({
     >
       {spotlight.Overlay}
       <div className="p-5">
-        <h2 className="que-section-label mb-5"><span className="dot" />DAILY CARDIO LOG</h2>
-
-        {/* Steps */}
-        <div className="mb-4">
-          <label className="que-label">
-            STEPS <span className="text-[var(--ink-3)] normal-case tracking-normal font-normal">— reference only</span>
-          </label>
-          <input type="number" className="que-input" value={cardio.steps} onChange={e => onChange('steps', e.target.value)} />
-          <p className="mt-2 font-mono text-[10px] text-[var(--ink-2)] tracking-[1px] flex items-center gap-2">
-            <span className="block w-1 h-1 bg-[var(--accent)]" />
-            DISTANCE · {m.stepMiles.toFixed(2)} mi
-          </p>
+        <div className="flex items-baseline justify-between mb-5">
+          <h2 className="que-section-label"><span className="dot" />TODAY'S LOG</h2>
+          <span className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px]">{todayLabel}</span>
         </div>
 
-        {/* Running */}
-        <CardioSection title="RUN">
-          <TwoCol>
-            <NumberField label="Distance / mi" value={cardio.runDist} step={0.01} onChange={v => onChange('runDist', v)} />
-            <NumberField label="Time / min"    value={cardio.runTime} step={1}    onChange={v => onChange('runTime', v)} />
-          </TwoCol>
-          <ChipLine>
-            {m.runPaceStr ? `PACE · ${m.runPaceStr}  ·  ${fmt(m.runBurn)} KCAL` : 'PACE · —'}
-          </ChipLine>
-        </CardioSection>
-
-        {/* Cycling */}
-        <CardioSection title="BIKE">
-          <TwoCol>
-            <NumberField label="Distance / mi" value={cardio.bikeDist} step={0.01} onChange={v => onChange('bikeDist', v)} />
-            <NumberField label="Time / min"    value={cardio.bikeTime} step={1}    onChange={v => onChange('bikeTime', v)} />
-          </TwoCol>
-          <ChipLine>
-            {m.bikeSpeed > 0 ? `SPEED · ${m.bikeSpeed} MPH  ·  ${fmt(m.bikeBurn)} KCAL` : 'SPEED · —'}
-          </ChipLine>
-        </CardioSection>
-
-        {/* Swimming */}
-        <CardioSection title="SWIM">
-          <NumberField label="Duration / min" value={cardio.swimTime} step={1} onChange={v => onChange('swimTime', v)} />
-          <ChipLine>
-            {m.swimBurn > 0 ? `${parseNum(cardio.swimTime)} MIN  ·  ${fmt(m.swimBurn)} KCAL` : 'BURN · —'}
-          </ChipLine>
-        </CardioSection>
-
-        {/* Auto-save tag */}
-        <p className="mt-5 font-mono text-[10px] tracking-[1px] text-[var(--ink-3)] flex items-center gap-2 uppercase">
-          <Clock size={12} /> auto-save on
-        </p>
-
-        {/* Today's log */}
-        <div className="border-t border-[var(--line)] mt-5 pt-5">
-          <div className="flex items-baseline justify-between mb-3">
-            <span className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[var(--ink-1)]">
-              TODAY · MANUAL ENTRY
-            </span>
-            <span className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px]">{todayLabel}</span>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="que-label">Weight / lbs</label>
+            <input
+              type="number" inputMode="decimal" className="que-input"
+              value={todayWeight} onChange={e => onWeightChange(e.target.value)}
+              placeholder="e.g. 180"
+            />
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <NumberField label="Weight / lbs"   value={todayWeight} onChange={onWeightChange} />
-            <NumberField label="Calories Eaten" value={todayCals}   onChange={onCalsChange} />
+          <div>
+            <label className="que-label">Calories Eaten</label>
+            <input
+              type="number" inputMode="numeric" className="que-input"
+              value={todayCals} onChange={e => onCalsChange(e.target.value)}
+              placeholder="e.g. 1800"
+            />
           </div>
         </div>
 
-        <button onClick={onLogToday} className="que-btn-primary mt-4 w-full">
+        <button onClick={onLogToday} className="que-btn-primary w-full">
           LOG TODAY
         </button>
       </div>
@@ -451,41 +491,6 @@ function CardioLogCard({
   );
 }
 
-function CardioSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="border-t border-[var(--line)] pt-4 mt-4">
-      <h3 className="font-mono text-[11px] font-bold uppercase tracking-[2px] text-[var(--accent)] mb-3 flex items-center gap-2">
-        <span className="block w-1 h-3 bg-[var(--accent)]" />
-        {title}
-      </h3>
-      {children}
-    </div>
-  );
-}
-function TwoCol({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 gap-3">{children}</div>;
-}
-function NumberField({ label, value, step, onChange }: {
-  label: string; value: string; step?: number; onChange: (v: string) => void;
-}) {
-  return (
-    <div>
-      <label className="que-label">{label}</label>
-      <input
-        type="number" step={step} className="que-input"
-        value={value} onChange={e => onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-function ChipLine({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mt-2 font-mono text-[10px] tracking-[1px] text-[var(--ink-1)] flex items-center gap-2">
-      <span className="block w-1 h-1 bg-[var(--accent)]" />
-      {children}
-    </p>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — ActivityLogCard
@@ -633,7 +638,7 @@ function WeightProjectionCard({ m, weightLbs, hidden }: {
   );
 }
 
-function drawProjection(canvas: HTMLCanvasElement, startWt: number, m: BudgetMetrics) {
+function drawProjection(canvas: HTMLCanvasElement, startWt: number, m: BudgetMetrics, highlightDay: number | null = null) {
   const ctx = canvas.getContext('2d'); if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.offsetWidth || 300, H = 200;
@@ -691,6 +696,30 @@ function drawProjection(canvas: HTMLCanvasElement, startWt: number, m: BudgetMet
   ctx.fillStyle = col; ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '9px JetBrains Mono, monospace'; ctx.textAlign = 'left';
   ctx.fillText('TODAY', xOf(0) + 7, yOf(pts[0]) - 4);
+
+  // ── Selected-week crosshair ──────────────────────────────────────────────
+  if (highlightDay !== null && highlightDay >= 0 && highlightDay < DAYS) {
+    const hx = xOf(highlightDay);
+    const hy = yOf(pts[Math.min(highlightDay, pts.length - 1)]);
+
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(79,195,247,0.40)';
+    ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+    ctx.moveTo(hx, PAD.t); ctx.lineTo(hx, H - PAD.b); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Glow halo
+    ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(79,195,247,0.20)'; ctx.fill();
+
+    // Outer dot
+    ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+    ctx.fillStyle = lime; ctx.fill();
+
+    // Inner hole
+    ctx.beginPath(); ctx.arc(hx, hy, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#07080A'; ctx.fill();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -840,6 +869,534 @@ function drawLineChart(canvas: HTMLCanvasElement, labels: string[], values: numb
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PLAN CHART — projected line + actual dots
+// ─────────────────────────────────────────────────────────────────────────────
+
+function drawPlanChart(
+  canvas: HTMLCanvasElement,
+  projPts: number[],
+  actualPts: { week: number; weight: number }[],
+  planType: 'cut' | 'bulk',
+  goalWeight: number
+) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth || 600;
+  const H = parseInt(getComputedStyle(canvas).height) || 200;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d'); if (!ctx) return;
+  ctx.scale(dpr, dpr);
+
+  const weeks = projPts.length - 1;
+  const allW  = [...projPts, ...actualPts.map(p => p.weight), goalWeight].filter(Boolean);
+  const raw0  = Math.min(...allW), raw1 = Math.max(...allW);
+  const pad2  = (raw1 - raw0) * 0.12 || 5;
+  const yMin  = raw0 - pad2, yMax = raw1 + pad2, yR = yMax - yMin;
+  const PAD   = { t: 20, r: 16, b: 36, l: 52 };
+  const cW = W - PAD.l - PAD.r, cH = H - PAD.t - PAD.b;
+  const xOf = (w: number) => PAD.l + (weeks > 0 ? w / weeks : 0) * cW;
+  const yOf = (v: number) => PAD.t + (1 - (v - yMin) / yR) * cH;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD.t + (i / 4) * cH;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + cW, y); ctx.stroke();
+    const val = yMax - (i / 4) * yR;
+    ctx.fillStyle = 'rgba(158,161,168,0.7)'; ctx.font = '10px JetBrains Mono, monospace'; ctx.textAlign = 'right';
+    ctx.fillText(Math.round(val) + ' lb', PAD.l - 4, y + 3.5);
+  }
+
+  // Week labels
+  const stepW = Math.max(1, Math.ceil(weeks / 8));
+  ctx.fillStyle = 'rgba(158,161,168,0.7)'; ctx.textAlign = 'center'; ctx.font = '9px JetBrains Mono, monospace';
+  for (let w = 0; w <= weeks; w += stepW) ctx.fillText(`W${w}`, xOf(w), H - PAD.b + 14);
+
+  // Goal dashed line
+  ctx.strokeStyle = 'rgba(109,255,153,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, yOf(goalWeight)); ctx.lineTo(PAD.l + cW, yOf(goalWeight)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(109,255,153,0.75)'; ctx.textAlign = 'right'; ctx.font = '9px JetBrains Mono, monospace';
+  ctx.fillText('GOAL', PAD.l - 4, yOf(goalWeight) - 3);
+
+  // Projected fill
+  const grad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + cH);
+  grad.addColorStop(0, 'rgba(79,195,247,0.18)'); grad.addColorStop(1, 'rgba(79,195,247,0)');
+  ctx.beginPath(); ctx.fillStyle = grad;
+  projPts.forEach((v, i) => i === 0 ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)));
+  ctx.lineTo(xOf(weeks), H - PAD.b); ctx.lineTo(xOf(0), H - PAD.b); ctx.closePath(); ctx.fill();
+
+  // Projected line
+  ctx.beginPath(); ctx.strokeStyle = '#4FC3F7'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  projPts.forEach((v, i) => i === 0 ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)));
+  ctx.stroke();
+
+  // Start dot + label
+  ctx.beginPath(); ctx.arc(xOf(0), yOf(projPts[0]), 4, 0, Math.PI * 2); ctx.fillStyle = '#4FC3F7'; ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.textAlign = 'left'; ctx.font = '9px JetBrains Mono, monospace';
+  ctx.fillText('NOW', xOf(0) + 6, yOf(projPts[0]) - 4);
+
+  // Actual data points
+  actualPts.forEach(({ week, weight }) => {
+    if (week < 0 || week > weeks) return;
+    const proj    = projPts[Math.min(Math.round(week), projPts.length - 1)];
+    const isAhead = planType === 'cut' ? weight <= proj : weight >= proj;
+    const col     = isAhead ? '#6DFF99' : '#FF4D5E';
+    ctx.beginPath(); ctx.arc(xOf(week), yOf(weight), 5, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+    ctx.beginPath(); ctx.arc(xOf(week), yOf(weight), 2.5, 0, Math.PI * 2); ctx.fillStyle = '#07080A'; ctx.fill();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENT — PlanModal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
+  open: boolean; onClose: () => void;
+  profile: UserProfile; m: BudgetMetrics;
+  localDB: import('@/lib/AppContext').LocalDB;
+  todayStr: string;
+}) {
+  const [planType,   setPlanType]   = useState<'cut' | 'bulk' | null>(null);
+  const [intensity,  setIntensity]  = useState<PlanIntensity>('moderate');
+  const [startWeight, setStartWeight] = useState('');
+  const [goalMode,   setGoalMode]   = useState<'weight' | 'weeks'>('weight');
+  const [goalWeight, setGoalWeight] = useState('');
+  const [goalWeeks,  setGoalWeeks]  = useState('12');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Pre-fill on open
+  useEffect(() => {
+    if (!open) return;
+    const saved = loadPlan();
+    if (saved) {
+      setPlanType(saved.type);
+      setIntensity(saved.intensity ?? 'moderate');
+      setStartWeight(String(saved.startWeight));
+      setGoalWeight(String(saved.goalWeight));
+      setGoalWeeks(String(saved.weeksTarget));
+    } else {
+      const tw = localDB[todayStr]?.weight ?? profile.weight;
+      setStartWeight(String(tw || ''));
+      setPlanType(null); setIntensity('moderate'); setGoalWeight(''); setGoalWeeks('12');
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Computed projection
+  const projData = useMemo(() => {
+    if (!planType || !startWeight) return null;
+    const sw       = parseNum(startWeight);
+    if (sw <= 0) return null;
+    const kcal     = INTENSITY_KCAL[intensity];
+    // For cut: base kcal deficit + 40% of today's cardio (the portion not eaten back)
+    const effectiveDeficit = planType === 'cut' ? kcal + m.activityBurn * 0.4 : 0;
+    const weeklyRate = planType === 'cut'
+      ? -(effectiveDeficit * 7 / 3500)
+      : kcal * 7 / 3500;
+    if (weeklyRate === 0) return null;
+    let weeks: number; let gw: number;
+    if (goalMode === 'weight') {
+      gw = parseNum(goalWeight); if (gw <= 0) return null;
+      weeks = Math.max(1, Math.min(52, Math.ceil(Math.abs((gw - sw) / weeklyRate))));
+    } else {
+      weeks = Math.max(1, parseInt(goalWeeks) || 12);
+      gw    = sw + weeklyRate * weeks;
+    }
+    const pts = Array.from({ length: weeks + 1 }, (_, w) => sw + weeklyRate * w);
+    return { pts, weeks, startWeight: sw, goalWeight: gw, weeklyRate, effectiveDeficit, kcal };
+  }, [planType, intensity, startWeight, goalMode, goalWeight, goalWeeks, m.activityBurn]);
+
+  // Actual weight data from saved plan's start date
+  const actualData = useMemo(() => {
+    const saved = loadPlan(); if (!saved) return [];
+    return Object.entries(localDB)
+      .filter(([ds, rec]) => rec.weight && ds >= saved.startDate)
+      .map(([ds, rec]) => {
+        const w = (new Date(ds + 'T00:00:00').getTime() - new Date(saved.startDate + 'T00:00:00').getTime()) / (7 * 86400000);
+        return { week: w, weight: parseNum(String(rec.weight)) };
+      }).filter(d => d.weight > 0 && d.week >= 0);
+  }, [localDB]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Draw
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !projData || !open) return;
+    drawPlanChart(canvas, projData.pts, actualData, planType!, projData.goalWeight);
+  }, [projData, actualData, open, planType]);
+
+  const handleSave = useCallback(() => {
+    if (!projData || !planType) return;
+    savePlanToStorage({
+      type: planType, intensity, dailyKcal: INTENSITY_KCAL[intensity],
+      startDate: todayStr,
+      startWeight: projData.startWeight, goalWeight: projData.goalWeight,
+      weeksTarget: projData.weeks,
+    });
+    onClose();
+  }, [projData, planType, intensity, todayStr, onClose]);
+
+  const isValid = !!projData && !!planType;
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
+          style={{ background: 'rgba(7,8,10,0.88)' }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        >
+          <motion.div
+            className="w-full md:max-w-[640px] max-h-[90dvh] overflow-y-auto rounded-t-lg md:rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] p-4 md:p-6"
+            initial={{ opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 48 }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
+          >
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="font-display text-[22px] md:text-[26px] tracking-[2px] uppercase text-[var(--ink-0)]">
+                Create Plan
+              </h3>
+              <button onClick={onClose} className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors p-1">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Step 1 — Plan Type */}
+            <p className="que-label mb-2">Plan Type</p>
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              {(['cut', 'bulk'] as const).map(type => (
+                <button key={type} onClick={() => setPlanType(type)}
+                  className={[
+                    'flex flex-col gap-1.5 rounded border p-3 text-left transition-all',
+                    planType === type
+                      ? type === 'cut' ? 'border-[var(--accent)] bg-[var(--accent-12)]' : 'border-[var(--positive)] bg-[var(--positive-12)]'
+                      : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--line-3)]',
+                  ].join(' ')}
+                >
+                  <span className={[
+                    'font-display text-[18px] md:text-[20px] uppercase tracking-[1px] leading-none',
+                    planType === type ? (type === 'cut' ? 'text-[var(--accent)]' : 'text-[var(--positive)]') : 'text-[var(--ink-0)]',
+                  ].join(' ')}>
+                    {type === 'cut' ? '↓ Cut' : '↑ Bulk'}
+                  </span>
+                  <span className="font-mono text-[9px] text-[var(--ink-2)] tracking-[0.5px]">
+                    {type === 'cut' ? 'Calorie deficit · lose body fat' : 'Calorie surplus · build muscle'}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Step 2 — Intensity */}
+            {planType && (
+              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mb-5">
+                <p className="que-label mb-2">Intensity</p>
+                <div className="flex flex-col gap-1.5">
+                  {(['slight', 'moderate', 'aggressive'] as PlanIntensity[]).map(lvl => {
+                    const label = INTENSITY_LABELS[planType][lvl];
+                    const kcal  = INTENSITY_KCAL[lvl];
+                    const active = intensity === lvl;
+                    const accentCol = planType === 'cut' ? 'var(--accent)' : 'var(--positive)';
+                    return (
+                      <button key={lvl} onClick={() => setIntensity(lvl)}
+                        className={[
+                          'flex items-center justify-between rounded border px-4 py-3 transition-all text-left',
+                          active
+                            ? planType === 'cut' ? 'border-[var(--accent)] bg-[var(--accent-12)]' : 'border-[var(--positive)] bg-[var(--positive-12)]'
+                            : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--line-3)]',
+                        ].join(' ')}
+                      >
+                        <div>
+                          <p className="font-display text-[15px] md:text-[16px] uppercase tracking-[1px] leading-none mb-1"
+                            style={{ color: active ? accentCol : 'var(--ink-0)' }}>
+                            {label}
+                          </p>
+                          <p className="font-mono text-[9px] text-[var(--ink-2)] tracking-[0.5px]">
+                            {fmt(kcal)} kcal {planType === 'cut' ? 'deficit' : 'surplus'} · ~{(kcal * 7 / 3500).toFixed(1)} lbs/wk
+                          </p>
+                        </div>
+                        <span className="font-display text-[20px] ml-4 flex-shrink-0"
+                          style={{ color: active ? accentCol : 'var(--ink-3)' }}>
+                          {fmt(kcal)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Step 3 — Starting Weight */}
+            <div className="mb-4">
+              <label className="que-label">Starting Weight / lbs</label>
+              <input type="number" inputMode="decimal" className="que-input"
+                value={startWeight} onChange={e => setStartWeight(e.target.value)} placeholder="lbs" />
+            </div>
+
+            {/* Goal toggle */}
+            <p className="que-label mb-2">Goal</p>
+            <div className="flex bg-[var(--bg-2)] border border-[var(--line)] rounded-sm p-1 gap-0.5 mb-3">
+              {(['weight', 'weeks'] as const).map(mode => (
+                <button key={mode} onClick={() => setGoalMode(mode)}
+                  className={[
+                    'flex-1 py-1.5 rounded-sm font-mono text-[10px] font-bold tracking-[1px] uppercase transition-all',
+                    goalMode === mode ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'text-[var(--ink-2)] hover:text-[var(--ink-0)]',
+                  ].join(' ')}
+                >
+                  {mode === 'weight' ? 'Target Weight' : 'Time Period'}
+                </button>
+              ))}
+            </div>
+            {goalMode === 'weight' ? (
+              <div className="mb-4">
+                <label className="que-label">Goal Weight / lbs</label>
+                <input type="number" inputMode="decimal" className="que-input"
+                  value={goalWeight} onChange={e => setGoalWeight(e.target.value)}
+                  placeholder={planType === 'cut' ? 'e.g. 175' : 'e.g. 195'} />
+              </div>
+            ) : (
+              <div className="mb-4">
+                <label className="que-label">Duration / weeks</label>
+                <input type="number" inputMode="numeric" className="que-input"
+                  value={goalWeeks} onChange={e => setGoalWeeks(e.target.value)} placeholder="12" />
+              </div>
+            )}
+
+            {/* Summary tiles */}
+            {projData && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
+                <div className="grid grid-cols-3 gap-2 mb-2">
+                  {[
+                    { label: 'Per Week', value: `${projData.weeklyRate > 0 ? '+' : ''}${Math.abs(projData.weeklyRate).toFixed(2)} lbs`, color: projData.weeklyRate < 0 ? 'var(--accent)' : 'var(--positive)' },
+                    { label: 'Duration', value: `${projData.weeks} wks`, color: 'var(--ink-0)' },
+                    { label: 'Goal',     value: `${projData.goalWeight.toFixed(1)} lb`, color: 'var(--ink-0)' },
+                  ].map(s => (
+                    <div key={s.label} className="rounded border border-[var(--line)] bg-[var(--bg-2)] p-2.5 md:p-3">
+                      <p className="font-mono text-[8px] md:text-[9px] font-bold tracking-[1px] text-[var(--ink-3)] uppercase mb-1">{s.label}</p>
+                      <p className="font-display text-[15px] md:text-[18px] leading-none" style={{ color: s.color }}>{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Cardio contribution notice */}
+                {planType === 'cut' && m.activityBurn > 0 && projData && (
+                  <div className="flex items-center gap-2 rounded border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2">
+                    <span className="block w-1.5 h-1.5 rounded-full bg-[var(--positive)] flex-shrink-0" />
+                    <p className="font-mono text-[9px] text-[var(--ink-1)] tracking-[0.5px]">
+                      <span className="text-[var(--positive)] font-bold">+{fmt(Math.round(m.activityBurn * 0.4))} kcal/day</span>{' '}
+                      cardio factored in — {fmt(projData.kcal)} base + 40% of {fmt(Math.round(m.activityBurn))} cardio burn
+                    </p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Chart */}
+            {projData ? (
+              <div className="mb-4">
+                <p className="que-label mb-2">Projected Progression</p>
+                <canvas ref={canvasRef} className="block w-full h-[180px] md:h-[200px] rounded" />
+                {actualData.length > 0 && (
+                  <div className="flex gap-3 mt-2 justify-center flex-wrap">
+                    {[['var(--positive)', 'Ahead'], ['var(--danger)', 'Behind'], ['var(--accent)', 'Projected']].map(([col, label]) => (
+                      <span key={label} className="flex items-center gap-1.5 font-mono text-[9px] text-[var(--ink-2)] tracking-[0.5px]">
+                        <span className="block w-2 h-2 rounded-full flex-shrink-0" style={{ background: col }} /> {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : planType && (
+              <div className="mb-4 rounded border border-dashed border-[var(--line-2)] py-8 text-center">
+                <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">
+                  Fill in your goal to see the projection
+                </p>
+              </div>
+            )}
+
+            {/* Current progress (only if plan was previously saved) */}
+            {actualData.length > 0 && projData && (() => {
+              const latest = actualData[actualData.length - 1].weight;
+              const delta  = latest - projData.startWeight;
+              const isGood = planType === 'cut' ? delta <= 0 : delta >= 0;
+              return (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="mb-4 rounded border border-[var(--line)] bg-[var(--bg-2)] p-4"
+                >
+                  <h4 className="que-section-label mb-3"><span className="dot" />CURRENT PROGRESS</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="font-mono text-[9px] tracking-[1.5px] text-[var(--ink-3)] uppercase mb-1">Latest Weight</p>
+                      <p className="font-display text-[24px] text-[var(--ink-0)] leading-none">
+                        {latest.toFixed(1)}<span className="font-mono text-[12px] text-[var(--ink-2)] ml-1">lbs</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-mono text-[9px] tracking-[1.5px] text-[var(--ink-3)] uppercase mb-1">
+                        Total {planType === 'cut' ? 'Lost' : 'Gained'}
+                      </p>
+                      <p className="font-display text-[24px] leading-none" style={{ color: isGood ? 'var(--positive)' : 'var(--danger)' }}>
+                        {delta > 0 ? '+' : ''}{delta.toFixed(1)}<span className="font-mono text-[12px] text-[var(--ink-2)] ml-1">lbs</span>
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })()}
+
+            <button onClick={handleSave} disabled={!isValid} className="que-btn-primary w-full">
+              {loadPlan() ? 'Update Plan' : 'Save Plan'}
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENT — ProjectionModal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ProjectionModal({ open, m, weightLbs, onClose }: {
+  open: boolean; m: BudgetMetrics; weightLbs: number; onClose: () => void;
+}) {
+  const canvasRef    = useRef<HTMLCanvasElement>(null);
+  const ptsRef       = useRef<number[]>([]);
+  const [selDay, setSelDay] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open || weightLbs <= 0 || m.budget <= 0) return;
+    const dailyNet  = (m.budget - m.bmr * m.multiplier) - m.activityBurn * 0.40;
+    const lbsPerDay = dailyNet / 3500;
+    ptsRef.current  = Array.from({ length: 91 }, (_, i) => weightLbs + lbsPerDay * i);
+    setSelDay(null);
+  }, [open, m, weightLbs]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !open || weightLbs <= 0 || m.budget <= 0) return;
+    drawProjection(canvas, weightLbs, m, selDay);
+  }, [open, m, weightLbs, selDay]);
+
+  const handleInteraction = useCallback((clientX: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !ptsRef.current.length) return;
+    const rect   = canvas.getBoundingClientRect();
+    const cssX   = clientX - rect.left;
+    const W      = canvas.offsetWidth || 300;
+    const raw    = Math.round((cssX - 52) / (W - 52 - 16) * 90);
+    const day    = Math.max(0, Math.min(90, raw));
+    setSelDay(Math.min(Math.round(day / 7) * 7, 90));
+  }, []);
+
+  const info = selDay !== null ? (() => {
+    const wt    = ptsRef.current[selDay] ?? weightLbs;
+    const week  = Math.round(selDay / 7);
+    const d     = new Date(); d.setDate(d.getDate() + selDay);
+    return { wt, week, date: `${MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`, delta: wt - weightLbs };
+  })() : null;
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
+          style={{ background: 'rgba(7,8,10,0.88)' }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        >
+          <motion.div
+            className="w-full md:max-w-[620px] rounded-t-lg md:rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] p-4 md:p-6"
+            initial={{ opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 48 }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <p className="font-mono text-[9px] font-bold tracking-[3px] text-[var(--positive)] uppercase mb-1">
+                  ✓ Session Logged
+                </p>
+                <h3 className="font-display text-[22px] md:text-[26px] tracking-[2px] uppercase text-[var(--ink-0)] leading-none">
+                  Weight Projection
+                </h3>
+              </div>
+              <button onClick={onClose} className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors p-1 flex-shrink-0 -mt-1 ml-3">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Week info panel */}
+            <AnimatePresence mode="wait">
+              {info ? (
+                <motion.div
+                  key={selDay}
+                  initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="mb-4 rounded border border-[var(--accent)] bg-[var(--accent-12)] px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--accent)] uppercase mb-1.5">
+                      Week {info.week} · {info.date}
+                    </p>
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-display tabular text-[36px] leading-none text-[var(--ink-0)]"
+                        style={{ textShadow: '0 0 20px var(--accent-40)' }}>
+                        {info.wt.toFixed(1)}
+                      </span>
+                      <span className="font-display text-[18px] text-[var(--ink-2)]">lbs</span>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`font-display text-[24px] leading-none ${info.delta <= 0 ? 'text-[var(--positive)]' : 'text-[var(--danger)]'}`}>
+                      {info.delta > 0 ? '+' : ''}{info.delta.toFixed(1)}
+                    </p>
+                    <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[1px] uppercase">lbs from now</p>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div key="hint" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="mb-4 rounded border border-[var(--line-2)] bg-[var(--bg-2)] px-4 py-3 text-center"
+                >
+                  <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">
+                    Tap the chart to see weekly projections
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Interactive canvas */}
+            {weightLbs > 0 && m.budget > 0 ? (
+              <canvas
+                ref={canvasRef}
+                className="block w-full h-[200px] rounded cursor-crosshair"
+                style={{ touchAction: 'none' }}
+                onClick={e => handleInteraction(e.clientX)}
+                onTouchStart={e => { e.preventDefault(); handleInteraction(e.touches[0].clientX); }}
+                onTouchMove={e => { e.preventDefault(); handleInteraction(e.touches[0].clientX); }}
+              />
+            ) : (
+              <div className="h-[200px] flex items-center justify-center rounded border border-dashed border-[var(--line-2)]">
+                <p className="font-mono text-[11px] text-[var(--ink-3)] tracking-[1px] uppercase text-center px-4">
+                  Log your weight to see the projection
+                </p>
+              </div>
+            )}
+
+            <p className="mt-3 font-mono text-[9px] text-[var(--ink-3)] text-center tracking-[1px] uppercase">
+              3,500 kcal ≈ 1 lb · 60% of cardio is eaten back; 40% counts as deficit
+            </p>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -855,6 +1412,7 @@ export default function MetricsDashboard() {
 
   const [profileOpen,  setProfileOpen]  = useState(false);
   const [projVisible,  setProjVisible]  = useState(false);
+  const [planOpen,     setPlanOpen]     = useState(false);
   const [cardio, setCardio]             = useState<CardioFields>(EMPTY_CARDIO);
   const [todayWeight, setTodayWeightRaw] = useState('');
   const [todayCals,   setTodayCalsRaw]   = useState('');
@@ -882,20 +1440,7 @@ export default function MetricsDashboard() {
     setLastBudget(m.budget);
   }, [m.activityBurn, m.budget, setLastBurn, setLastBudget]);
 
-  const handleCardioChange = useCallback((field: keyof CardioFields, val: string) => {
-    setCardio(prev => {
-      const next = { ...prev, [field]: val };
-      updateDayRecord(activeDayFocus, {
-        steps:    Number(next.steps)    || 0,
-        runDist:  Number(next.runDist)  || 0,
-        runTime:  Number(next.runTime)  || 0,
-        bikeDist: Number(next.bikeDist) || 0,
-        bikeTime: Number(next.bikeTime) || 0,
-        swimTime: Number(next.swimTime) || 0,
-      });
-      return next;
-    });
-  }, [activeDayFocus, updateDayRecord]);
+  // Cardio is read-only in Metrics — it is logged via WorkoutLogger in the Calendar tab.
 
   const handleProfileChange = useCallback((updates: Partial<UserProfile>) => {
     setProfile(updates); persistProfile(updates);
@@ -975,17 +1520,14 @@ export default function MetricsDashboard() {
         </button>
       </div>
 
-      {profileOpen && <ProfilePanel profile={profile} onChange={handleProfileChange} />}
+      {profileOpen && <ProfilePanel profile={profile} onChange={handleProfileChange} onOpenPlan={() => setPlanOpen(true)} />}
 
       <CalorieBudgetCard m={m} />
 
-      <CardioLogCard
-        cardio={cardio}
-        m={m}
+      <DailyLogCard
         todayLabel={fmtDateLong(todayStr)}
         todayWeight={todayWeight}
         todayCals={todayCals}
-        onChange={handleCardioChange}
         onWeightChange={handleWeightChange}
         onCalsChange={handleCalsChange}
         onLogToday={handleLogToday}
@@ -993,8 +1535,23 @@ export default function MetricsDashboard() {
 
       <ActivityLogCard />
       <CalorieHistoryCard streak={streak} avgNet={avgNet} days={calDays} />
-      <WeightProjectionCard m={m} weightLbs={parseNum(profile.weight)} hidden={!projVisible} />
       <TrendsCard />
+
+      <ProjectionModal
+        open={projVisible}
+        m={m}
+        weightLbs={parseNum(todayWeight || profile.weight)}
+        onClose={() => setProjVisible(false)}
+      />
+
+      <PlanModal
+        open={planOpen}
+        onClose={() => setPlanOpen(false)}
+        profile={profile}
+        m={m}
+        localDB={localDB}
+        todayStr={todayStr}
+      />
     </div>
   );
 }
