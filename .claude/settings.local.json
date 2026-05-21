@@ -7,7 +7,9 @@
       "Bash(Format-Table -AutoSize)",
       "Bash(Select-Object FullName)",
       "Bash(npm install *)",
-      "Bash(node -e \"require\\('next-auth'\\)\")"
+      "Bash(node -e \"require\\('next-auth'\\)\")",
+      "Bash(node -e \"try{const p=require\\('./node_modules/framer-motion/package.json'\\);console.log\\('framer-motion',p.version\\);}catch{console.log\\('not installed'\\)}\")",
+      "Bash(node -e \"const fm=require\\('framer-motion'\\);console.log\\(Object.keys\\(fm\\).filter\\(k=>['motion','AnimatePresence','useAnimation','useSpring','MotionConfig'].includes\\(k\\)\\).join\\(', '\\)\\)\")"
     ]
   }
 }
