@@ -136,83 +136,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var
   font-family: var(--font-sans);
 }
 
-/* ── Tab navigation ──────────────────────────────────────────────────── */
-
-.app-tabs {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 16px;
-  height: 44px;
-  background: var(--bg-0);
-  border-bottom: 1px solid var(--line);
-  position: relative;
-  z-index: 100;
-}
-
-.app-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink-2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 160ms ease;
-  white-space: nowrap;
-}
-.app-tab:hover { color: var(--ink-0); }
-.app-tab[data-active="true"] {
-  background: var(--bg-2);
-  color: var(--accent);
-  border-color: var(--line);
-}
-
-/* ── Scrollable content area ─────────────────────────────────────────── */
-
-.app-content {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-/* ── Calendar tab: calendar + logger side by side ───────────────────── */
-
-.app-calendar-layout {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  padding: 16px;
-  padding-bottom: 80px;
-  max-width: 1400px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-@media (min-width: 1024px) {
-  .app-calendar-layout {
-    grid-template-columns: 1fr 400px;
-    align-items: start;
-  }
-}
-
-/* ── Protocol tab: centered single column ───────────────────────────── */
-
-.app-protocol-layout {
-  padding: 16px;
-  padding-bottom: 80px;
-  max-width: 720px;
-  margin: 0 auto;
-  width: 100%;
-}
+.app-frame-container { flex: 1; overflow: hidden; position: relative; min-height: 0; }
+.app-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg-0); }
 
 /* ════════════════════════════════════════════════════════════════════════
    AUTH HEADER — Athletic command bar
@@ -464,60 +389,19 @@ html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var
 
 .si-shell {
   position: fixed; inset: 0;
-  background: #04050f;
+  background: var(--bg-0);
   display: flex; align-items: center; justify-content: center;
   overflow: hidden; padding: 24px 16px;
   font-family: var(--font-sans);
 }
 
-/* Twinkling starfield canvas */
-.si-starfield {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Nebula glow — subtle purple/blue wisps */
-.si-glow {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
+/* Diagonal lime ray across the BG */
+.si-shell::before {
+  content: ''; position: absolute; inset: -20%;
   background:
-    radial-gradient(ellipse 75% 50% at 18% 8%,  rgba(90,50,220,0.18) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 45% at 82% 92%, rgba(30,80,200,0.14) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 30% at 55% 45%, rgba(60,20,140,0.08) 0%, transparent 70%);
-  animation: nebulaDrift 18s ease-in-out infinite alternate;
-}
-@keyframes nebulaDrift {
-  0%   { opacity: 0.8; transform: scale(1)    translateY(0); }
-  100% { opacity: 1;   transform: scale(1.04) translateY(-6px); }
-}
-
-/* Subtle orbit ring behind the card */
-.si-orbit-ring {
-  position: absolute;
-  width: 520px; height: 520px;
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.04);
+    radial-gradient(ellipse 50% 60% at 20% 20%, rgba(79,195,247,0.10) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 90% 110%, rgba(79,195,247,0.05) 0%, transparent 60%);
   pointer-events: none;
-  z-index: 0;
-  animation: orbitSpin 60s linear infinite;
-}
-.si-orbit-ring::before {
-  content: '';
-  position: absolute;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.25);
-  top: -3px; left: 50%;
-  transform: translateX(-50%);
-  box-shadow: 0 0 8px rgba(255,255,255,0.3);
-}
-@keyframes orbitSpin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
 }
 
 .si-card {
@@ -545,15 +429,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg-0); color: var
 }
 
 .si-logo-wrap { margin-bottom: 28px; }
-.si-logo-img {
-  display: block; filter: invert(1);
-  animation: logoFloat 5s ease-in-out infinite;
-  will-change: transform;
-}
-@keyframes logoFloat {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-10px); }
-}
+.si-logo-img { display: block; filter: invert(1); }
 
 .si-title {
   font-family: var(--font-display);

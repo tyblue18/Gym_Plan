@@ -651,7 +651,7 @@ function drawProjection(canvas: HTMLCanvasElement, startWt: number, m: BudgetMet
   const yOf  = (v: number) => H - PAD.b - ((v - minW) / span) * (H - PAD.t - PAD.b);
   const lime = '#4FC3F7', rgb = '79,195,247';
   const danger = '#FF4D5E', rgbDanger = '255,77,94';
-  const col  = dailyNet <= 0 ? lime : danger;
+  const col  = dailyNet <= 0 ? accentCol : danger;
   const rgbC = dailyNet <= 0 ? rgb  : rgbDanger;
 
   for (let w = 1; w <= 13; w++) {

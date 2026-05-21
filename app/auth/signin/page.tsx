@@ -17,7 +17,7 @@ function Starfield() {
     let w = (c.width  = window.innerWidth);
     let h = (c.height = window.innerHeight);
 
-    type Star = { x:number; y:number; r:number; a:number; s:number; p:number };
+    type Star = { x: number; y: number; r: number; a: number; s: number; p: number };
     const make = (): Star => ({
       x: Math.random() * w,
       y: Math.random() * h,
@@ -88,50 +88,22 @@ export default function SignInPage() {
 
   return (
     <div className="si-shell">
-      {/* Twinkling starfield */}
       <Starfield />
-
-      {/* Nebula glow layers */}
       <div className="si-glow" aria-hidden="true" />
-
-      {/* Floating orbit ring behind the card */}
       <div className="si-orbit-ring" aria-hidden="true" />
 
-      {/* Content card */}
       <div className="si-card" role="main">
 
-        {/* Logo */}
         <div className="si-logo-wrap" aria-hidden="true">
-          <Image
-            src={queLogo}
-            alt=""
-            width={110}
-            height={110}
-            className="si-logo-img"
-            priority
-          />
+          <Image src={queLogo} alt="" width={110} height={110} className="si-logo-img" priority />
         </div>
 
-        {/* App name */}
         <h1 className="si-title">Que</h1>
         <p className="si-eyebrow">Training &amp; Calorie Log</p>
 
-        {/* Divider */}
         <div className="si-divider" aria-hidden="true" />
 
-        {/* GitHub CTA */}
-        <button
-          type="button"
-          onClick={() => handleSignIn('github')}
-          disabled={loading !== null}
-          className="si-btn"
-          aria-label="Sign in with GitHub"
-        >
-          {loading === 'github' ? <span className="si-btn-spinner" aria-hidden="true" /> : <GitHubMark size={17} />}
-          {loading === 'github' ? 'Redirecting…' : 'Sign in with GitHub'}
-        </button>
-
-        {/* Google CTA */}
+        {/* Google first */}
         <button
           type="button"
           onClick={() => handleSignIn('google')}
@@ -143,7 +115,18 @@ export default function SignInPage() {
           {loading === 'google' ? 'Redirecting…' : 'Sign in with Google'}
         </button>
 
-        {/* Note */}
+        {/* GitHub second */}
+        <button
+          type="button"
+          onClick={() => handleSignIn('github')}
+          disabled={loading !== null}
+          className="si-btn"
+          aria-label="Sign in with GitHub"
+        >
+          {loading === 'github' ? <span className="si-btn-spinner" aria-hidden="true" /> : <GitHubMark size={17} />}
+          {loading === 'github' ? 'Redirecting…' : 'Sign in with GitHub'}
+        </button>
+
         <p className="si-note">
           Your training data is stored locally in your browser.
           <br />

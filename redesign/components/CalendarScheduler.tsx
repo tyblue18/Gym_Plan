@@ -4,7 +4,7 @@
  * components/CalendarScheduler.tsx
  *
  * Athletic redesign — all logic, hooks, props, and data bindings preserved.
- * Visual rewrite uses the QUE token system: deep ink, single ice-blue accent,
+ * Visual rewrite uses the QUE token system: deep ink, single lime accent,
  * Anton condensed numerals for the day cells, JetBrains Mono for telemetry.
  */
 

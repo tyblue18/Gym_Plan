@@ -6,7 +6,7 @@
  * Visual rewrite only — session logic, hooks, and props preserved exactly.
  * Three states driven by next-auth's useSession():
  *   1. loading            → shimmering skeleton pill
- *   2. unauthenticated    → ice-blue "Sign in with GitHub" CTA
+ *   2. unauthenticated    → lime "Sign in with GitHub" CTA
  *   3. authenticated      → avatar · name · sign-out
  *
  * All visual rules live in .auth-* classes in app/globals.css.

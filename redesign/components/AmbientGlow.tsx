@@ -4,7 +4,7 @@
  * components/AmbientGlow.tsx
  *
  * Status-reactive ambient background glow.
- * Athletic palette: ice blue accent + cool charcoal blues, no purple/violet.
+ * Athletic palette: lime accent + cool charcoal blues, no purple/violet.
  * Logic and contract identical to the original implementation.
  */
 
@@ -41,7 +41,7 @@ const CFG: Record<GlowState, GlowCfg> = {
     colB: 'rgba(127,212,249,0.11)',
     colC: 'rgba(79,195,247,0.07)',
   },
-  // Over budget — danger red
+  // Over budget — warning amber
   over: {
     colA: 'rgba(255,77,94,0.10)',
     colB: 'rgba(200,60,80,0.07)',
