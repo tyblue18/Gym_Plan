@@ -7,7 +7,7 @@ import type { NextAuthOptions } from 'next-auth';
  * Export authOptions so server utilities (e.g. getServerSession) can reuse
  * the same config without importing the entire handler.
  */
-export const authOptions: NextAuthOptions = {
+const authOptions: NextAuthOptions = {
   // Suppress CLIENT_FETCH_ERROR noise — benign in dev with Next.js 15 + next-auth v4
   logger: {
     error(code, ...message) {
