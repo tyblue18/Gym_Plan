@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AppUser {
+  id    String  @id @default(cuid())
+  email String  @unique
+  name  String?
+
+  workoutData WorkoutData?
+  healthConn  HealthConnection?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WorkoutData {
+  id     String  @id @default(cuid())
+  userId String  @unique
+  user   AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  localDB  Json @default("{}")
+  profile  Json @default("{}")
+  settings Json @default("{}")
+
+  syncedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model HealthConnection {
+  id     String  @id @default(cuid())
+  userId String  @unique
+  user   AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleExpiresAt    DateTime?
+  googleScope        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

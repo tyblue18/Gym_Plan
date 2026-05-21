@@ -24,8 +24,10 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
+import { queueSync, pullFromCloud } from '@/lib/syncEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -347,6 +349,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     setIsLoaded(true);
+
+    // ── Pull from cloud and merge (remote wins per day) ────────────────────
+    // Fire-and-forget — failures are silent, localStorage is the fallback.
+    pullFromCloud().then(remote => {
+      if (!remote) return;
+
+      if (remote.localDB && typeof remote.localDB === 'object') {
+        const remoteDB = remote.localDB as Record<string, unknown>;
+        setLocalDB(prev => ({ ...prev, ...remoteDB } as typeof prev));
+        try {
+          const merged = { ...JSON.parse(localStorage.getItem(DB_KEY) ?? '{}'), ...remoteDB };
+          localStorage.setItem(DB_KEY, JSON.stringify(merged));
+        } catch { /* storage full — skip */ }
+      }
+
+      if (remote.profile && typeof remote.profile === 'object') {
+        const p = remote.profile as Record<string, string>;
+        if (Object.keys(p).length > 0) {
+          setProfileState({
+            weight:        p.w || '180',
+            height:        p.h || '70',
+            age:           p.a || '29',
+            sex:           (p.s as 'male' | 'female') || 'male',
+            deficit:       p.b || '500',
+            activityLevel: p.l || '1.45',
+          });
+          try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch { /* noop */ }
+        }
+      }
+    }).catch(() => { /* offline — no-op */ });
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -359,6 +391,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const [y, m, d] = dateStr.split('-').map(Number);
     setCurrentDisplayDate(new Date(y, m - 1, d));
   }, []);
+
+  // Sync localDB to cloud on every change, but skip the very first render
+  // (initial localStorage hydration + cloud pull shouldn't count as a user write).
+  const syncSkipCountRef = useRef(2); // skip first 2 fires (mount + cloud-pull merge)
+  useEffect(() => {
+    if (syncSkipCountRef.current > 0) {
+      syncSkipCountRef.current -= 1;
+      return;
+    }
+    queueSync({ localDB: localDB as Record<string, unknown> });
+  }, [localDB]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Merge a partial update into one day's record and immediately persist. */
   const updateDayRecord = useCallback(
@@ -383,7 +426,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [localDB]
   );
 
-  /** Flush the current (or supplied) DB snapshot to localStorage. */
+  /** Flush the current (or supplied) DB snapshot to localStorage + cloud. */
   const persistDB = useCallback(
     (db?: LocalDB) => {
       const target = db ?? localDB;
@@ -391,26 +434,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem(DB_KEY, JSON.stringify(target));
       } catch { /* storage quota exceeded */ }
       if (db) setLocalDB(db);
+      // Queue a cloud sync — debounced 4 s, fire-and-forget
+      queueSync({ localDB: target as Record<string, unknown> });
     },
     [localDB]
   );
 
-  /** Persist profile — merges partial updates, writes to localStorage
-   *  using the same single-char key format the vanilla JS app used. */
+  /** Persist profile — merges partial updates, writes to localStorage + cloud. */
   const persistProfile = useCallback(
     (updates: Partial<UserProfile>) => {
       setProfileState(prev => {
         const next = { ...prev, ...updates };
+        const payload = {
+          w: next.weight,
+          h: next.height,
+          a: next.age,
+          s: next.sex,
+          b: next.deficit,
+          l: next.activityLevel,
+        };
         try {
-          localStorage.setItem(PROFILE_KEY, JSON.stringify({
-            w: next.weight,
-            h: next.height,
-            a: next.age,
-            s: next.sex,
-            b: next.deficit,
-            l: next.activityLevel,
-          }));
+          localStorage.setItem(PROFILE_KEY, JSON.stringify(payload));
         } catch { /* storage quota exceeded */ }
+        // Sync profile to cloud
+        queueSync({ profile: payload });
         return next;
       });
     },
