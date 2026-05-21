@@ -358,13 +358,14 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   SIGN-IN PAGE — Minimal monochrome gate
+   SIGN-IN PAGE — Space theme
 ═══════════════════════════════════════════════════════════════════════ */
 
 .si-shell {
   position: fixed;
   inset: 0;
-  background: #0a0a0a;
+  /* Deep space: very dark blue-black */
+  background: #04050f;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -373,9 +374,62 @@ body {
   font-family: 'Geist', system-ui, sans-serif;
 }
 
-/* No ambient glow — invisible placeholder */
-.si-glow { display: none; }
+/* Twinkling starfield canvas */
+.si-starfield {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
 
+/* Nebula glow — subtle purple/blue wisps */
+.si-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 75% 50% at 18% 8%,  rgba(90, 50, 220, 0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 45% at 82% 92%, rgba(30, 80, 200, 0.14) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 55% 45%, rgba(60, 20, 140, 0.08) 0%, transparent 70%);
+  animation: nebulaDrift 18s ease-in-out infinite alternate;
+}
+
+@keyframes nebulaDrift {
+  0%   { opacity: 0.8; transform: scale(1)    translateY(0); }
+  100% { opacity: 1;   transform: scale(1.04) translateY(-6px); }
+}
+
+/* Subtle large orbit ring behind the card */
+.si-orbit-ring {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+  z-index: 0;
+  animation: orbitSpin 60s linear infinite;
+}
+.si-orbit-ring::before {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 0 8px rgba(255,255,255,0.3);
+}
+
+@keyframes orbitSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Glassmorphic display card */
 .si-card {
   position: relative;
   z-index: 1;
@@ -384,7 +438,24 @@ body {
   align-items: center;
   text-align: center;
   width: 100%;
-  max-width: 360px;
+  max-width: 380px;
+  background: rgba(8, 8, 22, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  padding: 44px 36px 36px;
+  backdrop-filter: blur(28px) saturate(140%);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 40px 80px rgba(0, 0, 0, 0.55),
+    0 0 60px rgba(80, 40, 180, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: cardAppear 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes cardAppear {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
 }
 
 /* ── Logo ────────────────────────────────────────────────────────────── */
@@ -395,8 +466,14 @@ body {
 
 .si-logo-img {
   display: block;
-  /* Logo is black-on-white; invert makes it white-on-black to match dark background */
   filter: invert(1);
+  animation: logoFloat 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0px);   }
+  50%       { transform: translateY(-10px); }
 }
 
 /* ── App title ───────────────────────────────────────────────────────── */
@@ -408,7 +485,11 @@ body {
   letter-spacing: 4px;
   text-transform: uppercase;
   margin: 0 0 8px;
-  color: #e8e8e8;
+  /* Subtle star-like shimmer gradient */
+  background: linear-gradient(135deg, #ffffff 30%, rgba(180, 160, 255, 0.85) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .si-eyebrow {
@@ -423,9 +504,9 @@ body {
 /* ── Separator ───────────────────────────────────────────────────────── */
 
 .si-divider {
-  width: 32px;
+  width: 48px;
   height: 1px;
-  background: rgba(255, 255, 255, 0.07);
+  background: linear-gradient(90deg, transparent, rgba(180,160,255,0.3), transparent);
   margin: 0 auto 28px;
 }
 

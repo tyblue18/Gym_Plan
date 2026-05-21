@@ -13,18 +13,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* ━━ Canvas ━━ */
-            --bg-base:          #0a0a0a;
-            --bg-elevated:      #111111;
-            --bg-surface:       #1a1a1a;
-            --bg-surface-hover: #222222;
-            --bg-inset:         #0d0d0d;
+            /* ━━ Canvas — deep space ━━ */
+            --bg-base:          #04050f;
+            --bg-elevated:      #0b0c1c;
+            --bg-surface:       #111228;
+            --bg-surface-hover: #181a32;
+            --bg-inset:         #07081a;
 
-            /* ━━ Border System ━━ */
-            --border-subtle:  rgba(255,255,255,0.06);
-            --border-default: rgba(255,255,255,0.09);
-            --border-strong:  rgba(255,255,255,0.15);
-            --border-focus:   rgba(255,255,255,0.25);
+            /* ━━ Border System — space-tinted ━━ */
+            --border-subtle:  rgba(140,150,255,0.08);
+            --border-default: rgba(140,150,255,0.12);
+            --border-strong:  rgba(180,190,255,0.18);
+            --border-focus:   rgba(200,210,255,0.28);
 
             /* ━━ Single White Accent ━━ */
             --accent-primary:      #ffffff;
@@ -84,6 +84,30 @@
             min-height: 100dvh;
             overflow-x: hidden;
         }
+
+        /* Nebula — same palette as sign-in page, very subtle */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 70% 40% at 15% -5%, rgba(80,40,200,0.09) 0%, transparent 55%),
+                radial-gradient(ellipse 50% 35% at 85% 105%, rgba(30,70,200,0.07) 0%, transparent 55%);
+            pointer-events: none;
+            z-index: 0;
+            animation: dashNebula 20s ease-in-out infinite alternate;
+        }
+        @keyframes dashNebula {
+            0%   { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        #starfieldCanvas {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
         
         
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -97,9 +121,9 @@
         .top-nav {
             display: flex;
             align-items: center;
-            background: rgba(10,10,10,0.92);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            background: rgba(4,5,18,0.94);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
             border-bottom: 1px solid var(--border-subtle);
             padding: 10px 28px;
             gap: 6px;
@@ -160,7 +184,7 @@
                 left: 0;
                 right: 0;
                 height: var(--nav-height);
-                background: rgba(10,10,10,0.96);
+                background: rgba(4,5,18,0.96);
                 backdrop-filter: blur(28px) saturate(180%);
                 -webkit-backdrop-filter: blur(28px) saturate(180%);
                 border-top: 1px solid var(--border-subtle);
@@ -932,43 +956,65 @@
         }
 
         .sr-badge {
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 700;
             color: var(--text-primary);
-            background: var(--bg-surface-hover);
-            padding: 4px 10px;
+            background: rgba(140,150,255,0.07);
+            border: 1px solid rgba(140,150,255,0.13);
+            padding: 5px 10px;
             border-radius: 6px;
-            white-space: normal;   /* allow wrapping */
+            white-space: normal;
             cursor: pointer;
-            transition: all 0.2s;
-            border: 1px solid transparent;
+            transition: border-color 0.2s;
             font-family: 'JetBrains Mono', monospace;
             font-variant-numeric: tabular-nums;
-            align-self: flex-start; /* don't stretch full width */
+            align-self: flex-start;
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             gap: 4px;
             line-height: 1.5;
         }
+        .sr-badge:hover { border-color: rgba(180,190,255,0.28); }
 
-        /* Individual set chips for mixed-set display */
+        /* Individual set chips */
         .set-chip {
             display: inline-flex;
             align-items: center;
-            gap: 3px;
-            font-size: 11px;
-            background: var(--bg-surface);
-            border: 1px solid var(--border-subtle);
-            border-radius: 4px;
-            padding: 2px 7px;
+            gap: 5px;
+            background: rgba(140,150,255,0.07);
+            border: 1px solid rgba(140,150,255,0.14);
+            border-radius: 6px;
+            padding: 5px 10px;
             font-family: 'JetBrains Mono', monospace;
-            color: var(--text-secondary);
             white-space: nowrap;
         }
-        .set-chip-n   { font-size: 9px; color: var(--text-muted); }
-        .set-chip-wt  { color: var(--text-tertiary); }
-        .set-count-lbl { font-size: 10px; color: var(--text-muted); }
+        /* S1 / S2 / S3 label — small badge */
+        .set-chip-n {
+            font-size: 9px;
+            font-weight: 700;
+            color: rgba(180,190,255,0.50);
+            letter-spacing: 0.3px;
+        }
+        /* Reps — the primary number, big and bright */
+        .set-reps {
+            font-size: 15px;
+            font-weight: 800;
+            color: #f0f0f0;
+            letter-spacing: -0.3px;
+        }
+        /* Weight — secondary, clearly readable but subordinate */
+        .set-chip-wt {
+            font-size: 11px;
+            font-weight: 500;
+            color: rgba(180,190,255,0.45);
+        }
+        .set-count-lbl {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.3px;
+        }
         
         .sr-badge:hover {
             border-color: var(--accent-primary-glow);
@@ -1270,7 +1316,7 @@
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(10,10,10,0.80);
+            background: rgba(4,5,18,0.82);
             z-index: 500;
             align-items: flex-end;
             justify-content: center;
@@ -2690,6 +2736,9 @@
     </style>
 </head>
 <body>
+
+<!-- Starfield canvas — sits behind all content -->
+<canvas id="starfieldCanvas" aria-hidden="true"></canvas>
 
 <!-- ══════════════════════════════════════════════════════════════════════
      TOP NAVIGATION
@@ -4192,11 +4241,11 @@
         const allSameReps   = sets.every(s => s.r === sets[0].r);
         const allSameWeight = sets.every(s => s.w === sets[0].w);
         if (allSameReps && allSameWeight) {
-            return `${n}×${sets[0].r||'—'}${sets[0].w ? ' <span style="color:var(--text-tertiary);font-weight:500">@ '+escH(sets[0].w)+'</span>' : ''}`;
+            return `<span style="font-size:15px;font-weight:800;color:#f0f0f0">${n}×${sets[0].r||'—'}</span>${sets[0].w ? ' <span style="font-size:11px;font-weight:500;color:rgba(180,190,255,0.45)">@ '+escH(sets[0].w)+'</span>' : ''}`;
         }
-        // Mixed sets: compact chips that wrap naturally
+        // Mixed sets: chips with clear reps/weight hierarchy
         const chips = sets.map((s,i) =>
-            `<span class="set-chip"><span class="set-chip-n">S${i+1}</span>${s.r||'—'}${s.w?`<span class="set-chip-wt"> @${escH(s.w)}</span>`:''}</span>`
+            `<span class="set-chip"><span class="set-chip-n">S${i+1}</span><span class="set-reps">${s.r||'—'}</span>${s.w?`<span class="set-chip-wt">@ ${escH(s.w)}</span>`:''}</span>`
         ).join('');
         return `<span class="set-count-lbl">${n} sets</span>${chips}`;
     }
@@ -5100,6 +5149,46 @@
     }
 
     window.onload = bootstrapper;
+
+    /* ── STARFIELD ── */
+    function initStarfield() {
+        const canvas = document.getElementById('starfieldCanvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let w = canvas.width  = window.innerWidth;
+        let h = canvas.height = window.innerHeight;
+
+        const stars = Array.from({length: 220}, () => ({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            r: Math.random() * 1.4 + 0.2,
+            a: Math.random() * 0.7 + 0.1,
+            s: Math.random() * 0.005 + 0.002,
+            p: Math.random() * Math.PI * 2,
+        }));
+
+        let t = 0;
+        (function draw() {
+            ctx.clearRect(0, 0, w, h);
+            t += 0.016;
+            for (const s of stars) {
+                const op = s.a * (0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * s.s * 50 + s.p)));
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,255,255,' + op.toFixed(2) + ')';
+                ctx.fill();
+            }
+            requestAnimationFrame(draw);
+        })();
+
+        window.addEventListener('resize', () => {
+            w = canvas.width  = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+            stars.forEach(s => { s.x = Math.random() * w; s.y = Math.random() * h; });
+        });
+    }
+
+    initStarfield();
 </script>
 </body>
 </html>

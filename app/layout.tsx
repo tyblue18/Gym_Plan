@@ -15,12 +15,8 @@ export const metadata: Metadata = {
   description:
     'Training log and calorie tracker — calendar, lifting, cardio & daily calorie budgeting.',
   icons: {
-    icon: [
-      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
-      { url: '/icon-dark-32x32.png',  media: '(prefers-color-scheme: dark)'  },
-      { url: '/icon.svg',             type:  'image/svg+xml'                  },
-    ],
-    apple: '/apple-icon.png',
+    icon: '/Que_logo.png',
+    apple: '/Que_logo.png',
   },
 };
 
