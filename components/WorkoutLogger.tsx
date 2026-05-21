@@ -140,53 +140,64 @@ function SetBadge({ sets, onSave }: {
     setEditSets(prev => { const next = [...prev]; next[i] = { ...next[i], [field]: val }; return next; });
   };
 
-  if (editing) {
-    return (
-      <div
-        ref={wrapRef}
-        className="flex flex-col gap-1.5 p-2 bg-[var(--bg-2)] border border-[var(--accent)] rounded-sm"
-        onBlur={e => { if (!wrapRef.current?.contains(e.relatedTarget as Node)) commit(); }}
-      >
-        {editSets.map((s, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-[var(--ink-3)] min-w-[14px] text-right">{i + 1}</span>
-            <input
-              autoFocus={i === 0}
-              type="text" inputMode="numeric" value={s.r} placeholder="reps"
-              className="w-12 rounded-sm px-1.5 py-1 font-mono text-[12px] bg-[var(--bg-1)] border border-[var(--line-2)] text-[var(--ink-0)] outline-none focus:border-[var(--accent)]"
-              onChange={e => updateSet(i, 'r', e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') commit(); }}
-              onFocus={e => { const el = e.target; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350); }}
-            />
-            <span className="text-[var(--ink-3)] text-[11px]">@</span>
-            <input
-              type="text" inputMode="decimal" value={s.w} placeholder="wt"
-              className="w-20 rounded-sm px-1.5 py-1 font-mono text-[12px] bg-[var(--bg-1)] border border-[var(--line-2)] text-[var(--ink-0)] outline-none focus:border-[var(--accent)]"
-              onChange={e => updateSet(i, 'w', e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') commit(); }}
-              onFocus={e => { const el = e.target; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350); }}
-            />
-          </div>
-        ))}
-        <button
-          onMouseDown={e => { e.preventDefault(); commit(); }}
-          className="flex items-center justify-center gap-1 font-mono text-[10px] font-bold text-[var(--accent)] mt-1 hover:text-[var(--accent-hi)] transition-colors tracking-[1px] uppercase"
-        >
-          <Check size={10} /> Save
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <button
-      onClick={startEdit}
-      className="inline-flex flex-wrap items-center gap-1.5 text-left cursor-pointer rounded-sm px-2.5 py-1.5 border border-[var(--line)] bg-[var(--bg-2)] hover:border-[var(--accent)] transition-all group"
-      title="Click to edit sets"
-    >
-      <FormatSets sets={sets} />
-      <Edit3 size={9} className="text-[var(--ink-3)] group-hover:text-[var(--accent)] ml-1" />
-    </button>
+    <AnimatePresence mode="wait" initial={false}>
+      {editing ? (
+        <motion.div
+          key="editor"
+          ref={wrapRef}
+          initial={{ opacity: 0, scale: 0.96, y: -6 }}
+          animate={{ opacity: 1, scale: 1,    y: 0  }}
+          exit={{    opacity: 0, scale: 0.96, y: -6 }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col gap-1.5 p-2 bg-[var(--bg-2)] border border-[var(--accent)] rounded-sm"
+          onBlur={e => { if (!wrapRef.current?.contains(e.relatedTarget as Node)) commit(); }}
+        >
+          {editSets.map((s, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-[var(--ink-3)] min-w-[14px] text-right">{i + 1}</span>
+              <input
+                autoFocus={i === 0}
+                type="text" inputMode="numeric" value={s.r} placeholder="reps"
+                className="w-12 rounded-sm px-1.5 py-1 font-mono text-[12px] bg-[var(--bg-1)] border border-[var(--line-2)] text-[var(--ink-0)] outline-none focus:border-[var(--accent)]"
+                onChange={e => updateSet(i, 'r', e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') commit(); }}
+                onFocus={e => { const el = e.target; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350); }}
+              />
+              <span className="text-[var(--ink-3)] text-[11px]">@</span>
+              <input
+                type="text" inputMode="decimal" value={s.w} placeholder="wt"
+                className="w-20 rounded-sm px-1.5 py-1 font-mono text-[12px] bg-[var(--bg-1)] border border-[var(--line-2)] text-[var(--ink-0)] outline-none focus:border-[var(--accent)]"
+                onChange={e => updateSet(i, 'w', e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') commit(); }}
+                onFocus={e => { const el = e.target; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 350); }}
+              />
+            </div>
+          ))}
+          <motion.button
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
+            onMouseDown={e => { e.preventDefault(); commit(); }}
+            className="flex items-center justify-center gap-1 font-mono text-[10px] font-bold text-[var(--accent)] mt-1 hover:text-[var(--accent-hi)] transition-colors tracking-[1px] uppercase"
+          >
+            <Check size={10} /> Save
+          </motion.button>
+        </motion.div>
+      ) : (
+        <motion.button
+          key="display"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{    opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          onClick={startEdit}
+          className="inline-flex flex-wrap items-center gap-1.5 text-left cursor-pointer rounded-sm px-2.5 py-1.5 border border-[var(--line)] bg-[var(--bg-2)] hover:border-[var(--accent)] transition-all group"
+          title="Click to edit sets"
+        >
+          <FormatSets sets={sets} />
+          <Edit3 size={9} className="text-[var(--ink-3)] group-hover:text-[var(--accent)] ml-1" />
+        </motion.button>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1150,8 +1161,16 @@ export default function WorkoutLogger() {
             })}
           </div>
 
-          {/* ── LIFTING TAB ── */}
-          {activeSection === 'lifting' && <div className="mb-4">
+          {/* ── SECTION CONTENT ── */}
+          <AnimatePresence mode="wait" initial={false}>
+          {activeSection === 'lifting' && <motion.div
+            key="lifting"
+            initial={{ opacity: 0, x: -18 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{    opacity: 0, x:  18 }}
+            transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="mb-4"
+          >
 
             {/* Pills */}
             <div className="relative mb-4">
@@ -1343,10 +1362,16 @@ export default function WorkoutLogger() {
                 <Save size={13} /> Save as Preset
               </button>
             )}
-          </div>}
+          </motion.div>}
 
-          {/* ── CARDIO TAB ── */}
-          {activeSection === 'cardio' && <div className="mb-4">
+          {activeSection === 'cardio' && <motion.div
+            key="cardio"
+            initial={{ opacity: 0, x:  18 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{    opacity: 0, x: -18 }}
+            transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="mb-4"
+          >
             {/* Add cardio buttons */}
             <div className="flex gap-2 mb-4">
               {(['swim','run','bike'] as CardioKind[]).map(kind => (
@@ -1387,7 +1412,8 @@ export default function WorkoutLogger() {
                 </AnimatePresence>
               </div>
             )}
-          </div>}
+          </motion.div>}
+          </AnimatePresence>
 
           {/* Notes */}
           <div className="mb-6">

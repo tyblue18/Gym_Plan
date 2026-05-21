@@ -557,8 +557,7 @@ export default function CalendarScheduler() {
                       : 'text-[var(--ink-2)] hover:text-[var(--ink-0)]',
                   ].join(' ')}
                 >
-                  <span className="sm:hidden">{m[0]}</span>
-                  <span className="hidden sm:inline">{m}</span>
+                  {m}
                 </button>
               ))}
             </div>
