@@ -26,10 +26,11 @@ export function AuthProvider({ children, session }: AuthProviderProps) {
   return (
     <SessionProvider
       session={session}
-      // Refetch session every 5 minutes to pick up token rotation / revocation.
-      refetchInterval={5 * 60}
-      // Also refetch whenever the tab regains focus (handles long-idle tabs).
-      refetchOnWindowFocus
+      // Disable background polling — next-auth v4 + Next.js 15 produce
+      // CLIENT_FETCH_ERROR noise from periodic /api/auth/session fetches.
+      // The session is still checked on initial load and sign-in/sign-out.
+      refetchInterval={0}
+      refetchOnWindowFocus={false}
     >
       {children}
     </SessionProvider>

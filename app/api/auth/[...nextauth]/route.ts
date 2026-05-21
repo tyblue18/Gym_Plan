@@ -8,6 +8,13 @@ import type { NextAuthOptions } from 'next-auth';
  * the same config without importing the entire handler.
  */
 export const authOptions: NextAuthOptions = {
+  // Suppress CLIENT_FETCH_ERROR noise — benign in dev with Next.js 15 + next-auth v4
+  logger: {
+    error(code, ...message) {
+      if (code === 'CLIENT_FETCH_ERROR') return;
+      console.error('[next-auth]', code, ...message);
+    },
+  },
   providers: [
     GithubProvider({
       clientId:     process.env.GITHUB_CLIENT_ID     as string,
