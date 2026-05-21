@@ -11,7 +11,7 @@
  *      static assets   → cache-first, revalidate in background
  */
 
-const CACHE = 'que-v1';
+const CACHE = 'que-v3'; // bump on every deploy that changes JS/CSS
 
 const PRECACHE = [
   '/',
@@ -70,7 +70,26 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Static assets — cache-first, revalidate in background (stale-while-revalidate)
+  // JS / CSS — always network-first so logic updates reach users immediately.
+  // Fall back to cache only when offline.
+  if (request.method === 'GET' && (
+    url.pathname.endsWith('.js') || url.pathname.endsWith('.css')
+  )) {
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE).then(cache => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // All other static assets (images, fonts, manifest) — cache-first
   if (request.method === 'GET') {
     event.respondWith(
       caches.open(CACHE).then(cache =>
