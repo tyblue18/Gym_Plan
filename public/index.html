@@ -396,12 +396,46 @@
             gap: 16px;
             flex-wrap: wrap;
         }
-        
+
         .cal-nav-left {
             display: flex;
             align-items: center;
             gap: 8px;
             flex-wrap: wrap;
+        }
+
+        /* Mobile title: hidden on desktop, shown on mobile */
+        .cal-mobile-title {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .cal-nav {
+                flex-wrap: nowrap;
+                margin-bottom: 16px;
+                gap: 0;
+            }
+            .cal-nav-left {
+                flex: 1;
+                justify-content: space-between;
+                gap: 0;
+                flex-wrap: nowrap;
+            }
+            /* Hide desktop selects on mobile */
+            .cal-month-selectors { display: none !important; }
+            /* Show plain text title */
+            .cal-mobile-title {
+                display: block;
+                font-size: 15px;
+                font-weight: 700;
+                color: var(--text-primary);
+                letter-spacing: 0.2px;
+                text-align: center;
+                flex: 1;
+                padding: 0 4px;
+            }
+            /* Hide the view-toggle wrapper space on mobile (already hidden) */
+            .view-toggle { display: none !important; }
         }
         
         .nav-btn {
@@ -579,31 +613,35 @@
 
         /* ── Mobile week strip ─────────────────────────────────────────── */
         @media (max-width: 768px) {
-            /* Hide the Day/Week/Month toggle — week is always right on mobile */
-            .view-toggle { display: none; }
+            /* Tighter card padding on mobile */
+            .card { padding: 16px; }
 
             .calendar-grid.view-mode-week {
-                gap: 5px;
+                gap: 4px;
             }
 
             .calendar-grid.view-mode-week .calendar-day-cell {
-                min-height: 72px;
-                padding: 10px 4px 8px;
+                min-height: 80px;
+                padding: 10px 2px 8px;
                 align-items: center;
                 text-align: center;
-                gap: 3px;
+                gap: 4px;
+                border-radius: var(--radius-sm);
+                border-color: transparent;
+                background: var(--bg-inset);
             }
 
             .calendar-grid.view-mode-week .day-num-track {
-                font-size: 18px;
+                font-size: 19px;
                 font-weight: 700;
                 color: var(--text-secondary);
                 display: block;
+                line-height: 1;
             }
 
             .calendar-grid.view-mode-week .calendar-day-cell.selected-day {
-                background: rgba(255,255,255,0.10);
-                border-color: rgba(255,255,255,0.22);
+                background: rgba(255,255,255,0.08);
+                border-color: rgba(255,255,255,0.18);
             }
 
             .calendar-grid.view-mode-week .calendar-day-cell.selected-day .day-num-track {
@@ -613,13 +651,20 @@
             .calendar-grid.view-mode-week .calendar-day-cell.today-cell .day-num-track {
                 background: #ffffff;
                 color: #0a0a0a;
-                width: 30px;
-                height: 30px;
+                width: 32px;
+                height: 32px;
                 border-radius: 50%;
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 16px;
+                font-size: 15px;
+            }
+
+            /* Activity dot — brighter on mobile */
+            .calendar-grid.view-mode-week .cell-activity-dot {
+                width: 5px;
+                height: 5px;
+                background: rgba(200, 210, 255, 0.55);
             }
 
             /* Month view on mobile: just numbers, no summary */
@@ -637,15 +682,22 @@
                 display: block;
                 text-align: center;
             }
+
+            /* Reorder on mobile: workout log before today's workouts */
+            .bento-main { display: contents; }
+            #pageCalendar > .bento-row { display: flex; flex-direction: column; }
+            #calendarCard { order: 1; }
+            .bento-side { order: 2; }
+            #dayWorkoutCard { order: 3; }
         }
 
         /* Day abbreviation shown in mobile week strip */
         .cell-day-abbr {
-            font-size: 9px;
-            font-weight: 600;
-            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-tertiary);
             text-transform: uppercase;
-            letter-spacing: 0.8px;
+            letter-spacing: 0.5px;
             display: block;
         }
 
@@ -2783,12 +2835,15 @@
 <div id="pageCalendar" class="page active">
 <div class="bento-row">
 <div class="bento-main">
-    <div class="card">
+    <div class="card" id="calendarCard">
         <div class="cal-nav">
             <div class="cal-nav-left">
                 <button class="nav-btn" onclick="executeTimelineNavigation(-1)">◀</button>
-                <select id="selectMonth" onchange="syncSelectorsToDateObject()"></select>
-                <select id="selectYear" onchange="syncSelectorsToDateObject()"></select>
+                <div class="cal-month-selectors" style="display:flex;gap:8px;">
+                    <select id="selectMonth" onchange="syncSelectorsToDateObject()"></select>
+                    <select id="selectYear" onchange="syncSelectorsToDateObject()"></select>
+                </div>
+                <span id="calMobileTitle" class="cal-mobile-title"></span>
                 <button class="nav-btn" onclick="executeTimelineNavigation(1)">▶</button>
             </div>
             <div class="view-toggle">
@@ -3920,16 +3975,35 @@
         renderActiveViewLayout();
     }
 
+    function updateCalMobileTitle() {
+        const el = document.getElementById('calMobileTitle');
+        if (!el) return;
+        if (activeViewMode === 'week') {
+            const sow = new Date(currentDisplayDate);
+            sow.setDate(currentDisplayDate.getDate() - currentDisplayDate.getDay());
+            const eow = new Date(sow); eow.setDate(sow.getDate() + 6);
+            const startLabel = `${months[sow.getMonth()].substring(0,3)} ${sow.getDate()}`;
+            const endLabel = sow.getMonth() !== eow.getMonth()
+                ? `${months[eow.getMonth()].substring(0,3)} ${eow.getDate()}`
+                : `${eow.getDate()}`;
+            el.textContent = `${startLabel} – ${endLabel}`;
+        } else {
+            el.textContent = `${months[currentDisplayDate.getMonth()]} ${currentDisplayDate.getFullYear()}`;
+        }
+    }
+
     function executeTimelineNavigation(dir) {
         if (activeViewMode === "month") currentDisplayDate.setMonth(currentDisplayDate.getMonth()+dir);
         else if (activeViewMode === "week") currentDisplayDate.setDate(currentDisplayDate.getDate()+dir*7);
         else currentDisplayDate.setDate(currentDisplayDate.getDate()+dir);
         document.getElementById('selectMonth').value = currentDisplayDate.getMonth();
         document.getElementById('selectYear').value  = currentDisplayDate.getFullYear();
+        updateCalMobileTitle();
         renderActiveViewLayout();
     }
 
     function renderActiveViewLayout() {
+        updateCalMobileTitle();
         const box = document.getElementById('calendarGridBox');
         const labels = document.getElementById('calendarWeekLabelsContainer');
         box.innerHTML = '';
@@ -5137,6 +5211,7 @@
         if (window.innerWidth <= 768) {
             activeViewMode = 'week';
         }
+        updateCalMobileTitle();
 
         buildWorkoutPool();
         renderSetRows();
