@@ -1,14 +1,5 @@
 'use client';
 
-/**
- * components/WorkoutLogger.tsx
- *
- * Athletic redesign — all interactive logic, refs, hooks, drag-scroll,
- * keyboard handlers, template loading, recurring presets, save modal,
- * inline editing and serialization are preserved exactly. Only visuals
- * are rebuilt around the QUE token system (ice-blue accent + Anton condensed).
- */
-
 import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
@@ -28,7 +19,7 @@ import {
 } from '@/lib/AppContext';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TYPES — unchanged
+// TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 type CardioKind = 'run' | 'bike' | 'swim';
 interface NormalizedLift extends ExerciseEntry {

@@ -1,13 +1,5 @@
 'use client';
 
-/**
- * components/AmbientGlow.tsx
- *
- * Status-reactive ambient background glow.
- * Athletic palette: ice blue accent + cool charcoal blues, no purple/violet.
- * Logic and contract identical to the original implementation.
- */
-
 import { useMemo }                  from 'react';
 import { AnimatePresence, motion }  from 'framer-motion';
 import { useApp }                   from '@/lib/AppContext';

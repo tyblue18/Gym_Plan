@@ -2,21 +2,37 @@
 
 /**
  * AuthHeader — Athletic command bar
- *
- * Visual rewrite only — session logic, hooks, and props preserved exactly.
- * Three states driven by next-auth's useSession():
- *   1. loading            → shimmering skeleton pill
- *   2. unauthenticated    → ice-blue "Sign in with GitHub" CTA
- *   3. authenticated      → avatar · name · sign-out
- *
  * All visual rules live in .auth-* classes in app/globals.css.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import Image from 'next/image';
+import {
+  applyAccent, applyBg,
+  ACCENT_KEY, BG_KEY,
+  ACCENT_SWATCHES, BG_PRESETS,
+  type BgPreset,
+} from '@/lib/colorScheme';
 
 const PHOTO_KEY = 'queProfilePhoto';
+
+function compressPhoto(file: File): Promise<string> {
+  return new Promise(resolve => {
+    const img = document.createElement('img');
+    img.onload = () => {
+      const SIZE = 200;
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE; canvas.height = SIZE;
+      const ctx = canvas.getContext('2d')!;
+      const side = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, SIZE, SIZE);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
 
 function GitHubMark({ size = 15 }: { size?: number }) {
   return (
@@ -65,46 +81,183 @@ interface UserPillProps {
 
 function UserPill({ image, name, email }: UserPillProps) {
   const displayName = name ?? email ?? 'Athlete';
-  const [localPhoto, setLocalPhoto] = useState<string | null>(null);
+  const [localPhoto, setLocalPhoto]   = useState<string | null>(null);
+  const [open, setOpen]               = useState(false);
+  const [view, setView]               = useState<'menu' | 'scheme'>('menu');
+  const [accentHex, setAccentHex]     = useState('#4FC3F7');
+  const [bgLabel, setBgLabel]         = useState('Charcoal');
+  const pillRef     = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setLocalPhoto(localStorage.getItem(PHOTO_KEY));
     const refresh = () => setLocalPhoto(localStorage.getItem(PHOTO_KEY));
     window.addEventListener('queProfilePhotoChanged', refresh);
     window.addEventListener('storage', refresh);
+
+    const storedAccent = localStorage.getItem(ACCENT_KEY);
+    if (storedAccent) setAccentHex(storedAccent);
+    const storedBg = localStorage.getItem(BG_KEY);
+    if (storedBg) setBgLabel(storedBg);
+
     return () => {
       window.removeEventListener('queProfilePhotoChanged', refresh);
       window.removeEventListener('storage', refresh);
     };
   }, []);
 
+  useEffect(() => {
+    if (!open) setView('menu');
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (pillRef.current && !pillRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handlePhotoSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const compressed = await compressPhoto(file);
+    localStorage.setItem(PHOTO_KEY, compressed);
+    setLocalPhoto(compressed);
+    window.dispatchEvent(new Event('queProfilePhotoChanged'));
+    e.target.value = '';
+    setOpen(false);
+  }, []);
+
+  const handleAccentChange = useCallback((hex: string) => {
+    setAccentHex(hex);
+    applyAccent(hex);
+    localStorage.setItem(ACCENT_KEY, hex);
+  }, []);
+
+  const handleBgChange = useCallback((preset: BgPreset) => {
+    setBgLabel(preset.label);
+    applyBg(preset);
+    localStorage.setItem(BG_KEY, preset.label);
+  }, []);
+
   const avatarSrc = localPhoto ?? image;
 
   return (
-    <div className="auth-user-pill" role="group" aria-label="User account controls">
-      {avatarSrc && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={avatarSrc}
-          alt={`${displayName} profile picture`}
-          className="auth-avatar"
-        />
-      )}
-
-      <span className="auth-user-name" title={email ?? undefined}>
-        {displayName}
-      </span>
-
-      <span className="auth-divider" aria-hidden="true" />
-
+    <div className="auth-pill-wrapper" ref={pillRef}>
       <button
         type="button"
-        onClick={() => signOut({ callbackUrl: '/' })}
-        className="auth-signout-btn"
-        aria-label="Sign out of your account"
+        className="auth-user-pill"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label="Account menu"
+        onClick={() => setOpen(v => !v)}
       >
-        Sign out
+        {avatarSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatarSrc} alt={`${displayName} profile picture`} className="auth-avatar" />
+        ) : (
+          <span className="auth-avatar-placeholder" aria-hidden="true">
+            {displayName.charAt(0).toUpperCase()}
+          </span>
+        )}
+        <span className="auth-user-name" title={email ?? undefined}>{displayName}</span>
+        <svg className="auth-chevron" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M2 3.5 5 6.5 8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </svg>
       </button>
+
+      {open && (
+        <div className={`auth-dropdown${view === 'scheme' ? ' auth-dropdown--wide' : ''}`} role="menu">
+
+          {view === 'menu' ? (
+            <>
+              <button type="button" role="menuitem" className="auth-dropdown-item"
+                onClick={() => fileInputRef.current?.click()}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                Change photo
+              </button>
+
+              <button type="button" role="menuitem" className="auth-dropdown-item"
+                onClick={() => setView('scheme')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+                  <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/>
+                </svg>
+                Color scheme
+              </button>
+
+              <div className="auth-dropdown-divider" />
+
+              <button type="button" role="menuitem" className="auth-dropdown-item auth-dropdown-item--danger"
+                onClick={() => { setOpen(false); signOut({ callbackUrl: '/' }); }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="auth-scheme-back" onClick={() => setView('menu')}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Color scheme
+              </button>
+
+              <div className="auth-dropdown-divider" />
+
+              <p className="auth-scheme-label">Accent</p>
+              <div className="auth-swatch-grid">
+                {ACCENT_SWATCHES.map(s => (
+                  <button
+                    key={s.hex}
+                    type="button"
+                    className={`auth-swatch${accentHex === s.hex ? ' auth-swatch--active' : ''}`}
+                    style={{ background: s.hex }}
+                    title={s.label}
+                    onClick={() => handleAccentChange(s.hex)}
+                  />
+                ))}
+                <label className="auth-swatch auth-swatch--rainbow" title="Custom color">
+                  <input
+                    type="color"
+                    value={accentHex}
+                    onChange={e => handleAccentChange(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div className="auth-dropdown-divider" />
+
+              <p className="auth-scheme-label">Background</p>
+              <div className="auth-bg-grid">
+                {BG_PRESETS.map(p => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    className={`auth-bg-swatch${bgLabel === p.label ? ' auth-bg-swatch--active' : ''}`}
+                    style={{ background: p.bg2 }}
+                    onClick={() => handleBgChange(p)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <input ref={fileInputRef} type="file" accept="image/*" className="auth-file-input" onChange={handlePhotoSelect} />
     </div>
   );
 }

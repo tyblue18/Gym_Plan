@@ -3,19 +3,16 @@
 /**
  * lib/AppContext.tsx
  *
- * Global React Context for Que — a direct port of the 14 global variables
- * and initialization logic from app-state.js into React-managed state.
+ * Global React context for Que. Wrap the authenticated shell with <AppProvider>
+ * and consume anywhere with useApp().
  *
- * Wrap your root layout (or the authenticated shell) with <AppProvider>.
- * Consume anywhere with the useApp() hook.
- *
- * Storage key map (unchanged from vanilla JS so existing data is preserved):
- *   ironmanCoreDB_v2         → localDB
+ * Storage key map:
+ *   ironmanCoreDB_v2          → localDB
  *   ironmanProfileSettings_v2 → profile
- *   ironmanTemplatesPool      → accessed via getTemplatePool() / saveTemplatePool()
- *   queExerciseUsage          → accessed via getUsage() / bumpUsage()
- *   queLastStreak             → accessed via getLastStreak() / setLastStreak()
- *   queWorkoutPresets         → accessed via getWorkoutPresets() / saveWorkoutPresets()
+ *   ironmanTemplatesPool      → getTemplatePool() / saveTemplatePool()
+ *   queExerciseUsage          → getUsage() / bumpUsage()
+ *   queLastStreak             → getLastStreak() / setLastStreak()
+ *   queWorkoutPresets         → getWorkoutPresets() / saveWorkoutPresets()
  */
 
 import React, {
@@ -302,7 +299,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ─────────────────────────────────────────────────────────────────────────
   // HYDRATION — runs once on mount (client only, never on SSR)
-  // Mirrors bootstrapper() from app-state.js
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     // ── Correct SSR timezone mismatch ─────────────────────────────────────

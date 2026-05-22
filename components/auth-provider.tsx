@@ -18,7 +18,7 @@ import type { Session } from 'next-auth';
 
 interface AuthProviderProps {
   children: React.ReactNode;
-  /** Pre-seeded session from getServerSession() — optional but eliminates flash. */
+  /** Pre-seeded session from getServerSession()*/
   session?: Session | null;
 }
 

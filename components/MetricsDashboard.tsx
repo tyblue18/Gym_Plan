@@ -1,13 +1,5 @@
 'use client';
 
-/**
- * components/MetricsDashboard.tsx
- *
- * Athletic redesign — all calculation logic (Mifflin-St Jeor, TDEE, MET tables,
- * eat-back math, weight projection, trend lines) preserved exactly.
- * Visual layer rebuilt around the QUE token system.
- */
-
 import React, {
   useCallback,
   useEffect,
@@ -24,10 +16,9 @@ import {
   type DayRecord, type UserProfile,
 } from '@/lib/AppContext';
 import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
-import { pushNow } from '@/lib/syncEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TYPES — unchanged
+// TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 interface CardioFields {
   steps: string; runDist: string; runTime: string;
@@ -81,25 +72,8 @@ interface AthletePlan {
   weeksTarget: number;
 }
 
-const PLAN_KEY  = 'queAthletePlan';
-const PHOTO_KEY = 'queProfilePhoto';
+const PLAN_KEY = 'queAthletePlan';
 
-function compressPhoto(file: File): Promise<string> {
-  return new Promise(resolve => {
-    const img = document.createElement('img');
-    img.onload = () => {
-      const SIZE = 200;
-      const canvas = document.createElement('canvas');
-      canvas.width = SIZE; canvas.height = SIZE;
-      const ctx = canvas.getContext('2d')!;
-      const side = Math.min(img.width, img.height);
-      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, SIZE, SIZE);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
-      URL.revokeObjectURL(img.src);
-    };
-    img.src = URL.createObjectURL(file);
-  });
-}
 function loadPlan(): AthletePlan | null {
   try { const r = localStorage.getItem(PLAN_KEY); return r ? JSON.parse(r) : null; }
   catch { return null; }
@@ -109,7 +83,7 @@ function savePlanToStorage(p: AthletePlan) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CALCULATION ENGINE — preserved exactly
+// CALCULATION ENGINE 
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface BudgetMetrics {
@@ -264,31 +238,6 @@ function ProfilePanel({ profile, onChange, onOpenPlan }: {
   onChange: (updates: Partial<UserProfile>) => void;
   onOpenPlan: () => void;
 }) {
-  const [localPhoto, setLocalPhoto] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setLocalPhoto(localStorage.getItem(PHOTO_KEY));
-  }, []);
-
-  const handlePhotoSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const compressed = await compressPhoto(file);
-    localStorage.setItem(PHOTO_KEY, compressed);
-    setLocalPhoto(compressed);
-    window.dispatchEvent(new Event('queProfilePhotoChanged'));
-    // Immediately push to cloud — photo changes don't go through localDB
-    pushNow({});
-    e.target.value = '';
-  }, []);
-
-  const handleRemovePhoto = useCallback(() => {
-    localStorage.removeItem(PHOTO_KEY);
-    setLocalPhoto(null);
-    window.dispatchEvent(new Event('queProfilePhotoChanged'));
-  }, []);
-
   const activityOptions = [
     { value: '1.20', label: 'Desk job, no gym (×1.20)' },
     { value: '1.30', label: 'Desk job + light activity (×1.30)' },
@@ -302,45 +251,6 @@ function ProfilePanel({ profile, onChange, onOpenPlan }: {
     <div className="que-card que-card-accent mb-4">
       <div className="p-5">
         <h2 className="que-section-label mb-4"><span className="dot" />ATHLETE PROFILE</h2>
-
-        {/* Profile photo */}
-        <div className="flex items-center gap-4 mb-4 pb-4 border-b border-[var(--line)]">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="w-16 h-16 rounded border border-[var(--line-2)] bg-[var(--bg-2)] flex items-center justify-center overflow-hidden flex-shrink-0 hover:border-[var(--accent)] transition-all"
-            title="Upload profile photo"
-          >
-            {localPhoto ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={localPhoto} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-              <User size={26} className="text-[var(--ink-3)]" />
-            )}
-          </button>
-          <div className="flex-1 min-w-0">
-            <p className="font-mono text-[10px] font-bold tracking-[1.5px] text-[var(--ink-1)] uppercase mb-2">Profile Photo</p>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="font-mono text-[10px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)] rounded-sm px-3 py-1.5 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all"
-              >
-                {localPhoto ? 'Change' : 'Upload'}
-              </button>
-              {localPhoto && (
-                <button
-                  onClick={handleRemovePhoto}
-                  className="font-mono text-[10px] font-bold tracking-[1px] uppercase text-[var(--danger)] border border-[var(--danger)]/40 rounded-sm px-3 py-1.5 hover:border-[var(--danger)] transition-all"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-            <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1.5 tracking-[0.5px]">
-              Appears in the header · stored on device
-            </p>
-          </div>
-          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
-        </div>
 
         <div className="mb-4 font-mono text-[11px] text-[var(--ink-1)] bg-[var(--bg-2)] border-l-2 border-[var(--accent)] rounded-sm px-4 py-3 leading-relaxed tracking-[0.5px]">
           Set <strong className="text-[var(--accent)]">Activity Level</strong> to match your typical week (lifting only — cardio is tracked separately).{' '}

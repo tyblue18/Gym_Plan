@@ -1,13 +1,5 @@
 'use client';
 
-/**
- * components/CalendarScheduler.tsx
- *
- * Athletic redesign — all logic, hooks, props, and data bindings preserved.
- * Visual rewrite uses the QUE token system: deep ink, single ice-blue accent,
- * Anton condensed numerals for the day cells, JetBrains Mono for telemetry.
- */
-
 import React, {
   useCallback,
   useMemo,
@@ -31,7 +23,7 @@ import {
 } from '@/lib/AppContext';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TYPES — unchanged
+// TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 interface CellData {
   dateStr: string; dayNum: number; label: string;

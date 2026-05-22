@@ -127,12 +127,6 @@ export default function SignInPage() {
           {loading === 'github' ? 'Redirecting…' : 'Sign in with GitHub'}
         </button>
 
-        <p className="si-note">
-          Your training data is stored locally in your browser.
-          <br />
-          The app works offline — sign-in adds your identity layer.
-        </p>
-
       </div>
     </div>
   );
