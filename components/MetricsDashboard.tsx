@@ -1158,7 +1158,7 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
+          className="fixed inset-0 z-[300] flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
           style={{ background: 'rgba(7,8,10,0.88)' }}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
@@ -1424,7 +1424,7 @@ function ProjectionModal({ open, m, weightLbs, onClose }: {
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
+          className="fixed inset-0 z-[300] flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
           style={{ background: 'rgba(7,8,10,0.88)' }}
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
