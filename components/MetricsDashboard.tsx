@@ -170,65 +170,218 @@ function useBudgetMetrics(profile: UserProfile, cardio: CardioFields): BudgetMet
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENT — GoogleFitButton
-// Connects Google Fit and auto-fetches today's steps when connected.
+// SUB-COMPONENT — StepSyncPanel
+// Google Fit (auto-syncs nightly via cron) + iOS Shortcuts with daily automation.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GoogleFitButton() {
+function StepSyncPanel() {
   const { updateDayRecord, todayStr } = useApp();
-  const [status, setStatus] = useState<'idle' | 'fetching' | 'done' | 'error'>('idle');
-  const [steps, setSteps]   = useState<number | null>(null);
 
-  // Auto-fetch on mount if already connected
+  const [gStatus, setGStatus] = useState<'idle' | 'checking' | 'connected' | 'disconnected' | 'error'>('checking');
+  const [gSteps,  setGSteps]  = useState<number | null>(null);
+  const [showShortcut, setShowShortcut] = useState(false);
+  const [token,        setToken]        = useState<string | null>(null);
+  const [endpoint,     setEndpoint]     = useState('');
+  const [copied,       setCopied]       = useState<'token' | 'curl' | null>(null);
+
+  // On mount: check Google Fit connection + fetch today's steps if connected
   useEffect(() => {
     fetch(`/api/health/google-fit/steps?date=${todayStr}`, { credentials: 'include' })
-      .then(r => (r.ok ? r.json() : null))
-      .then((d: { steps: number } | null) => {
-        if (d?.steps) {
-          setSteps(d.steps);
-          updateDayRecord(todayStr, { steps: d.steps });
-        }
+      .then(r => {
+        if (r.status === 404) { setGStatus('disconnected'); return null; }
+        return r.ok ? r.json() : null;
       })
-      .catch(() => {});
+      .then((d: { steps: number } | null) => {
+        if (!d) return;
+        setGStatus('connected');
+        if (d.steps) { setGSteps(d.steps); updateDayRecord(todayStr, { steps: d.steps }); }
+      })
+      .catch(() => setGStatus('error'));
   }, [todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleFetch = useCallback(async () => {
-    setStatus('fetching');
+  const syncNow = useCallback(async () => {
+    setGStatus('checking');
     try {
-      const res  = await fetch(`/api/health/google-fit/steps?date=${todayStr}`, { credentials: 'include' });
-      if (res.status === 404) {
-        // Not connected — start OAuth flow
-        window.location.href = '/api/health/google-fit/connect';
-        return;
-      }
+      const res = await fetch(`/api/health/google-fit/steps?date=${todayStr}`, { credentials: 'include' });
+      if (res.status === 404) { window.location.href = '/api/health/google-fit/connect'; return; }
       const data = await res.json() as { steps: number };
-      setSteps(data.steps);
+      setGSteps(data.steps);
       updateDayRecord(todayStr, { steps: data.steps });
-      setStatus('done');
-    } catch {
-      setStatus('error');
-    }
+      setGStatus('connected');
+    } catch { setGStatus('error'); }
   }, [todayStr, updateDayRecord]);
 
+  const connectGoogleFit = useCallback(() => {
+    window.location.href = '/api/health/google-fit/connect';
+  }, []);
+
+  const loadToken = useCallback(async () => {
+    if (token) return;
+    const res  = await fetch('/api/health/token', { credentials: 'include' });
+    const data = await res.json() as { token: string; endpoint: string };
+    setToken(data.token);
+    setEndpoint(data.endpoint);
+  }, [token]);
+
+  const openShortcut = useCallback(async () => {
+    setShowShortcut(v => !v);
+    await loadToken();
+  }, [loadToken]);
+
+  const copy = useCallback(async (text: string, key: 'token' | 'curl') => {
+    await navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 1800);
+  }, []);
+
+  const curlSnippet = token
+    ? `curl -X POST ${endpoint} \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"steps":8000}'`
+    : '';
+
+  const GoogleMark = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden>
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+    </svg>
+  );
+
   return (
-    <button
-      onClick={handleFetch}
-      disabled={status === 'fetching'}
-      className="flex items-center gap-2 font-mono text-[10px] font-bold tracking-[1px] uppercase text-[var(--ink-2)] border border-[var(--line-2)] rounded-sm px-3 py-1.5 hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all disabled:opacity-50"
-    >
-      {/* Google colour mark */}
-      <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden>
-        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
-        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-      </svg>
-      {status === 'fetching' ? 'Syncing…'
-        : steps !== null    ? `${steps.toLocaleString()} steps`
-        : 'Sync Steps'}
-    </button>
+    <div className="mt-4 pt-4 border-t border-[var(--line)] space-y-3">
+
+      {/* ── Google Fit row ─────────────────────────────────────────────── */}
+      <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <GoogleMark />
+              <span className="font-mono text-[10px] font-bold tracking-[1.5px] text-[var(--ink-1)] uppercase">Google Fit</span>
+              {gStatus === 'connected' && (
+                <span className="font-mono text-[8px] font-bold tracking-[1px] uppercase text-[var(--positive)] border border-[var(--positive)]/40 rounded-sm px-1.5 py-0.5">
+                  Auto ✓
+                </span>
+              )}
+            </div>
+            <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.3px]">
+              {gStatus === 'connected'
+                ? gSteps !== null
+                  ? `${gSteps.toLocaleString()} steps today · syncs nightly at 2 am UTC`
+                  : 'Connected · syncs nightly at 2 am UTC'
+                : gStatus === 'disconnected'
+                ? 'Connect once — steps sync automatically every night'
+                : gStatus === 'checking'
+                ? 'Checking…'
+                : 'Could not reach Google Fit'}
+            </p>
+          </div>
+
+          {gStatus === 'disconnected' ? (
+            <button onClick={connectGoogleFit}
+              className="flex-shrink-0 font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)]/50 rounded-sm px-2.5 py-1.5 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all">
+              Connect
+            </button>
+          ) : (
+            <button onClick={syncNow} disabled={gStatus === 'checking'}
+              className="flex-shrink-0 font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--ink-2)] border border-[var(--line-2)] rounded-sm px-2.5 py-1.5 hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all disabled:opacity-40">
+              {gStatus === 'checking' ? '…' : 'Sync now'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── iOS / API Shortcut row ─────────────────────────────────────── */}
+      <div className="rounded border border-[var(--line)] bg-[var(--bg-2)]">
+        <button onClick={openShortcut}
+          className="w-full flex items-center justify-between p-3 hover:bg-[var(--bg-3)] transition-all rounded">
+          <div className="flex items-center gap-2">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-[var(--ink-2)]">
+              <rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/>
+            </svg>
+            <span className="font-mono text-[10px] font-bold tracking-[1.5px] text-[var(--ink-1)] uppercase">iPhone / iOS Shortcut</span>
+            <span className="font-mono text-[8px] font-bold tracking-[1px] uppercase text-[var(--ink-3)] border border-[var(--line-2)] rounded-sm px-1.5 py-0.5">Daily auto</span>
+          </div>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+            className={`text-[var(--ink-3)] transition-transform ${showShortcut ? 'rotate-180' : ''}`}>
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+
+        {showShortcut && (
+          <div className="border-t border-[var(--line)] p-3 space-y-3">
+
+            {/* Token */}
+            <div>
+              <p className="font-mono text-[9px] text-[var(--ink-3)] mb-1.5 tracking-[0.5px] uppercase font-bold">Your API Token</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 font-mono text-[10px] text-[var(--accent)] bg-[var(--bg-3)] px-2 py-1.5 rounded-sm truncate">
+                  {token ?? '···'}
+                </code>
+                <button onClick={() => token && copy(token, 'token')}
+                  className="font-mono text-[9px] font-bold uppercase tracking-[1px] text-[var(--ink-2)] border border-[var(--line-2)] rounded-sm px-2 py-1.5 hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all flex-shrink-0">
+                  {copied === 'token' ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            {/* Build the Shortcut */}
+            <div>
+              <p className="font-mono text-[9px] text-[var(--ink-3)] mb-1.5 tracking-[0.5px] uppercase font-bold">Build the Shortcut (one-time)</p>
+              <ol className="space-y-1.5">
+                {[
+                  'Shortcuts app → tap + → New Shortcut',
+                  'Add action: "Get Health Samples" → Quantity Type: Steps → Last Day',
+                  'Add action: "Calculate Statistics" → Sum → pass result forward',
+                  `Add action: "Get Contents of URL"\n  URL: ${endpoint || '…'}\n  Method: POST\n  Headers: Authorization = Bearer ${token ?? '<your token>'}\n  Body (JSON): steps = Calculated Result`,
+                  'Tap the shortcut name → rename to "Que Steps"',
+                ].map((step, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="font-mono text-[9px] text-[var(--accent)] font-bold flex-shrink-0 w-4 pt-px">{i + 1}.</span>
+                    <span className="font-mono text-[9px] text-[var(--ink-2)] leading-relaxed tracking-[0.3px] whitespace-pre-line">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Make it automatic */}
+            <div className="rounded border border-[var(--positive)]/25 bg-[var(--positive)]/5 p-2.5">
+              <p className="font-mono text-[9px] font-bold tracking-[1.5px] text-[var(--positive)] uppercase mb-1.5">Make it automatic</p>
+              <ol className="space-y-1">
+                {[
+                  'Shortcuts → Automation tab → + → Personal Automation',
+                  'Choose "Time of Day" → set to 11:00 PM → Daily',
+                  'Add action: "Run Shortcut" → choose "Que Steps"',
+                  'Toggle off "Ask Before Running" → Done',
+                ].map((step, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="font-mono text-[9px] text-[var(--positive)] font-bold flex-shrink-0 w-4">{i + 1}.</span>
+                    <span className="font-mono text-[9px] text-[var(--ink-2)] leading-relaxed">{step}</span>
+                  </li>
+                ))}
+              </ol>
+              <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1.5">Steps will appear in Que the next time you open the app.</p>
+            </div>
+
+            {/* curl test */}
+            <div>
+              <p className="font-mono text-[9px] text-[var(--ink-3)] mb-1 tracking-[0.5px] uppercase font-bold">Test with curl</p>
+              <div className="relative">
+                <pre className="font-mono text-[9px] text-[var(--ink-2)] bg-[var(--bg-3)] px-3 py-2 rounded-sm overflow-x-auto leading-relaxed whitespace-pre">
+                  {curlSnippet || '···'}
+                </pre>
+                <button onClick={() => curlSnippet && copy(curlSnippet, 'curl')}
+                  className="absolute top-1.5 right-1.5 font-mono text-[8px] font-bold uppercase tracking-[1px] text-[var(--ink-3)] border border-[var(--line)] rounded-sm px-1.5 py-0.5 hover:text-[var(--accent)] hover:border-[var(--accent)] bg-[var(--bg-3)] transition-all">
+                  {copied === 'curl' ? '✓' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — ProfilePanel
@@ -309,14 +462,13 @@ function ProfilePanel({ profile, onChange, onOpenPlan }: {
           </div>
         </div>
 
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--line)]">
-          {/* Google Fit connect */}
-          <GoogleFitButton />
-
+        <div className="flex justify-end mt-4 pt-4 border-t border-[var(--line)]">
           <button onClick={onOpenPlan} className="que-btn-ghost flex items-center gap-2">
             <Plus size={13} /> Create Plan
           </button>
         </div>
+
+        <StepSyncPanel />
       </div>
     </div>
   );
