@@ -18,6 +18,7 @@ import {
   type WorkoutPreset,
 } from '@/lib/AppContext';
 import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
+import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -199,12 +200,13 @@ function SetBadge({ sets, onSave }: {
 // Swipe right     → reveals DELETE; release past 120px deletes the entry
 // ─────────────────────────────────────────────────────────────────────────────
 function ReorderableExerciseItem({
-  entry, numIdx, isPR, onDelete, onUpdateName, onUpdateSets,
+  entry, numIdx, isPR, onDelete, onUpdateName, onUpdateSets, onViewHistory,
 }: {
   entry: NormalizedLift; numIdx: number; isPR?: boolean;
   onDelete: (idx: number) => void;
   onUpdateName: (idx: number, name: string) => void;
   onUpdateSets: (idx: number, sets: Array<{ r: string; w: string }>) => void;
+  onViewHistory?: () => void;
 }) {
   const dragControls  = useDragControls();
   const x             = useMotionValue(0);
@@ -295,15 +297,27 @@ function ReorderableExerciseItem({
               }}
             />
           ) : (
-            <span className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
               <span
                 onClick={startNameEdit}
                 className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors truncate"
               >
                 {entry.n ?? entry.k}
               </span>
-              <PRLiveBadge active={!!isPR} size={30} />
-            </span>
+              <PRLiveBadge active={!!isPR} size={26} />
+              {onViewHistory && (
+                <button
+                  type="button"
+                  onClick={onViewHistory}
+                  className="text-[var(--ink-3)] hover:text-[var(--accent)] transition-colors flex-shrink-0"
+                  title="View history"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                </button>
+              )}
+            </div>
           )}
 
           {entry.k === 'lift' && entry.sets && (
@@ -715,13 +729,17 @@ export default function WorkoutLogger() {
 
   const [exercises, setExercisesRaw] = useState<ExerciseEntry[]>([]);
   const [notes, setNotesRaw] = useState('');
-  const [selectedEx, setSelectedEx] = useState('');
-  const [isCustomEx, setIsCustomEx] = useState(false);
-  const [customName, setCustomName] = useState('');
+  const [selectedEx,    setSelectedEx]    = useState('');
+  const [isCustomEx,    setIsCustomEx]    = useState(false);
+  const [customName,    setCustomName]    = useState('');
+  const [exSearch,      setExSearch]      = useState('');
+  const [pendingDelete, setPendingDelete] = useState<{ entry: ExerciseEntry; key: string } | null>(null);
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saveFlash, setSaveFlash] = useState(false);
   const [loggedFlash, setLoggedFlash] = useState(false);
   const [templateModal, setTemplateModal] = useState(false);
   const [saveModal, setSaveModal] = useState(false);
+  const [historyEx, setHistoryEx] = useState<string | null>(null);
   const [recurringPreset, setRecurringPreset] = useState<WorkoutPreset | null>(null);
   const [swm, setSwm] = useState<SwmState>({ name: '', isPreset: true, isRecurring: false, days: [], freq: 1 });
   const [dupWarning, setDupWarning] = useState(false);
@@ -868,6 +886,14 @@ export default function WorkoutLogger() {
     setPendingSetData(prev => { const next = [...prev]; next[i] = { ...next[i], [field]: val }; return next; });
   }, [setPendingSetData]);
 
+  const incrementAllWeights = useCallback((delta: number) => {
+    setPendingSetData(prev => prev.map(s => {
+      const w = parseFloat(s.w) || 0;
+      const next = Math.max(0, w + delta);
+      return { ...s, w: next % 1 === 0 ? String(next) : next.toFixed(1) };
+    }));
+  }, [setPendingSetData]);
+
   const handleRepsKeyDown = useCallback((e: React.KeyboardEvent, idx: number) => {
     if (e.key === 'Enter') { e.preventDefault(); weightRefs.current[idx]?.focus(); }
   }, []);
@@ -901,7 +927,7 @@ export default function WorkoutLogger() {
   // Pre-fill sets from the most recent logged session for this exercise
   const prefillFromHistory = useCallback((name: string) => {
     if (!name) return;
-    const days = Object.keys(localDB).sort().reverse(); // newest first
+    const days = Object.keys(localDB).sort().reverse().slice(0, 60); // newest 60 days
     for (const ds of days) {
       const raw = localDB[ds]?.exercises;
       if (!raw) continue;
@@ -909,8 +935,10 @@ export default function WorkoutLogger() {
         const exs = parseEx(String(raw));
         const match = exs.find(e => e.k === 'lift' && e.n === name);
         if (match) {
-          const sets = normalizeSets(match);
-          if (sets.length > 0) {
+          const raw = normalizeSets(match);
+          if (raw.length > 0) {
+            // Ensure r and w are always strings (SetData stores r as number in older records)
+            const sets = raw.map(s => ({ r: String(s.r || '1'), w: String(s.w || '') }));
             setPendingSetsCount(sets.length);
             setPendingSetData(sets);
             return;
@@ -940,9 +968,29 @@ export default function WorkoutLogger() {
   }, [exercises, nextKey]);
 
   const deleteEntry = useCallback((idx: number) => {
+    const entry = exercises[idx];
+    if (!entry) return;
+    const key = exerciseKeysRef.current[idx] ?? `del-${Date.now()}`;
+
+    // Optimistically remove from list immediately
     exerciseKeysRef.current = exerciseKeysRef.current.filter((_, i) => i !== idx);
     setExercises(exercises.filter((_, i) => i !== idx));
+
+    // Cancel any previous pending-delete timer
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    setPendingDelete({ entry, key });
+
+    // After 5 s with no undo, the deletion is already persisted (setExercises calls persistExercises)
+    deleteTimerRef.current = setTimeout(() => setPendingDelete(null), 5000);
   }, [exercises, setExercises]);
+
+  const undoDelete = useCallback(() => {
+    if (!pendingDelete) return;
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
+    exerciseKeysRef.current = [...exerciseKeysRef.current, pendingDelete.key];
+    setExercises([...exercises, pendingDelete.entry]);
+    setPendingDelete(null);
+  }, [pendingDelete, exercises, setExercises]);
 
   const updateCardioField = useCallback(
     (idx: number, field: 'v1' | 'v2' | 'note', val: string) => {
@@ -1039,6 +1087,14 @@ export default function WorkoutLogger() {
     });
     return prs;
   }, [lifts]);
+
+  // Haptic feedback when a new PR is first detected this session
+  const prevPRRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const newPRs = [...prLiftNames].filter(n => !prevPRRef.current.has(n));
+    if (newPRs.length > 0) navigator.vibrate?.([30, 20, 60, 20, 30]);
+    prevPRRef.current = new Set(prLiftNames);
+  }, [prLiftNames]);
 
   const loadRecurringWorkout = useCallback((preset: WorkoutPreset) => {
     const newEntries = parseEx(preset.exercises);
@@ -1297,23 +1353,51 @@ export default function WorkoutLogger() {
                     autoFocus type="text" className="que-input"
                     value={customName} placeholder="Type exercise name…"
                     onChange={e => setCustomName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitLift(); } }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); commitLift(); }
+                      if (e.key === 'Escape') { e.preventDefault(); setIsCustomEx(false); setCustomName(''); }
+                    }}
                   />
                 ) : (
-                  <div className="relative">
-                    <select
-                      className="que-input pr-9 cursor-pointer"
-                      value={selectedEx}
-                      onChange={e => {
-                        if (e.target.value === '__custom__') {
-                          setIsCustomEx(true); setSelectedEx('');
-                        } else setSelectedEx(e.target.value);
-                      }}
-                    >
-                      {exerciseOptions.map(ex => <option key={ex} value={ex}>{ex}</option>)}
-                      <option value="__custom__">+ Custom exercise…</option>
-                    </select>
-                    <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-2)] pointer-events-none" />
+                  <div className="space-y-2">
+                    {/* Search filter */}
+                    <div className="relative">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)] pointer-events-none" aria-hidden>
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                      </svg>
+                      <input
+                        type="text" className="que-input pl-8"
+                        placeholder="Search exercises…"
+                        value={exSearch}
+                        onChange={e => setExSearch(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Escape') setExSearch(''); }}
+                      />
+                      {exSearch && (
+                        <button onClick={() => setExSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink-0)] transition-colors">
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                    {/* Filtered select */}
+                    <div className="relative">
+                      <select
+                        className="que-input pr-9 cursor-pointer"
+                        value={selectedEx}
+                        onChange={e => {
+                          if (e.target.value === '__custom__') {
+                            setIsCustomEx(true); setSelectedEx(''); setExSearch('');
+                          } else { setSelectedEx(e.target.value); setExSearch(''); }
+                        }}
+                          size={exSearch ? Math.min(6, exerciseOptions.filter(ex => ex.toLowerCase().includes(exSearch.toLowerCase())).length + 1) : 1}
+                      >
+                        {exerciseOptions
+                          .filter(ex => !exSearch || ex.toLowerCase().includes(exSearch.toLowerCase()))
+                          .map(ex => <option key={ex} value={ex}>{ex}</option>)}
+                        <option value="__custom__">+ Custom exercise…</option>
+                      </select>
+                      {!exSearch && <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-2)] pointer-events-none" />}
+                    </div>
                   </div>
                 )}
                 {isCustomEx && (
@@ -1391,6 +1475,23 @@ export default function WorkoutLogger() {
                 </div>
               </div>
 
+              {/* Progressive overload nudge — only shown when sets have pre-filled weights */}
+              {pendingSetData.some(s => !!s.w) && (
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="font-mono text-[9px] text-[var(--ink-3)] tracking-[1px] uppercase flex-shrink-0">+Weight</span>
+                  {[2.5, 5, 10].map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => incrementAllWeights(d)}
+                      className="flex-1 font-mono text-[10px] font-bold tracking-[1px] py-1.5 rounded-sm border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-2)] hover:border-[var(--positive)] hover:text-[var(--positive)] transition-all"
+                    >
+                      +{d}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <button onClick={commitLift} className="que-btn-primary w-full">
                 <Plus size={14} /> LOG EXERCISE
               </button>
@@ -1440,6 +1541,7 @@ export default function WorkoutLogger() {
                       onDelete={deleteEntry}
                       onUpdateName={updateExerciseName}
                       onUpdateSets={updateExerciseSets}
+                      onViewHistory={entry.n ? () => setHistoryEx(entry.n!) : undefined}
                     />
                   ))}
                 </Reorder.Group>
@@ -1539,6 +1641,35 @@ export default function WorkoutLogger() {
 
         </div>
       </div>
+
+      <ExerciseHistoryModal
+        name={historyEx}
+        open={historyEx !== null}
+        onClose={() => setHistoryEx(null)}
+      />
+
+      {/* Undo delete snackbar */}
+      <AnimatePresence>
+        {pendingDelete && (
+          <motion.div
+            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed bottom-[calc(env(safe-area-inset-bottom)+76px)] left-4 right-4 md:left-auto md:right-8 md:w-80 z-[350] flex items-center justify-between gap-3 rounded border border-[var(--line-2)] bg-[var(--bg-2)] px-4 py-3"
+            style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }}
+          >
+            <span className="font-mono text-[10px] text-[var(--ink-1)] tracking-[0.5px] truncate">
+              Deleted <strong className="text-[var(--ink-0)]">{pendingDelete.entry.n ?? pendingDelete.entry.k}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={undoDelete}
+              className="font-mono text-[10px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)]/50 rounded-sm px-2.5 py-1 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all flex-shrink-0"
+            >
+              Undo
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

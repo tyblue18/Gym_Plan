@@ -5,6 +5,7 @@ import { AuthProvider } from '@/components/auth-provider';
 import { AppProvider }  from '@/lib/AppContext';
 import { SWRegister }          from '@/components/sw-register';
 import { ColorSchemeLoader }  from '@/components/color-scheme-loader';
+import { SyncStatus }         from '@/components/SyncStatus';
 import GlowMount       from '@/components/GlowMount';
 import './globals.css';
 
@@ -69,6 +70,7 @@ export default function RootLayout({
         </AuthProvider>
 
         <ColorSchemeLoader />
+        <SyncStatus />
         <SWRegister />
 
         {process.env.NODE_ENV === 'production' && <Analytics />}

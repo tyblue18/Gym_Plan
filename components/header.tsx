@@ -234,6 +234,32 @@ function UserPill({ image, name, email }: UserPillProps) {
                 </button>
               )}
 
+              <button type="button" role="menuitem" className="auth-dropdown-item"
+                onClick={() => {
+                  setOpen(false);
+                  try {
+                    const db       = JSON.parse(localStorage.getItem('ironmanCoreDB_v2') ?? '{}');
+                    const profile  = JSON.parse(localStorage.getItem('ironmanProfileSettings_v2') ?? '{}');
+                    const settings: Record<string, unknown> = {};
+                    ['queAthletePlan','queWorkoutPresets','queExerciseUsage','queLiftPRs'].forEach(k => {
+                      const v = localStorage.getItem(k);
+                      if (v) try { settings[k] = JSON.parse(v); } catch { settings[k] = v; }
+                    });
+                    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), profile, settings, localDB: db }, null, 2)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `que-data-${new Date().toISOString().slice(0,10)}.json`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                  } catch { /* silent */ }
+                }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Export data
+              </button>
+
               <div className="auth-dropdown-divider" />
 
               <button type="button" role="menuitem" className="auth-dropdown-item auth-dropdown-item--danger"

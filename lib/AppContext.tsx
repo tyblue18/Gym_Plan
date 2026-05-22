@@ -70,6 +70,7 @@ export interface DayRecord {
   burn?:     number;
   budget?:   number;
   calsEaten?: string;
+  protein?:  number;
 }
 
 /** Keyed by "YYYY-MM-DD" */

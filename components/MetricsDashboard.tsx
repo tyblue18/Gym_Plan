@@ -376,12 +376,40 @@ function PRBadge({ size = 44 }: { size?: number }) {
 
 interface PRFlags { prRun: boolean; prBike: boolean; prSwim: boolean; prLift: boolean; }
 
+const CARDIO_QUICK_CFG = {
+  run:  { f1label: 'Distance / mi', f1mode: 'decimal', f1key: 'runDist',  f2label: 'Duration / min', f2key: 'runTime'  },
+  bike: { f1label: 'Distance / mi', f1mode: 'decimal', f1key: 'bikeDist', f2label: 'Duration / min', f2key: 'bikeTime' },
+  swim: { f1label: 'Duration / min', f1mode: 'numeric', f1key: 'swimTime', f2label: null,             f2key: null       },
+} as const;
+
 function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
   m: BudgetMetrics;
   onOpenProgress?: () => void;
   prFlags?: PRFlags;
 }) {
   const spotlight = useSpotlightBorder({ color: '79,195,247', size: 280, opacity: 0.55 });
+  const { updateDayRecord, getDayRecord, todayStr } = useApp();
+
+  const [cardioModal, setCardioModal] = useState<'run' | 'bike' | 'swim' | null>(null);
+  const [f1, setF1] = useState('');
+  const [f2, setF2] = useState('');
+
+  const openCardioModal = useCallback((kind: 'run' | 'bike' | 'swim') => {
+    const rec = getDayRecord(todayStr);
+    const cfg = CARDIO_QUICK_CFG[kind];
+    setF1(String((rec as Record<string, unknown>)[cfg.f1key] || ''));
+    setF2(cfg.f2key ? String((rec as Record<string, unknown>)[cfg.f2key] || '') : '');
+    setCardioModal(kind);
+  }, [getDayRecord, todayStr]);
+
+  const submitCardio = useCallback(() => {
+    if (!cardioModal) return;
+    const cfg = CARDIO_QUICK_CFG[cardioModal];
+    const updates: Partial<Record<string, number>> = { [cfg.f1key]: parseFloat(f1) || 0 };
+    if (cfg.f2key) updates[cfg.f2key] = parseFloat(f2) || 0;
+    updateDayRecord(todayStr, updates as Parameters<typeof updateDayRecord>[1]);
+    setCardioModal(null);
+  }, [cardioModal, f1, f2, todayStr, updateDayRecord]);
 
   const tiles = [
     { label: 'RUN',  value: m.runBurn,  key: 'run' },
@@ -490,16 +518,18 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
             return (
               <div
                 key={t.key}
+                onClick={() => !t.dim && openCardioModal(t.key as 'run' | 'bike' | 'swim')}
                 className={[
                   'relative rounded p-3 border overflow-hidden',
                   t.dim ? 'border-[var(--line)] bg-[var(--bg-2)] opacity-60'
-                    : lit ? 'border-[var(--positive)]/40'
-                    : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--accent)] transition-all',
+                    : lit ? 'border-[var(--positive)]/40 cursor-pointer'
+                    : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--accent)] transition-all cursor-pointer',
                 ].join(' ')}
                 style={lit ? {
                   background: 'rgba(109,255,153,0.05)',
                   animation:  'tile-glow-pulse 2.8s ease-in-out infinite',
                 } : undefined}
+                title={t.dim ? undefined : 'Tap to log'}
               >
                 {/* One-shot green flash on activation */}
                 {lit && (
@@ -539,6 +569,54 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
             );
           })}
         </div>
+
+        {/* ── Quick-log cardio modal ───────────────────────────────────── */}
+        <AnimatePresence>
+          {cardioModal && (() => {
+            const cfg = CARDIO_QUICK_CFG[cardioModal];
+            const name = cardioModal.toUpperCase();
+            return (
+              <motion.div
+                key="cardio-quick"
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.18 }}
+                className="mt-3 rounded border border-[var(--accent)]/40 bg-[var(--bg-2)] p-3"
+              >
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--accent)] uppercase">
+                    Log {name}
+                  </p>
+                  <button onClick={() => setCardioModal(null)} className="text-[var(--ink-3)] hover:text-[var(--ink-0)] transition-colors">
+                    <X size={14} />
+                  </button>
+                </div>
+                <div className={`grid gap-2 mb-2.5 ${cfg.f2key ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <div>
+                    <label className="que-label">{cfg.f1label}</label>
+                    <input
+                      autoFocus type="text" inputMode={cfg.f1mode}
+                      className="que-input" value={f1} onChange={e => setF1(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && submitCardio()}
+                    />
+                  </div>
+                  {cfg.f2key && (
+                    <div>
+                      <label className="que-label">{cfg.f2label}</label>
+                      <input
+                        type="text" inputMode="numeric"
+                        className="que-input" value={f2} onChange={e => setF2(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && submitCardio()}
+                      />
+                    </div>
+                  )}
+                </div>
+                <button onClick={submitCardio} className="que-btn-primary w-full py-2.5 text-[11px]">
+                  Save {name}
+                </button>
+              </motion.div>
+            );
+          })()}
+        </AnimatePresence>
 
         {/* ── Active Plan Progress ─────────────────────────────────────── */}
         {(() => {
@@ -596,15 +674,305 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENT — DailyLogCard (weight + calories eaten only)
-// Cardio is logged in the Calendar / WorkoutLogger section.
+// SUB-COMPONENT — MilestoneModal (Feature 14)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DailyLogCard({ todayLabel, todayWeight, todayCals, onWeightChange, onCalsChange, onLogToday }: {
-  todayLabel: string; todayWeight: string; todayCals: string;
-  onWeightChange: (v: string) => void;
-  onCalsChange:   (v: string) => void;
+function MilestoneModal({ open, onClose, pct, weightChange }: {
+  open: boolean; onClose: () => void; pct: number; weightChange: number;
+}) {
+  const labels: Record<number, { title: string; sub: string }> = {
+    25: { title: 'Quarter way!',   sub: 'Keep the momentum going.' },
+    50: { title: 'Halfway there!', sub: 'You\'re exactly on schedule.' },
+    75: { title: 'Almost done!',   sub: 'The finish line is in sight.' },
+  };
+  const info = labels[pct] ?? { title: `${pct}% complete`, sub: '' };
+  const sign = weightChange > 0 ? '+' : '';
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[400] flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
+          style={{ background: 'rgba(7,8,10,0.90)' }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        >
+          <motion.div
+            className="w-full md:max-w-[380px] rounded-t-lg md:rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] overflow-hidden"
+            initial={{ opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 48 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--positive), 0 40px 80px rgba(0,0,0,0.6)' }}
+          >
+            <div className="flex justify-center pt-4 pb-0 bg-[var(--bg-2)]">
+              <Lottie animationData={celebrateData} loop={false} autoplay={true} style={{ width: 150, height: 150 }} />
+            </div>
+            <div className="px-6 pb-6 text-center space-y-2">
+              <span className="inline-block font-mono text-[9px] font-bold tracking-[2px] uppercase text-[var(--positive)] border border-[var(--positive)]/40 rounded-sm px-2 py-0.5">
+                {pct}% Milestone
+              </span>
+              <h3 className="font-display text-[24px] tracking-[2px] uppercase text-[var(--positive)]">{info.title}</h3>
+              {weightChange !== 0 && (
+                <p className="font-mono text-[11px] font-bold text-[var(--ink-1)]">
+                  {sign}{weightChange.toFixed(1)} lbs so far
+                </p>
+              )}
+              <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[0.5px]">{info.sub}</p>
+              <button onClick={onClose} className="que-btn-primary w-full py-3 mt-2">Keep going!</button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENT — TrophyCaseCard (Feature 15)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TrophyCaseCard() {
+  const { localDB } = useApp();
+
+  const records = useMemo(() => {
+    let prs: Record<string, number> = {};
+    try { prs = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); } catch { /* noop */ }
+
+    // Find the date each PR was first logged
+    const prDates: Record<string, string> = {};
+    Object.entries(localDB).sort(([a], [b]) => a.localeCompare(b)).forEach(([ds, rec]) => {
+      if (!rec.exercises) return;
+      try {
+        (JSON.parse(String(rec.exercises)) as Array<{ k?: string; n?: string; sets?: Array<{ w?: string }> }>)
+          .forEach(ex => {
+            if (ex.k !== 'lift' || !ex.n || !ex.sets) return;
+            const w = Math.max(0, ...ex.sets.map(s => parseFloat(s.w ?? '0') || 0));
+            if (w > 0 && w >= (prs[ex.n] ?? 0) && !prDates[ex.n]) prDates[ex.n] = ds;
+          });
+      } catch { /* skip */ }
+    });
+
+    return Object.entries(prs)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, weight]) => ({ name, weight, date: prDates[name] ?? null }));
+  }, [localDB]);
+
+  if (records.length === 0) return null;
+
+  return (
+    <div className="que-card mb-4">
+      <div className="p-5">
+        <h2 className="que-section-label mb-4"><span className="dot" />TROPHY CASE</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {records.slice(0, 12).map(({ name, weight, date }) => (
+            <div key={name} className="flex items-center justify-between gap-3 rounded border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="font-mono text-[10px] font-semibold text-[var(--ink-0)] truncate">{name}</p>
+                {date && (
+                  <p className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px] mt-0.5">
+                    {fmtDateLong(date)}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="#FFB547" aria-hidden>
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+                <span className="font-display text-[16px] leading-none" style={{ color: '#FFB547' }}>{weight}</span>
+                <span className="font-mono text-[9px] text-[var(--ink-3)]">lb</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {records.length > 12 && (
+          <p className="font-mono text-[8px] text-[var(--ink-3)] mt-2 text-center tracking-[0.5px]">
+            +{records.length - 12} more records
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENT — WeeklyRecapCard (Feature 13)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function WeeklyRecapCard() {
+  const { localDB, today, todayStr } = useApp();
+  const [dismissed, setDismissed] = useState(false);
+
+  // Compute ISO week key e.g. "2026-W21"
+  const weekKey = useMemo(() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Monday
+    return `${d.getFullYear()}-W${String(Math.ceil((d.getDate() + new Date(d.getFullYear(), 0, 1).getDay()) / 7)).padStart(2, '0')}`;
+  }, [today]);
+
+  // Only show on Sunday, or the day after if not yet seen
+  const shouldShow = useMemo(() => {
+    if (dismissed) return false;
+    const seen = localStorage.getItem('queWeeklyRecapSeen');
+    if (seen === weekKey) return false;
+    return today.getDay() === 0; // Sunday
+  }, [today, weekKey, dismissed]);
+
+  const stats = useMemo(() => {
+    if (!shouldShow) return null;
+    const mon = new Date(today); mon.setDate(today.getDate() - 6);
+    const weekStart = toDateStr(mon);
+
+    let sessions = 0, calBudgetDays = 0, liftPRsThisWeek = 0;
+    let prRecs: Record<string, number> = {};
+    try { prRecs = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); } catch { /* noop */ }
+    const prBeforeWeek: Record<string, number> = {};
+
+    // Scan days before this week to build baseline
+    Object.entries(localDB).forEach(([ds, rec]) => {
+      if (ds >= weekStart) return;
+      if (!rec.exercises) return;
+      try {
+        (JSON.parse(String(rec.exercises)) as Array<{ k?: string; n?: string; sets?: Array<{ w?: string }> }>)
+          .forEach(ex => {
+            if (ex.k !== 'lift' || !ex.n || !ex.sets) return;
+            const w = Math.max(0, ...ex.sets.map(s => parseFloat(s.w ?? '0') || 0));
+            if (w > 0) prBeforeWeek[ex.n] = Math.max(prBeforeWeek[ex.n] ?? 0, w);
+          });
+      } catch { /* skip */ }
+    });
+
+    Object.entries(localDB).forEach(([ds, rec]) => {
+      if (ds < weekStart || ds > todayStr) return;
+      if (rec.exercises) {
+        try {
+          const exs = JSON.parse(String(rec.exercises)) as Array<{ k?: string; n?: string; sets?: Array<{ w?: string }> }>;
+          if (exs.some(e => e.k === 'lift')) sessions++;
+          exs.forEach(ex => {
+            if (ex.k !== 'lift' || !ex.n || !ex.sets) return;
+            const w = Math.max(0, ...ex.sets.map(s => parseFloat(s.w ?? '0') || 0));
+            if (w > 0 && w > (prBeforeWeek[ex.n] ?? 0)) liftPRsThisWeek++;
+          });
+        } catch { /* skip */ }
+      }
+      const eaten = parseNum(String(rec.calsEaten ?? 0));
+      const budget = parseNum(String(rec.budget ?? 0));
+      if (budget > 0 && eaten > 0 && eaten <= budget) calBudgetDays++;
+    });
+
+    return { sessions, liftPRsThisWeek, calBudgetDays };
+  }, [localDB, today, todayStr, shouldShow]);
+
+  if (!shouldShow || !stats) return null;
+
+  const dismiss = () => {
+    localStorage.setItem('queWeeklyRecapSeen', weekKey);
+    setDismissed(true);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+      className="rounded border border-[var(--positive)]/30 bg-[var(--positive)]/5 p-4 mb-4"
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--positive)] uppercase mb-0.5">Weekly Recap</p>
+          <p className="font-mono text-[10px] text-[var(--ink-1)] leading-relaxed">
+            This week: <strong>{stats.sessions} session{stats.sessions !== 1 ? 's' : ''}</strong>
+            {stats.liftPRsThisWeek > 0 && <> · <strong className="text-[#FFB547]">+{stats.liftPRsThisWeek} PR{stats.liftPRsThisWeek !== 1 ? 's' : ''}</strong></>}
+            {' '}· <strong>{stats.calBudgetDays} of 7 days</strong> on budget
+          </p>
+        </div>
+        <button onClick={dismiss} className="text-[var(--ink-3)] hover:text-[var(--ink-0)] transition-colors flex-shrink-0">
+          <X size={14} />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENT — WeeklyVolumeCard (Feature 8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function WeeklyVolumeCard() {
+  const { localDB, today, todayStr } = useApp();
+
+  const volumeByGroup = useMemo(() => {
+    const mon = new Date(today);
+    mon.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    const weekStart = toDateStr(mon);
+
+    const groups: Record<string, number> = {};
+    Object.entries(localDB).forEach(([ds, rec]) => {
+      if (ds < weekStart || ds > todayStr || !rec.exercises) return;
+      try {
+        (JSON.parse(String(rec.exercises)) as Array<{ k?: string; g?: string; sets?: Array<{ r: string; w: string }> }>)
+          .forEach(ex => {
+            if (ex.k !== 'lift' || !ex.g || !ex.sets) return;
+            const vol = ex.sets.reduce((s, set) => {
+              const r = parseInt(String(set.r)) || 0;
+              const w = parseFloat(String(set.w)) || 0;
+              return s + r * w;
+            }, 0);
+            if (vol > 0) groups[ex.g] = (groups[ex.g] ?? 0) + vol;
+          });
+      } catch { /* skip */ }
+    });
+    return Object.entries(groups).sort((a, b) => b[1] - a[1]);
+  }, [localDB, today, todayStr]);
+
+  if (volumeByGroup.length === 0) return null;
+
+  const maxVol = Math.max(...volumeByGroup.map(([, v]) => v), 1);
+
+  return (
+    <div className="que-card mb-4">
+      <div className="p-5">
+        <h2 className="que-section-label mb-4"><span className="dot" />WEEKLY VOLUME</h2>
+        <div className="space-y-2.5">
+          {volumeByGroup.map(([group, vol]) => (
+            <div key={group}>
+              <div className="flex justify-between items-baseline mb-1">
+                <span className="font-mono text-[9px] font-bold uppercase tracking-[1.5px] text-[var(--ink-2)]">{group}</span>
+                <span className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px]">
+                  {vol >= 1000 ? `${(vol / 1000).toFixed(1)}k` : Math.round(vol)} lbs
+                </span>
+              </div>
+              <div className="h-1.5 bg-[var(--bg-3)] rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-[var(--accent)]"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(vol / maxVol) * 100}%` }}
+                  transition={{ duration: 0.6, ease: 'easeOut' }}
+                  style={{ opacity: 0.7 + (vol / maxVol) * 0.3 }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="font-mono text-[8px] text-[var(--ink-3)] mt-3 tracking-[0.5px]">
+          Sets × reps × weight · current week (Mon–{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][today.getDay()]})
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENT — DailyLogCard (weight + calories + protein)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DailyLogCard({
+  todayLabel, todayWeight, todayCals, todayProtein,
+  onWeightChange, onCalsChange, onProteinChange, onLogToday,
+  undereatingWarning,
+}: {
+  todayLabel: string; todayWeight: string; todayCals: string; todayProtein: string;
+  onWeightChange:  (v: string) => void;
+  onCalsChange:    (v: string) => void;
+  onProteinChange: (v: string) => void;
   onLogToday: () => void;
+  undereatingWarning: boolean;
 }) {
   const spotlight = useSpotlightBorder({ color: '79,195,247', size: 260, opacity: 0.45 });
 
@@ -624,7 +992,20 @@ function DailyLogCard({ todayLabel, todayWeight, todayCals, onWeightChange, onCa
           <span className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px]">{todayLabel}</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        {/* Calorie accuracy warning (Feature 9) */}
+        {undereatingWarning && (
+          <div className="flex items-start gap-2 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/6 px-3 py-2.5 mb-4">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFB547" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-px" aria-hidden>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <p className="font-mono text-[9px] text-[var(--warn)] leading-relaxed tracking-[0.3px]">
+              You&apos;ve been eating well under budget for 3+ days — this can slow metabolism over time.
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
             <label className="que-label">Weight / lbs</label>
             <input
@@ -641,6 +1022,19 @@ function DailyLogCard({ todayLabel, todayWeight, todayCals, onWeightChange, onCa
               placeholder="e.g. 1800"
             />
           </div>
+        </div>
+
+        {/* Protein tracking (Feature 10) */}
+        <div className="mb-4">
+          <label className="que-label">
+            Protein / g
+            <span className="ml-1.5 font-normal text-[var(--ink-3)] normal-case tracking-normal">(optional)</span>
+          </label>
+          <input
+            type="number" inputMode="numeric" className="que-input"
+            value={todayProtein} onChange={e => onProteinChange(e.target.value)}
+            placeholder="e.g. 150"
+          />
         </div>
 
         <button onClick={onLogToday} className="que-btn-primary w-full">
@@ -806,7 +1200,7 @@ function drawProjection(canvas: HTMLCanvasElement, startWt: number, m: BudgetMet
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
 
-  const dailyNet  = (m.budget - m.bmr * m.multiplier) - m.activityBurn * 0.40;
+  const dailyNet  = (m.budget - m.tdee) - m.activityBurn;
   const lbsPerDay = dailyNet / 3500;
   const DAYS = 91;
   const pts  = Array.from({ length: DAYS }, (_, i) => startWt + lbsPerDay * i);
@@ -926,7 +1320,14 @@ function TrendsCard() {
       return Number(rec?.budget) || 0;
     });
     const { color, unit } = chartConfig[activeTab];
-    drawLineChart(canvas, labels, values, color, unit);
+
+    // 7-day rolling average for weight tab (Feature 16)
+    const rollingAvg = activeTab === 'weight' ? values.map((_, i) => {
+      const win = values.slice(Math.max(0, i - 6), i + 1).filter(v => v > 0);
+      return win.length > 0 ? win.reduce((s, v) => s + v, 0) / win.length : 0;
+    }) : undefined;
+
+    drawLineChart(canvas, labels, values, color, unit, rollingAvg);
   }, [localDB, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -949,12 +1350,31 @@ function TrendsCard() {
         </div>
 
         <canvas ref={canvasRef} className="block w-full h-[220px] lg:h-[260px]" />
+        {activeTab === 'weight' && (
+          <div className="flex items-center gap-3 mt-2">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-5 h-px bg-[#4FC3F7] opacity-70" />
+              <span className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">Daily</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-5 h-[2px] bg-white opacity-50" />
+              <span className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">7-day avg</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function drawLineChart(canvas: HTMLCanvasElement, labels: string[], values: number[], color: string, unit: string) {
+function drawLineChart(
+  canvas: HTMLCanvasElement,
+  labels: string[],
+  values: number[],
+  color: string,
+  unit: string,
+  rollingAvg?: number[],  // Feature 16: 7-day rolling average overlay
+) {
   const dpr  = window.devicePixelRatio || 1;
   const cssW = canvas.offsetWidth || 600;
   const cssH = parseInt(getComputedStyle(canvas).height) || 220;
@@ -1025,6 +1445,17 @@ function drawLineChart(canvas: HTMLCanvasElement, labels: string[], values: numb
       ctx.beginPath(); ctx.fillStyle = color; ctx.arc(xOf(i), yOf(v), 3, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.fillStyle = '#07080A'; ctx.arc(xOf(i), yOf(v), 1.5, 0, Math.PI * 2); ctx.fill();
     });
+  }
+
+  // 7-day rolling average overlay (Feature 16 — weight tab only)
+  if (rollingAvg && rollingAvg.some(v => v > 0)) {
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.setLineDash([]);
+    let rfirst = true;
+    rollingAvg.forEach((v, i) => {
+      if (v <= 0) { rfirst = true; return; }
+      rfirst ? (ctx.moveTo(xOf(i), yOf(v)), rfirst = false) : ctx.lineTo(xOf(i), yOf(v));
+    });
+    ctx.stroke();
   }
 }
 
@@ -1954,7 +2385,7 @@ function ProjectionModal({ open, m, weightLbs, onClose }: {
 
   useEffect(() => {
     if (!open || weightLbs <= 0 || m.budget <= 0) return;
-    const dailyNet  = (m.budget - m.bmr * m.multiplier) - m.activityBurn * 0.40;
+    const dailyNet  = (m.budget - m.tdee) - m.activityBurn;
     const lbsPerDay = dailyNet / 3500;
     ptsRef.current  = Array.from({ length: 91 }, (_, i) => weightLbs + lbsPerDay * i);
     setSelDay(null);
@@ -2101,9 +2532,44 @@ export default function MetricsDashboard() {
   const [planOpen,         setPlanOpen]         = useState(false);
   const [progressOpen,     setProgressOpen]     = useState(false);
   const [celebrateVisible, setCelebrateVisible] = useState(false);
+  const [milestone,        setMilestone]        = useState<{ pct: number; weightChange: number } | null>(null);
+
+  // Feature 14 — milestone detection (runs once on mount, not on every localDB change)
+  const milestoneCheckedRef = useRef(false);
+  useEffect(() => {
+    if (milestoneCheckedRef.current || !isLoaded) return;
+    milestoneCheckedRef.current = true;
+
+    const plan = loadPlan(); if (!plan) return;
+    const msElapsed  = Date.now() - new Date(plan.startDate + 'T00:00:00').getTime();
+    const weeksSince = Math.max(0, msElapsed / (7 * 86400000));
+    const ratio      = weeksSince / plan.weeksTarget;
+    const THRESHOLDS = [0.25, 0.5, 0.75];
+
+    let seen: number[] = [];
+    try {
+      const raw = JSON.parse(localStorage.getItem('quePlanMilestones') ?? '{}');
+      if (raw.planStartDate === plan.startDate) seen = raw.seen ?? [];
+    } catch { /* noop */ }
+
+    for (const t of THRESHOLDS) {
+      if (ratio >= t && !seen.includes(Math.round(t * 100))) {
+        const pct = Math.round(t * 100);
+        seen.push(pct);
+        localStorage.setItem('quePlanMilestones', JSON.stringify({ planStartDate: plan.startDate, seen }));
+        const entries = (Object.entries(localDB) as [string, DayRecord][])
+          .filter(([, r]) => parseNum(String(r.weight ?? '0')) > 0)
+          .sort(([a], [b]) => a.localeCompare(b));
+        const latestW = entries.length > 0 ? parseNum(String(entries[entries.length - 1][1].weight)) : 0;
+        setMilestone({ pct, weightChange: latestW > 0 ? latestW - plan.startWeight : 0 });
+        break;
+      }
+    }
+  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const [cardio, setCardio]             = useState<CardioFields>(EMPTY_CARDIO);
-  const [todayWeight, setTodayWeightRaw] = useState('');
-  const [todayCals,   setTodayCalsRaw]   = useState('');
+  const [todayWeight,  setTodayWeightRaw]  = useState('');
+  const [todayCals,    setTodayCalsRaw]    = useState('');
+  const [todayProtein, setTodayProteinRaw] = useState('');
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -2119,6 +2585,7 @@ export default function MetricsDashboard() {
     const todayRec = localDB[todayStr] ?? {};
     setTodayWeightRaw(String(todayRec.weight ?? getLastKnownWeight(todayStr) ?? ''));
     setTodayCalsRaw(String(todayRec.calsEaten ?? ''));
+    setTodayProteinRaw(todayRec.protein ? String(todayRec.protein) : '');
   }, [isLoaded, activeDayFocus, todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const m = useBudgetMetrics(profile, cardio);
@@ -2143,6 +2610,27 @@ export default function MetricsDashboard() {
     setTodayCalsRaw(val);
     updateDayRecord(todayStr, { calsEaten: val, budget: m.budget });
   }, [todayStr, m.budget, updateDayRecord]);
+
+  const handleProteinChange = useCallback((val: string) => {
+    setTodayProteinRaw(val);
+    const n = parseNum(val);
+    if (n > 0) updateDayRecord(todayStr, { protein: n });
+  }, [todayStr, updateDayRecord]);
+
+  // Feature 9: warn when calsEaten < 60% of budget for 3+ consecutive days
+  const undereatingWarning = useMemo(() => {
+    const days = Object.keys(localDB).sort().reverse();
+    let streak = 0;
+    for (const ds of days) {
+      const r = localDB[ds];
+      const eaten  = parseNum(String(r.calsEaten ?? 0));
+      const budget = parseNum(String(r.budget ?? 0));
+      if (budget > 0 && eaten > 0 && eaten < budget * 0.60) streak++;
+      else break;
+      if (streak >= 3) return true;
+    }
+    return false;
+  }, [localDB]);
 
   const handleLogToday = useCallback(() => {
     updateDayRecord(todayStr, {
@@ -2171,6 +2659,7 @@ export default function MetricsDashboard() {
     }
 
     if (hitGoal) {
+      navigator.vibrate?.([50, 30, 80]);
       setCelebrateVisible(true);
     } else {
       setProjVisible(true);
@@ -2212,7 +2701,8 @@ export default function MetricsDashboard() {
     let prLift = false;
     try {
       type SetRow = { w?: string };
-      type ExRow  = { k?: string; name?: string; sets?: SetRow[] };
+      // Exercises are stored with `n` (name) — not `name`
+      type ExRow  = { k?: string; n?: string; sets?: SetRow[] };
       const todayExs: ExRow[] = today.exercises ? JSON.parse(String(today.exercises)) : [];
 
       // Build all-time max per lift from every other day
@@ -2221,20 +2711,20 @@ export default function MetricsDashboard() {
         if (!r.exercises) return;
         try {
           (JSON.parse(String(r.exercises)) as ExRow[]).forEach(ex => {
-            if (ex.k !== 'lift' || !ex.name || !ex.sets) return;
+            if (ex.k !== 'lift' || !ex.n || !ex.sets) return;
             ex.sets.forEach(s => {
               const w = parseNum(s.w ?? '0');
-              if (w > 0) allTimeMax[ex.name!] = Math.max(allTimeMax[ex.name!] ?? 0, w);
+              if (w > 0) allTimeMax[ex.n!] = Math.max(allTimeMax[ex.n!] ?? 0, w);
             });
           });
         } catch { /* skip corrupt records */ }
       });
 
       todayExs.forEach(ex => {
-        if (ex.k !== 'lift' || !ex.name || !ex.sets) return;
+        if (ex.k !== 'lift' || !ex.n || !ex.sets) return;
         ex.sets.forEach(s => {
           const w = parseNum(s.w ?? '0');
-          if (w > 0 && w > (allTimeMax[ex.name!] ?? 0)) prLift = true;
+          if (w > 0 && w > (allTimeMax[ex.n!] ?? 0)) prLift = true;
         });
       });
     } catch { /* skip */ }
@@ -2242,7 +2732,7 @@ export default function MetricsDashboard() {
     return { prRun, prBike, prSwim, prLift };
   }, [localDB, todayStr]);
 
-  const { calDays, avgNet, streak } = useMemo(() => {
+  const { calDays, avgNet, streak, workoutStreak, weighStreak } = useMemo(() => {
     const days = Object.keys(localDB)
       .map(ds => {
         const rec = localDB[ds];
@@ -2252,18 +2742,37 @@ export default function MetricsDashboard() {
         return { ds, net: eaten - budget };
       })
       .filter(Boolean) as { ds: string; net: number }[];
-    if (!days.length) return { calDays: 0, avgNet: 0, streak: 0 };
-    const avg = days.reduce((s, d) => s + d.net, 0) / days.length;
+    const avg    = days.length ? days.reduce((s, d) => s + d.net, 0) / days.length : 0;
     const logged = new Set(days.map(d => d.ds));
-    const cur = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    if (!logged.has(todayStr)) cur.setDate(cur.getDate() - 1);
-    let s = 0;
-    while (true) {
-      const ds = toDateStr(cur);
-      if (!logged.has(ds)) break;
-      s++; cur.setDate(cur.getDate() - 1);
-    }
-    return { calDays: days.length, avgNet: avg, streak: s };
+
+    // Helper: count consecutive days backward from (possibly yesterday)
+    const countStreak = (hasDay: (ds: string) => boolean) => {
+      const c = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      if (!hasDay(todayStr)) c.setDate(c.getDate() - 1);
+      let n = 0;
+      while (hasDay(toDateStr(c))) { n++; c.setDate(c.getDate() - 1); }
+      return n;
+    };
+
+    // Calorie streak
+    const s = countStreak(ds => logged.has(ds));
+
+    // Workout streak — any day with at least one lift entry
+    const liftDays = new Set(
+      Object.keys(localDB).filter(ds => {
+        const r = localDB[ds];
+        if (!r.exercises) return false;
+        try { return (JSON.parse(String(r.exercises)) as Array<{ k?: string }>).some(e => e.k === 'lift'); }
+        catch { return false; }
+      })
+    );
+    const ws = countStreak(ds => liftDays.has(ds));
+
+    // Weigh-in streak — any day with a positive weight logged
+    const weighDays = new Set(Object.keys(localDB).filter(ds => parseFloat(String(localDB[ds]?.weight ?? '0')) > 0));
+    const wis = countStreak(ds => weighDays.has(ds));
+
+    return { calDays: days.length, avgNet: avg, streak: s, workoutStreak: ws, weighStreak: wis };
   }, [localDB, today, todayStr]);
 
   if (!isLoaded) {
@@ -2277,7 +2786,7 @@ export default function MetricsDashboard() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-5 pb-24 lg:py-8">
 
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <span className="block w-2 h-2 rounded-full bg-[var(--accent)]" style={{ boxShadow: '0 0 8px var(--accent-40)' }} />
           <span className="font-mono text-[11px] font-bold tabular tracking-[2px] uppercase text-[var(--ink-1)]">
@@ -2298,6 +2807,27 @@ export default function MetricsDashboard() {
         </button>
       </div>
 
+      {/* Streak chips (Feature 12) */}
+      {(streak > 0 || workoutStreak > 0 || weighStreak > 0) && (
+        <div className="flex gap-1.5 mb-5 flex-wrap">
+          {[
+            { n: streak,        label: 'cal',    icon: '🔥' },
+            { n: workoutStreak, label: 'lifts',  icon: '💪' },
+            { n: weighStreak,   label: 'weigh',  icon: '⚖️' },
+          ].filter(x => x.n > 0).map(x => (
+            <span
+              key={x.label}
+              className="inline-flex items-center gap-1 font-mono text-[9px] font-bold tracking-[1px] text-[var(--ink-2)] border border-[var(--line-2)] bg-[var(--bg-2)] rounded-sm px-2 py-1"
+            >
+              {x.icon}
+              <span className="text-[var(--accent)]">{x.n}</span>d {x.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <WeeklyRecapCard />
+
       {profileOpen && <ProfilePanel profile={profile} onChange={handleProfileChange} onOpenPlan={() => setPlanOpen(true)} />}
 
       <CalorieBudgetCard m={m} onOpenProgress={() => setProgressOpen(true)} prFlags={prFlags} />
@@ -2306,11 +2836,16 @@ export default function MetricsDashboard() {
         todayLabel={fmtDateLong(todayStr)}
         todayWeight={todayWeight}
         todayCals={todayCals}
+        todayProtein={todayProtein}
         onWeightChange={handleWeightChange}
         onCalsChange={handleCalsChange}
+        onProteinChange={handleProteinChange}
         onLogToday={handleLogToday}
+        undereatingWarning={undereatingWarning}
       />
 
+      <WeeklyVolumeCard />
+      <TrophyCaseCard />
       <ActivityLogCard />
       <CalorieHistoryCard streak={streak} avgNet={avgNet} days={calDays} />
       <TrendsCard />
@@ -2343,6 +2878,13 @@ export default function MetricsDashboard() {
         localDB={localDB}
         calsEaten={parseNum(todayCals)}
         budget={m.budget}
+      />
+
+      <MilestoneModal
+        open={milestone !== null}
+        onClose={() => setMilestone(null)}
+        pct={milestone?.pct ?? 0}
+        weightChange={milestone?.weightChange ?? 0}
       />
     </div>
   );

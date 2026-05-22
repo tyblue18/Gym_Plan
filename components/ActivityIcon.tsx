@@ -63,51 +63,36 @@ export function ActivityIcon({
 }
 
 // ── PRLiveBadge ───────────────────────────────────────────────────────────────
-// Plays the PR trophy animation once, then shows a compact static badge.
-// Disappears entirely when `active` is false (exercise removed / no longer a PR).
-// This eliminates the "frozen final frame" lingering bug.
+// Plays the PR trophy animation once; freezes on the final trophy frame.
+// Disappears when `active` is false (exercise removed / no longer a PR).
+// Re-triggers the animation each time `active` flips from false → true.
 
 export function PRLiveBadge({ active, size = 32 }: { active: boolean; size?: number }) {
-  // 'playing' → animation running | 'done' → static badge | 'hidden' → nothing
-  const [phase, setPhase] = useState<'playing' | 'done' | 'hidden'>(
-    active ? 'playing' : 'hidden'
-  );
+  const [visible, setVisible] = useState(active);
+  // Increment to force Lottie remount (replay animation) on new PR
+  const [animKey, setAnimKey] = useState(0);
 
   useEffect(() => {
     if (active) {
-      // (Re-)trigger animation whenever active flips from false → true
-      setPhase('playing');
+      setVisible(true);
+      setAnimKey(k => k + 1);
     } else {
-      setPhase('hidden');
+      setVisible(false);
     }
   }, [active]);
 
-  if (phase === 'hidden') return null;
+  if (!visible) return null;
 
-  if (phase === 'done') {
-    return (
-      <span
-        style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', pointerEvents: 'none' }}
-        title="Personal Record!"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="#FFB547" aria-hidden>
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-        </svg>
-      </span>
-    );
-  }
-
-  // phase === 'playing'
   return (
     <span
       style={{ width: size, height: size, flexShrink: 0, display: 'inline-flex', pointerEvents: 'none' }}
       title="Personal Record!"
     >
       <Lottie
+        key={animKey}
         animationData={prData}
         loop={false}
         autoplay={true}
-        onComplete={() => setPhase('done')}
         style={{ width: '100%', height: '100%' }}
       />
     </span>

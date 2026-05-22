@@ -3,9 +3,11 @@
 import React, {
   useCallback,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { PRLiveBadge } from '@/components/ActivityIcon';
+import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Calendar,
@@ -110,7 +112,9 @@ function DayCell({
   if (cell.isPadding) {
     return <div className="min-h-[56px] lg:min-h-[96px] rounded bg-transparent" />;
   }
-  const hasAny = cell.hasLift || cell.hasCardio;
+  const hasAny  = cell.hasLift || cell.hasCardio;
+  const todayDs = toDateStr(new Date());
+  const isRest  = !hasAny && !cell.isToday && cell.dateStr < todayDs;
 
   return (
     <div
@@ -149,6 +153,13 @@ function DayCell({
           {cell.hasLift && <span className="block w-2 h-[2px] bg-[var(--accent)]" />}
           {cell.hasCardio && <span className="block w-2 h-[2px] bg-[var(--ink-1)]" />}
         </div>
+      )}
+
+      {/* Rest day indicator */}
+      {isRest && (
+        <span className="mt-auto font-mono text-[7px] font-bold tracking-[1.5px] uppercase text-[var(--ink-4)] select-none">
+          REST
+        </span>
       )}
 
       {/* TODAY marker */}
@@ -281,32 +292,81 @@ function WeekCell({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecord }) {
+  const { updateDayRecord, setActiveDayFocus } = useApp();
   const arr    = parseEx(rec.exercises ?? '');
   const lifts  = arr.filter(e => e.k === 'lift' || e.k === 'text');
   const cardio = arr.filter(e => ['swim','run','bike'].includes(e.k));
 
-  // PR detection: read from the persistent queLiftPRs record (written by WorkoutLogger).
-  // An exercise is a PR if its max weight in this session >= the stored all-time record.
+  // ── Exercise history sparkline (Feature 6) ───────────────────────────────
+  const [historyEx, setHistoryEx] = useState<string | null>(null);
+
+  // ── Inline set editing ───────────────────────────────────────────────────
+  const [editCell, setEditCell] = useState<{ arrIdx: number; setIdx: number } | null>(null);
+  const [editR,    setEditR]    = useState('');
+  const [editW,    setEditW]    = useState('');
+
+  const startEdit = (arrIdx: number, setIdx: number, r: string, w: string) => {
+    setEditCell({ arrIdx, setIdx }); setEditR(r); setEditW(w);
+  };
+
+  const commitEdit = () => {
+    if (!editCell) return;
+    const exs = parseEx(String(rec.exercises ?? ''));
+    const ex  = exs[editCell.arrIdx];
+    if (ex) {
+      const sets: Array<{ r: string; w: string }> = Array.isArray(ex.sets)
+        ? (ex.sets as Array<{ r: string; w: string }>).slice()
+        : normalizeSets(ex);
+      sets[editCell.setIdx] = { r: editR.trim() || '1', w: editW.trim() };
+      ex.sets = sets as typeof ex.sets;
+      updateDayRecord(dateStr, { exercises: JSON.stringify(exs) });
+    }
+    setEditCell(null);
+  };
+
+  // ── Swipe to change day ──────────────────────────────────────────────────
+  const touchStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const dx = touchStart.current.x - e.changedTouches[0].clientX;
+    const dy = touchStart.current.y - e.changedTouches[0].clientY;
+    if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.8) return;
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + (dx > 0 ? 1 : -1));
+    setActiveDayFocus(toDateStr(d));
+  };
+
+  // ── Groups with original array index for editing ─────────────────────────
+  const indexedGroups = useMemo(() => {
+    const g: Record<string, Array<ParsedEntry & { arrIdx: number }>> = {};
+    arr.forEach((e, arrIdx) => {
+      if (e.k !== 'lift' && e.k !== 'text') return;
+      (g[e.g ?? 'other'] ||= []).push({ ...e, arrIdx });
+    });
+    return g;
+  }, [arr]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── PR detection ─────────────────────────────────────────────────────────
   const prLiftNames = useMemo(() => {
     let prRecs: Record<string, number> = {};
     try { prRecs = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); } catch { /* noop */ }
-
     const prs = new Set<string>();
     lifts.forEach(ex => {
       if (ex.k !== 'lift' || !ex.n) return;
-      const record   = prRecs[ex.n!] ?? 0;
       const maxToday = Math.max(0, ...normalizeSets(ex).map(s => parseFloat(s.w) || 0));
-      if (maxToday > 0 && maxToday >= record) prs.add(ex.n!);
+      if (maxToday > 0 && maxToday >= (prRecs[ex.n!] ?? 0)) prs.add(ex.n!);
     });
     return prs;
   }, [lifts]);
 
-  const today = new Date();
+  const today    = new Date();
   const todayStr = toDateStr(today);
   const isToday  = dateStr === todayStr;
   const d        = new Date(dateStr + 'T00:00:00');
-  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const diffDays = Math.round((todayMid.getTime() - d.getTime()) / 86400000);
+  const diffDays = Math.round((new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - d.getTime()) / 86400000);
   const dateTag  = `(${d.getMonth() + 1}/${d.getDate()})`;
   const label    = diffDays === 0 ? `TODAY'S SESSION ${dateTag}`
     : diffDays === 1 ? `YESTERDAY'S SESSION ${dateTag}`
@@ -315,12 +375,18 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
   const isEmpty = lifts.length === 0 && cardio.length === 0;
 
   return (
-    <div className="que-card mt-4">
+    <div
+      className="que-card mt-4"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       <div className="p-5">
-        <h2 className="que-section-label mb-5">
-          <span className="dot" />
-          {label}
-        </h2>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="que-section-label"><span className="dot" />{label}</h2>
+          <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px]">
+            {isToday ? 'Swipe ← → to browse days' : '← → to browse'}
+          </p>
+        </div>
 
         {isEmpty ? (
           <div className="text-center py-10 border border-dashed border-[var(--line-2)] rounded">
@@ -330,55 +396,89 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
           </div>
         ) : (
           <div className="flex flex-col gap-6">
-            {lifts.length > 0 && (() => {
-              const groups: Record<string, ParsedEntry[]> = {};
-              lifts.forEach(e => {
-                const g = e.g ?? 'other';
-                (groups[g] ||= []).push(e);
-              });
-              return (
-                <div className="flex flex-col gap-5">
-                  {Object.entries(groups).map(([g, entries]) => (
-                    <div key={g}>
-                      <div className="flex items-center justify-between pb-2 mb-3 border-b border-[var(--line)]">
-                        <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[var(--ink-1)]">
-                          {g}
-                        </p>
-                        <p className="font-mono text-[10px] text-[var(--ink-3)]">
-                          {entries.length} EX · {entries.reduce((s, e) => s + normalizeSets(e).length, 0)} SETS
-                        </p>
-                      </div>
-                      <div className="flex flex-col gap-2.5">
-                        {entries.map((e, i) => {
-                          const sets  = normalizeSets(e);
-                          const isPR  = !!e.n && prLiftNames.has(e.n);
-                          return (
-                            <div key={i} className="flex items-center justify-between gap-3">
-                              <span className="flex items-center gap-1.5 min-w-0">
-                                <span className="text-[14px] font-semibold text-[var(--ink-0)] truncate">{e.n ?? e.k}</span>
-                                <PRLiveBadge active={isPR} size={30} />
-                              </span>
-                              <div className="flex flex-wrap gap-1 justify-end">
-                                {sets.map((s, si) => (
-                                  <span
-                                    key={si}
-                                    className="inline-flex items-center gap-1 font-mono text-[11px] bg-[var(--bg-2)] border border-[var(--line)] rounded-sm px-2 py-0.5 whitespace-nowrap"
-                                  >
-                                    <span className="text-[9px] text-[var(--ink-3)]">{si+1}</span>
-                                    <span className="text-[var(--ink-0)] font-bold">{s.r || '—'}</span>
-                                    {s.w && <span className="text-[var(--ink-2)]">@{s.w}</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+            {Object.keys(indexedGroups).length > 0 && (
+              <div className="flex flex-col gap-5">
+                {Object.entries(indexedGroups).map(([g, entries]) => (
+                  <div key={g}>
+                    <div className="flex items-center justify-between pb-2 mb-3 border-b border-[var(--line)]">
+                      <p className="font-mono text-[10px] font-bold uppercase tracking-[2px] text-[var(--ink-1)]">{g}</p>
+                      <p className="font-mono text-[10px] text-[var(--ink-3)]">
+                        {entries.length} EX · {entries.reduce((s, e) => s + normalizeSets(e).length, 0)} SETS
+                      </p>
                     </div>
-                  ))}
-                </div>
-              );
-            })()}
+                    <div className="flex flex-col gap-2.5">
+                      {entries.map((e) => {
+                        const sets = normalizeSets(e);
+                        const isPR = !!e.n && prLiftNames.has(e.n);
+                        return (
+                          <div key={e.arrIdx} className="flex flex-col gap-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => e.n && setHistoryEx(e.n)}
+                                className="text-[14px] font-semibold text-[var(--ink-0)] hover:text-[var(--accent)] transition-colors text-left"
+                                title="Tap to see history"
+                              >
+                                {e.n ?? e.k}
+                              </button>
+                              <PRLiveBadge active={isPR} size={26} />
+                            </div>
+                            {sets.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {sets.map((s, si) => {
+                                  const isEditing = editCell?.arrIdx === e.arrIdx && editCell?.setIdx === si;
+                                  return (
+                                    <span
+                                      key={si}
+                                      className={[
+                                        'inline-flex items-center gap-1 font-mono text-[11px] rounded-sm px-2 py-0.5 whitespace-nowrap transition-colors',
+                                        isEditing
+                                          ? 'bg-[var(--bg-3)] border border-[var(--accent)]'
+                                          : 'bg-[var(--bg-2)] border border-[var(--line)] cursor-pointer hover:border-[var(--accent)] active:bg-[var(--bg-3)]',
+                                      ].join(' ')}
+                                      onClick={() => !isEditing && startEdit(e.arrIdx, si, String(s.r || '1'), s.w || '')}
+                                    >
+                                      {isEditing ? (
+                                        <>
+                                          <input
+                                            autoFocus
+                                            type="text" inputMode="numeric"
+                                            value={editR}
+                                            onChange={ev => setEditR(ev.target.value)}
+                                            onBlur={commitEdit}
+                                            onKeyDown={ev => { if (ev.key === 'Enter') commitEdit(); if (ev.key === 'Escape') setEditCell(null); }}
+                                            className="w-7 text-center bg-transparent text-[var(--ink-0)] font-bold outline-none"
+                                          />
+                                          <span className="text-[9px] text-[var(--ink-3)]">@</span>
+                                          <input
+                                            type="text" inputMode="decimal"
+                                            value={editW}
+                                            onChange={ev => setEditW(ev.target.value)}
+                                            onBlur={commitEdit}
+                                            onKeyDown={ev => { if (ev.key === 'Enter') commitEdit(); if (ev.key === 'Escape') setEditCell(null); }}
+                                            className="w-14 text-center bg-transparent text-[var(--ink-2)] outline-none"
+                                          />
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span className="text-[9px] text-[var(--ink-3)]">{si+1}</span>
+                                          <span className="text-[var(--ink-0)] font-bold">{s.r || '—'}</span>
+                                          {s.w && <span className="text-[var(--ink-2)]">@{s.w}</span>}
+                                        </>
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {cardio.length > 0 && (
               <div>
@@ -408,6 +508,12 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
           </div>
         )}
       </div>
+
+      <ExerciseHistoryModal
+        name={historyEx}
+        open={historyEx !== null}
+        onClose={() => setHistoryEx(null)}
+      />
     </div>
   );
 }

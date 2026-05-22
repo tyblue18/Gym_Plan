@@ -124,8 +124,15 @@ export function getSyncStatus(): SyncStatus { return _status; }
 // INTERNAL
 // ─────────────────────────────────────────────────────────────────────────────
 
+function dispatch(status: SyncStatus) {
+  _status = status;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('que-sync', { detail: status }));
+  }
+}
+
 async function _push(payload: SyncPayload): Promise<void> {
-  _status = 'syncing';
+  dispatch('syncing');
   try {
     const res = await fetch('/api/sync', {
       method:      'POST',
@@ -133,8 +140,8 @@ async function _push(payload: SyncPayload): Promise<void> {
       headers:     { 'Content-Type': 'application/json' },
       body:        JSON.stringify(payload),
     });
-    _status = res.ok ? 'ok' : 'error';
+    dispatch(res.ok ? 'ok' : 'error');
   } catch {
-    _status = 'error';
+    dispatch('error');
   }
 }
