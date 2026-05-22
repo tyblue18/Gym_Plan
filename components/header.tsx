@@ -14,8 +14,19 @@ import {
   ACCENT_SWATCHES, BG_PRESETS,
   type BgPreset,
 } from '@/lib/colorScheme';
+import { pushNow } from '@/lib/syncEngine';
 
 const PHOTO_KEY = 'queProfilePhoto';
+const PLAN_KEY  = 'queAthletePlan';
+
+interface PlanData {
+  type: string; intensity: string; dailyKcal: number;
+  startDate: string; startWeight: number; goalWeight: number; weeksTarget: number;
+}
+function loadPlanData(): PlanData | null {
+  try { const r = localStorage.getItem(PLAN_KEY); return r ? JSON.parse(r) as PlanData : null; }
+  catch { return null; }
+}
 
 function compressPhoto(file: File): Promise<string> {
   return new Promise(resolve => {
@@ -83,10 +94,14 @@ function UserPill({ image, name, email }: UserPillProps) {
   const displayName = name ?? email ?? 'Athlete';
   const [localPhoto, setLocalPhoto]   = useState<string | null>(null);
   const [open, setOpen]               = useState(false);
-  const [view, setView]               = useState<'menu' | 'scheme'>('menu');
+  const [view, setView]               = useState<'menu' | 'scheme' | 'start'>('menu');
   const [accentHex, setAccentHex]     = useState('#4FC3F7');
   const [bgLabel, setBgLabel]         = useState('Charcoal');
-  const pillRef     = useRef<HTMLDivElement>(null);
+  const [plan,      setPlan]          = useState<PlanData | null>(null);
+  const [editWeight, setEditWeight]   = useState('');
+  const [editDate,   setEditDate]     = useState('');
+  const [startSaved, setStartSaved]   = useState(false);
+  const pillRef      = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -107,7 +122,10 @@ function UserPill({ image, name, email }: UserPillProps) {
   }, []);
 
   useEffect(() => {
-    if (!open) setView('menu');
+    if (!open) { setView('menu'); setStartSaved(false); return; }
+    const p = loadPlanData();
+    setPlan(p);
+    if (p) { setEditWeight(String(p.startWeight)); setEditDate(p.startDate); }
   }, [open]);
 
   useEffect(() => {
@@ -144,6 +162,19 @@ function UserPill({ image, name, email }: UserPillProps) {
     localStorage.setItem(BG_KEY, preset.label);
   }, []);
 
+  const handleSavePlanStart = useCallback(() => {
+    const current = loadPlanData();
+    if (!current) return;
+    const w = parseFloat(editWeight);
+    if (!editWeight || isNaN(w) || !editDate) return;
+    const updated = { ...current, startWeight: w, startDate: editDate };
+    localStorage.setItem(PLAN_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
+    setPlan(updated);
+    setStartSaved(true);
+    pushNow({});
+  }, [editWeight, editDate]);
+
   const avatarSrc = localPhoto ?? image;
 
   return (
@@ -171,7 +202,7 @@ function UserPill({ image, name, email }: UserPillProps) {
       </button>
 
       {open && (
-        <div className={`auth-dropdown${view === 'scheme' ? ' auth-dropdown--wide' : ''}`} role="menu">
+        <div className={`auth-dropdown${view !== 'menu' ? ' auth-dropdown--wide' : ''}`} role="menu">
 
           {view === 'menu' ? (
             <>
@@ -193,6 +224,16 @@ function UserPill({ image, name, email }: UserPillProps) {
                 Color scheme
               </button>
 
+              {plan && (
+                <button type="button" role="menuitem" className="auth-dropdown-item"
+                  onClick={() => setView('start')}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  Fix plan start
+                </button>
+              )}
+
               <div className="auth-dropdown-divider" />
 
               <button type="button" role="menuitem" className="auth-dropdown-item auth-dropdown-item--danger"
@@ -203,6 +244,67 @@ function UserPill({ image, name, email }: UserPillProps) {
                 </svg>
                 Sign out
               </button>
+            </>
+          ) : view === 'start' ? (
+            <>
+              <button type="button" className="auth-scheme-back" onClick={() => { setView('menu'); setStartSaved(false); }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Fix plan start
+              </button>
+
+              <div className="auth-dropdown-divider" />
+
+              <div className="px-3 py-2.5 space-y-3">
+                {/* Warning */}
+                <div className="rounded border border-[var(--warn)]/40 bg-[var(--warn)]/8 px-2.5 py-2">
+                  <p className="font-mono text-[9px] text-[var(--warn)] leading-relaxed tracking-[0.3px]">
+                    Only use if your original start date or weight was entered incorrectly. Overwrites the plan baseline and resets progress calculations.
+                  </p>
+                </div>
+
+                {/* Start weight */}
+                <div>
+                  <label className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] block mb-1">
+                    Start weight / lbs
+                  </label>
+                  <input
+                    type="number" inputMode="decimal"
+                    value={editWeight}
+                    onChange={e => setEditWeight(e.target.value)}
+                    className="w-full bg-[var(--bg-3)] border border-[var(--line-2)] rounded-sm px-2.5 py-1.5 font-mono text-[11px] text-[var(--ink-0)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+                  />
+                </div>
+
+                {/* Start date */}
+                <div>
+                  <label className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] block mb-1">
+                    Start date
+                  </label>
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={e => setEditDate(e.target.value)}
+                    className="w-full bg-[var(--bg-3)] border border-[var(--line-2)] rounded-sm px-2.5 py-1.5 font-mono text-[11px] text-[var(--ink-0)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+                  />
+                </div>
+
+                {startSaved ? (
+                  <p className="font-mono text-[9px] text-[var(--positive)] tracking-[0.5px] text-center py-1">
+                    ✓ Plan start updated
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSavePlanStart}
+                    disabled={!editWeight || !editDate}
+                    className="w-full font-mono text-[10px] font-bold tracking-[1px] uppercase py-2 rounded-sm border border-[var(--warn)]/60 text-[var(--warn)] hover:bg-[var(--warn)]/10 transition-all disabled:opacity-40"
+                  >
+                    Update plan start
+                  </button>
+                )}
+              </div>
             </>
           ) : (
             <>

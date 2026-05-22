@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, BarChart2, Layers } from 'lucide-react';
-import { AuthHeader } from '@/components/header';
+import { AuthHeader }    from '@/components/header';
 import CalendarScheduler from '@/components/CalendarScheduler';
-import MetricsDashboard from '@/components/MetricsDashboard';
-import WorkoutLogger from '@/components/WorkoutLogger';
+import MetricsDashboard  from '@/components/MetricsDashboard';
+import WorkoutLogger     from '@/components/WorkoutLogger';
+import { Onboarding, needsOnboarding } from '@/components/Onboarding';
+import { useApp } from '@/lib/AppContext';
 
 type Tab = 'calendar' | 'metrics' | 'protocol';
 
@@ -16,7 +18,15 @@ const TABS = [
 ] as const;
 
 export default function WorkoutPage() {
-  const [tab, setTab] = useState<Tab>('calendar');
+  const [tab, setTab]                   = useState<Tab>('calendar');
+  const [showOnboarding, setOnboarding] = useState(false);
+  const { isLoaded }                    = useApp();
+
+  // Only check after localStorage has been hydrated
+  useEffect(() => {
+    if (!isLoaded) return;
+    setOnboarding(needsOnboarding());
+  }, [isLoaded]);
 
   return (
     <div className="app-shell">
@@ -52,6 +62,10 @@ export default function WorkoutPage() {
           </button>
         ))}
       </nav>
+
+      {showOnboarding && (
+        <Onboarding onComplete={() => setOnboarding(false)} />
+      )}
     </div>
   );
 }

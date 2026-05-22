@@ -13,10 +13,13 @@ import {
 } from 'lucide-react';
 import {
   useApp, MONTHS,
-  type DayRecord, type UserProfile,
+  type DayRecord, type LocalDB, type UserProfile,
 } from '@/lib/AppContext';
 import { ActivityIcon } from '@/components/ActivityIcon';
 import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
+import Lottie from 'lottie-react';
+import prData         from '@/public/PR_animation.json';
+import celebrateData  from '@/public/Celebrate_animation.json';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -348,10 +351,36 @@ function ProfilePanel({ profile, onChange, onOpenPlan }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PR BADGE — plays the trophy animation once when a personal record is set
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PRBadge({ size = 44 }: { size?: number }) {
+  return (
+    <div
+      style={{ width: size, height: size, flexShrink: 0, pointerEvents: 'none' }}
+      title="Personal Record!"
+    >
+      <Lottie
+        animationData={prData}
+        loop={false}
+        autoplay={true}
+        style={{ width: '100%', height: '100%' }}
+      />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — CalorieBudgetCard
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CalorieBudgetCard({ m }: { m: BudgetMetrics }) {
+interface PRFlags { prRun: boolean; prBike: boolean; prSwim: boolean; prLift: boolean; }
+
+function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
+  m: BudgetMetrics;
+  onOpenProgress?: () => void;
+  prFlags?: PRFlags;
+}) {
   const spotlight = useSpotlightBorder({ color: '79,195,247', size: 280, opacity: 0.55 });
 
   const tiles = [
@@ -486,7 +515,12 @@ function CalorieBudgetCard({ m }: { m: BudgetMetrics }) {
                     {t.label}
                   </p>
                   {!t.dim && (
-                    <ActivityIcon kind={t.key as 'run' | 'bike' | 'swim'} active={lit} size={28} />
+                    <div className="flex items-center gap-1">
+                      {prFlags?.[`pr${t.key.charAt(0).toUpperCase()}${t.key.slice(1)}` as keyof PRFlags] && (
+                        <PRBadge size={36} />
+                      )}
+                      <ActivityIcon kind={t.key as 'run' | 'bike' | 'swim'} active={lit} size={28} />
+                    </div>
                   )}
                 </div>
                 <p
@@ -522,20 +556,30 @@ function CalorieBudgetCard({ m }: { m: BudgetMetrics }) {
           const planBorder   = plan.type === 'cut' ? 'var(--accent)' : 'var(--positive)';
           const intensityLbl = plan.intensity ? INTENSITY_LABELS[plan.type][plan.intensity] : plan.type.toUpperCase();
           return (
-            <div className="mt-4 rounded border p-4" style={{ borderColor: planBorder, background: planBg }}>
+            <button
+              type="button"
+              onClick={onOpenProgress}
+              className="mt-4 w-full rounded border p-4 text-left transition-all hover:brightness-110 active:scale-[0.99]"
+              style={{ borderColor: planBorder, background: planBg }}
+            >
               <div className="flex items-center justify-between mb-3">
                 <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] uppercase">Active Plan</p>
-                <span className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase px-2 py-0.5 rounded-sm"
-                  style={{ color: planAccent, border: `1px solid ${planAccent}` }}>
-                  {intensityLbl} · {fmt(plan.dailyKcal)} kcal
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase px-2 py-0.5 rounded-sm"
+                    style={{ color: planAccent, border: `1px solid ${planAccent}` }}>
+                    {intensityLbl} · {fmt(plan.dailyKcal)} kcal
+                  </span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: planAccent, opacity: 0.7 }} aria-hidden>
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </div>
               </div>
               <div className="grid grid-cols-4 gap-2">
                 {[
-                  { label: 'Week',    value: `${Math.ceil(weeksSince)}/${plan.weeksTarget}`, color: 'var(--ink-0)' },
-                  { label: 'Proj Now', value: `${projNow.toFixed(1)} lb`,                   color: planAccent      },
-                  { label: 'Goal',    value: `${plan.goalWeight.toFixed(1)} lb`,             color: planAccent      },
-                  { label: 'Left',    value: `${Math.ceil(weeksLeft)} wks`,                  color: 'var(--ink-0)' },
+                  { label: 'Week',     value: `${Math.ceil(weeksSince)}/${plan.weeksTarget}`, color: 'var(--ink-0)' },
+                  { label: 'Proj Now', value: `${projNow.toFixed(1)} lb`,                    color: planAccent      },
+                  { label: 'Goal',     value: `${plan.goalWeight.toFixed(1)} lb`,             color: planAccent      },
+                  { label: 'Left',     value: `${Math.ceil(weeksLeft)} wks`,                  color: 'var(--ink-0)' },
                 ].map(s => (
                   <div key={s.label}>
                     <p className="font-mono text-[8px] font-bold tracking-[1px] text-[var(--ink-3)] uppercase mb-1">{s.label}</p>
@@ -543,7 +587,7 @@ function CalorieBudgetCard({ m }: { m: BudgetMetrics }) {
                   </div>
                 ))}
               </div>
-            </div>
+            </button>
           );
         })()}
       </div>
@@ -1065,6 +1109,526 @@ function drawPlanChart(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PROGRESS CHART — projected "perfect" line + actual logged weight dots
+// ─────────────────────────────────────────────────────────────────────────────
+
+function drawProgressChart(
+  canvas: HTMLCanvasElement,
+  plan: AthletePlan,
+  chartPts: { week: number; weight: number }[],
+  currentWeek: number,
+  firstLoggedWeight?: number,
+) {
+  const dpr = window.devicePixelRatio || 1;
+  const W   = canvas.offsetWidth || 600;
+  const H   = 200;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d'); if (!ctx) return;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  const totalWks  = plan.weeksTarget;
+  const startWt   = firstLoggedWeight ?? plan.startWeight;
+  const goalWt    = plan.goalWeight;
+  const ratePerWk = (goalWt - startWt) / totalWks;
+  const projPts   = Array.from({ length: totalWks + 1 }, (_, i) => startWt + ratePerWk * i);
+
+  // Y range — anchored to the plan's weight range so data outliers can't distort the axis.
+  // Actual entries may push the range by at most 3 lbs beyond the plan bounds.
+  const planLo  = Math.min(startWt, goalWt);
+  const planHi  = Math.max(startWt, goalWt);
+  const buf     = Math.max((planHi - planLo) * 0.14, 5);
+  const dataLo  = chartPts.length ? Math.min(...chartPts.map(p => p.weight)) : planLo;
+  const dataHi  = chartPts.length ? Math.max(...chartPts.map(p => p.weight)) : planHi;
+  const yMin    = Math.min(planLo - buf, dataLo - 1);
+  const yMax    = Math.max(planHi + buf, dataHi + 1);
+  const yR      = yMax - yMin;
+
+  const PAD = { t: 28, r: 20, b: 32, l: 48 };
+  const cW  = W - PAD.l - PAD.r;
+  const cH  = H - PAD.t - PAD.b;
+
+  // Only map weeks in [0, totalWks] — negative weeks are excluded from chartPts already
+  const xOf = (wk: number) => PAD.l + (Math.min(Math.max(wk, 0), totalWks) / totalWks) * cW;
+  const yOf = (v: number)  => PAD.t + (1 - (v - yMin) / yR) * cH;
+
+  // Horizontal grid
+  for (let i = 0; i <= 4; i++) {
+    const y = PAD.t + (i / 4) * cH;
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + cW, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(158,161,168,0.65)'; ctx.font = '9px JetBrains Mono, monospace'; ctx.textAlign = 'right';
+    ctx.fillText(Math.round(yMax - (i / 4) * yR) + '', PAD.l - 5, y + 3);
+  }
+
+  // Week labels
+  const stepW = Math.max(1, Math.ceil(totalWks / 6));
+  ctx.fillStyle = 'rgba(158,161,168,0.65)'; ctx.textAlign = 'center'; ctx.font = '9px JetBrains Mono, monospace';
+  for (let w = 0; w <= totalWks; w += stepW) ctx.fillText(`W${w}`, xOf(w), H - PAD.b + 14);
+
+  // Goal dashed line
+  ctx.strokeStyle = 'rgba(109,255,153,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(PAD.l, yOf(goalWt)); ctx.lineTo(PAD.l + cW, yOf(goalWt)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(109,255,153,0.7)'; ctx.textAlign = 'right'; ctx.font = '9px JetBrains Mono, monospace';
+  ctx.fillText('GOAL', PAD.l - 5, yOf(goalWt) + 3);
+
+  // TODAY vertical line
+  if (currentWeek >= 0 && currentWeek < totalWks) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+    ctx.beginPath(); ctx.moveTo(xOf(currentWeek), PAD.t); ctx.lineTo(xOf(currentWeek), PAD.t + cH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.textAlign = 'center'; ctx.font = '8px JetBrains Mono, monospace';
+    ctx.fillText('NOW', xOf(currentWeek), PAD.t - 6);
+  }
+
+  // Projected fill + dashed line
+  const grad = ctx.createLinearGradient(0, PAD.t, 0, PAD.t + cH);
+  grad.addColorStop(0, 'rgba(79,195,247,0.10)'); grad.addColorStop(1, 'rgba(79,195,247,0)');
+  ctx.beginPath(); ctx.fillStyle = grad;
+  projPts.forEach((v, i) => i === 0 ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)));
+  ctx.lineTo(xOf(totalWks), PAD.t + cH); ctx.lineTo(xOf(0), PAD.t + cH); ctx.closePath(); ctx.fill();
+
+  ctx.beginPath(); ctx.strokeStyle = 'rgba(79,195,247,0.45)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]);
+  projPts.forEach((v, i) => i === 0 ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)));
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // Actual trend line — draw from first to last entry only (avoids zigzag from fluctuation)
+  if (chartPts.length >= 2) {
+    const first  = chartPts[0];
+    const latest = chartPts[chartPts.length - 1];
+    const projAtLatest = startWt + ratePerWk * latest.week;
+    const isAhead = plan.type === 'cut' ? latest.weight <= projAtLatest : latest.weight >= projAtLatest;
+    ctx.beginPath(); ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    ctx.strokeStyle = isAhead ? 'rgba(109,255,153,0.6)' : 'rgba(255,77,94,0.6)';
+    ctx.moveTo(xOf(first.week), yOf(first.weight));
+    ctx.lineTo(xOf(latest.week), yOf(latest.weight));
+    ctx.stroke();
+  }
+
+  // START dot — only if no actual entry is sitting on top of it (week ≤ 0.2)
+  const firstEntryAtStart = chartPts.length > 0 && chartPts[0].week <= 0.2;
+  if (!firstEntryAtStart) {
+    ctx.beginPath(); ctx.arc(xOf(0), yOf(startWt), 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(79,195,247,0.8)'; ctx.fill();
+    ctx.fillStyle = 'rgba(158,161,168,0.75)'; ctx.textAlign = 'left'; ctx.font = '9px JetBrains Mono, monospace';
+    ctx.fillText('START', xOf(0) + 7, yOf(startWt) - 5);
+  }
+
+  // Actual data dots + highlighted current dot
+  chartPts.forEach((p, i) => {
+    const isLatest  = i === chartPts.length - 1;
+    const projAtWk  = startWt + ratePerWk * p.week;
+    const isEntryAhead = plan.type === 'cut' ? p.weight <= projAtWk : p.weight >= projAtWk;
+    const col       = isEntryAhead ? '#6DFF99' : '#FF4D5E';
+    const x = xOf(p.week), y = yOf(p.weight);
+
+    if (isLatest) {
+      ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fillStyle = col + '18'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, 9,  0, Math.PI * 2); ctx.fillStyle = col + '35'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, 6,  0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, 3,  0, Math.PI * 2); ctx.fillStyle = '#07080A'; ctx.fill();
+      ctx.fillStyle = col; ctx.font = 'bold 10px JetBrains Mono, monospace'; ctx.textAlign = 'left';
+      ctx.fillText(`${p.weight.toFixed(1)} lb`, x + 10, y + 4);
+    } else {
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fillStyle = '#07080A'; ctx.fill();
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENT — CelebrationModal
+// Shown when the user logs today's weight + calories and hits their budget.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CelebrationModal({ open, onClose, localDB, calsEaten, budget }: {
+  open: boolean; onClose: () => void;
+  localDB: LocalDB; calsEaten: number; budget: number;
+}) {
+  const plan   = open ? loadPlan() : null;
+  const sign   = (n: number) => n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1);
+
+  // Compact plan progress stats
+  const { latestWeight, actualChange, weeksSince, status } = useMemo(() => {
+    if (!plan) return { latestWeight: null, actualChange: null, weeksSince: 0, status: 'no-data' };
+    const entries = (Object.entries(localDB) as [string, DayRecord][])
+      .filter(([, r]) => parseNum(String(r.weight ?? '0')) > 0)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, r]) => parseNum(String(r.weight)));
+    const latest = entries.length > 0 ? entries[entries.length - 1] : null;
+    const wks    = Math.max(0, (Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / (7 * 86400000));
+    const rate   = plan.type === 'cut' ? -(plan.dailyKcal * 7 / 3500) : (plan.dailyKcal * 7 / 3500);
+    const exp    = rate * wks;
+    const act    = latest !== null ? latest - plan.startWeight : null;
+    let   st     = 'no-data';
+    if (act !== null && wks >= 0.5 && Math.abs(exp) > 0.05) {
+      const thr = Math.abs(exp) * 0.2, d = act - exp;
+      st = plan.type === 'cut' ? (d < -thr ? 'ahead' : d > thr ? 'behind' : 'on-track')
+                                : (d > thr  ? 'ahead' : d < -thr ? 'behind' : 'on-track');
+    } else if (act !== null) { st = 'on-track'; }
+    return { latestWeight: latest, actualChange: act, weeksSince: wks, status: st };
+  }, [plan, localDB, open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const statusLabel = { ahead: 'Ahead of pace', 'on-track': 'On track', behind: 'Behind pace', 'no-data': '' }[status] ?? '';
+  const statusColor = { ahead: 'var(--positive)', 'on-track': 'var(--accent)', behind: 'var(--warn)', 'no-data': 'var(--ink-3)' }[status] ?? 'var(--ink-3)';
+  const deficit = budget - calsEaten;
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[400] flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
+          style={{ background: 'rgba(7,8,10,0.90)' }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        >
+          <motion.div
+            className="w-full md:max-w-[420px] rounded-t-lg md:rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] overflow-hidden"
+            initial={{ opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 48 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--positive), 0 40px 80px rgba(0,0,0,0.6)' }}
+          >
+            {/* Confetti animation */}
+            <div className="relative flex justify-center items-center pt-2 pb-0 bg-[var(--bg-2)]">
+              <Lottie
+                animationData={celebrateData}
+                loop={false}
+                autoplay={true}
+                style={{ width: 180, height: 180 }}
+              />
+              <button onClick={onClose}
+                className="absolute top-3 right-3 text-[var(--ink-2)] hover:text-[var(--ink-0)] transition-colors p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 pb-5 space-y-4">
+              {/* Headline */}
+              <div className="text-center">
+                <h3 className="font-display text-[26px] tracking-[2px] uppercase text-[var(--positive)] leading-tight">
+                  Goal hit!
+                </h3>
+                <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] mt-1">
+                  {fmt(calsEaten)} / {fmt(budget)} kcal · {deficit >= 0 ? `${fmt(deficit)} kcal under` : `${fmt(-deficit)} kcal over`}
+                </p>
+              </div>
+
+              {/* Plan progress summary (only if a plan exists) */}
+              {plan && (
+                <div className="rounded border border-[var(--positive)]/30 bg-[var(--positive)]/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] uppercase">Plan progress</p>
+                    <span className="font-mono text-[9px] font-bold tracking-[1px] uppercase" style={{ color: statusColor }}>
+                      {statusLabel}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Start',   value: `${plan.startWeight.toFixed(1)} lb` },
+                      { label: 'Current', value: latestWeight ? `${latestWeight.toFixed(1)} lb` : '—' },
+                      { label: 'Change',  value: actualChange !== null ? `${sign(actualChange)} lb` : '—', accent: true },
+                    ].map(t => (
+                      <div key={t.label} className="text-center">
+                        <p className="font-mono text-[8px] text-[var(--ink-3)] uppercase tracking-[1px] mb-0.5">{t.label}</p>
+                        <p className="font-mono text-[11px] font-bold" style={{ color: t.accent ? statusColor : 'var(--ink-0)' }}>{t.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Week progress bar */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">
+                        Week {Math.ceil(weeksSince)} of {plan.weeksTarget}
+                      </p>
+                      <p className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">
+                        {Math.round((weeksSince / plan.weeksTarget) * 100)}%
+                      </p>
+                    </div>
+                    <div className="h-1.5 bg-[var(--bg-3)] rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{ background: statusColor }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(100, (weeksSince / plan.weeksTarget) * 100)}%` }}
+                        transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="que-btn-primary w-full py-3"
+              >
+                Keep it up!
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENT — PlanProgressModal
+// Shows actual weight progress vs plan projection, skipping unlogged days.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PlanProgressModal({ open, onClose, localDB }: {
+  open: boolean;
+  onClose: () => void;
+  localDB: LocalDB;
+}) {
+  const [planVersion, setPlanVersion] = useState(0);
+  const plan      = open ? loadPlan() : null;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Re-read the plan whenever localStorage is updated externally (e.g. "Fix plan start")
+  useEffect(() => {
+    if (!open) return;
+    const handler = () => setPlanVersion(v => v + 1);
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [open]);
+
+  const {
+    weightEntries, chartPts, weeksSince, planWeeklyRate,
+    expectedChange, firstWeight, actualChange, actualWeeklyRate, status,
+    projectedTotalWeeks,
+  } = useMemo(() => {
+    if (!plan) return {
+      weightEntries: [], chartPts: [], weeksSince: 0, planWeeklyRate: 0,
+      expectedChange: 0, firstWeight: 0, actualChange: null, actualWeeklyRate: null,
+      status: 'no-data' as const, projectedTotalWeeks: null,
+    };
+
+    const entries = (Object.entries(localDB) as [string, DayRecord][])
+      .filter(([, rec]) => parseNum(String(rec.weight ?? '0')) > 0)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([ds, rec]) => ({ date: ds, weight: parseNum(String(rec.weight)) }));
+
+    const msElapsed   = Date.now() - new Date(plan.startDate + 'T00:00:00').getTime();
+    const totalDays   = Math.max(0, Math.floor(msElapsed / 86400000));
+    const wks         = Math.max(0, msElapsed / (7 * 86400000));
+
+    // Chart points: entries mapped to week offsets from plan.startDate
+    const planStartMs = new Date(plan.startDate + 'T00:00:00').getTime();
+    const cPts = entries.map(e => ({
+      ...e,
+      week: (new Date(e.date + 'T00:00:00').getTime() - planStartMs) / (7 * 86400000),
+    })).filter(p => p.week >= 0);
+
+    const rate        = plan.type === 'cut'
+      ? -(plan.dailyKcal * 7 / 3500)
+      :  (plan.dailyKcal * 7 / 3500);
+    const expChange   = rate * wks;
+
+    // plan.startWeight is the authoritative baseline — editable via "Fix plan start"
+    const firstWeight = plan.startWeight;
+    const latest      = entries.length > 0 ? entries[entries.length - 1] : null;
+    const actChange   = latest ? latest.weight - firstWeight : null;
+
+    let actRate: number | null = null;
+    if (entries.length >= 2 && latest) {
+      const first = entries[0];
+      const span  = (new Date(latest.date + 'T00:00:00').getTime() - new Date(first.date + 'T00:00:00').getTime()) / 86400000;
+      if (span >= 4) actRate = ((latest.weight - first.weight) / span) * 7;
+    }
+
+    let st: 'ahead' | 'on-track' | 'behind' | 'no-data' = 'no-data';
+    if (actChange !== null && totalDays >= 3 && Math.abs(expChange) > 0.05) {
+      const thr = Math.abs(expChange) * 0.2, delta = actChange - expChange;
+      if (plan.type === 'cut') st = delta < -thr ? 'ahead' : delta > thr ? 'behind' : 'on-track';
+      else                     st = delta > thr  ? 'ahead' : delta < -thr ? 'behind' : 'on-track';
+    } else if (actChange !== null) { st = 'on-track'; }
+
+    let projWks: number | null = null;
+    if (actRate !== null && Math.abs(actRate) > 0.01) {
+      projWks = Math.max(0, wks + (plan.goalWeight - (latest?.weight ?? plan.startWeight)) / actRate);
+    }
+
+    return {
+      weightEntries: entries, chartPts: cPts, weeksSince: wks,
+      planWeeklyRate: rate, expectedChange: expChange,
+      firstWeight,
+      actualChange: actChange, actualWeeklyRate: actRate,
+      status: st, projectedTotalWeeks: projWks,
+    };
+  }, [plan, localDB, open, planVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Draw chart whenever data or visibility changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !open || !plan) return;
+    drawProgressChart(canvas, plan, chartPts, weeksSince, firstWeight || undefined);
+  }, [open, plan, chartPts, weeksSince, firstWeight]);
+
+  const latest = weightEntries[weightEntries.length - 1];
+
+  const statusCfg = {
+    ahead:      { label: 'AHEAD OF PACE',       color: 'var(--positive)' },
+    'on-track': { label: 'ON TRACK',             color: 'var(--accent)'   },
+    behind:     { label: 'BEHIND PACE',          color: 'var(--warn)'     },
+    'no-data':  { label: 'LOG WEIGHT TO TRACK',  color: 'var(--ink-3)'    },
+  }[status];
+
+  const sign = (n: number) => n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[300] flex items-end md:items-center justify-center backdrop-blur-sm px-3 md:px-0"
+          style={{ background: 'rgba(7,8,10,0.88)' }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        >
+          <motion.div
+            className="w-full md:max-w-[560px] max-h-[88dvh] flex flex-col rounded-t-lg md:rounded-lg border border-[var(--line-2)] bg-[var(--bg-1)] overflow-hidden"
+            initial={{ opacity: 0, y: 48 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 48 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[var(--line)] flex-shrink-0">
+              <div>
+                <h3 className="font-display text-[20px] tracking-[2px] uppercase text-[var(--ink-0)]">Plan Progress</h3>
+                {plan && (
+                  <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[1px] mt-0.5">
+                    {plan.type.toUpperCase()} · {INTENSITY_LABELS[plan.type][plan.intensity]} · week {Math.ceil(weeksSince)} of {plan.weeksTarget}
+                  </p>
+                )}
+              </div>
+              <button onClick={onClose} className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors p-1">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto overscroll-contain flex-1 p-4 md:p-5 space-y-4">
+
+              {/* Status banner */}
+              <div className="rounded border px-4 py-2.5 text-center"
+                style={{ borderColor: statusCfg.color, background: `${statusCfg.color}12` }}>
+                <span className="font-mono text-[10px] font-bold tracking-[2px] uppercase" style={{ color: statusCfg.color }}>
+                  {statusCfg.label}
+                </span>
+              </div>
+
+              {/* 4 stat tiles */}
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { label: 'Start',    value: plan!.startWeight.toFixed(1), unit: 'lb' },
+                  { label: 'Latest',   value: latest ? latest.weight.toFixed(1) : '—', unit: latest ? 'lb' : '' },
+                  { label: 'Change',   value: actualChange !== null ? sign(actualChange) : '—', unit: actualChange !== null ? 'lb' : '', accent: true },
+                  { label: 'Expected', value: sign(expectedChange), unit: 'lb', dim: true },
+                ].map(t => (
+                  <div key={t.label} className="rounded border border-[var(--line)] bg-[var(--bg-2)] p-2.5">
+                    <p className="font-mono text-[8px] font-bold tracking-[1px] text-[var(--ink-3)] uppercase mb-1">{t.label}</p>
+                    <p className="font-display text-[16px] leading-none"
+                      style={{ color: t.dim ? 'var(--ink-3)' : t.accent ? 'var(--accent)' : 'var(--ink-0)' }}>{t.value}</p>
+                    {t.unit && <p className="font-mono text-[8px] text-[var(--ink-3)] mt-0.5">{t.unit}</p>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Progress chart */}
+              <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] p-3">
+                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-6 h-px border-t border-dashed" style={{ borderColor: 'rgba(79,195,247,0.5)' }} />
+                    <span className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">Perfect pace</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[var(--positive)]" />
+                    <span className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">Ahead</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[var(--danger)]" />
+                    <span className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">Behind</span>
+                  </div>
+                </div>
+                {chartPts.length === 0 ? (
+                  <div className="h-[160px] flex items-center justify-center">
+                    <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">Log weight to see chart</p>
+                  </div>
+                ) : (
+                  <canvas ref={canvasRef} className="block w-full h-[200px]" />
+                )}
+              </div>
+
+              {/* Pace analysis */}
+              {actualWeeklyRate !== null && (
+                <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] divide-y divide-[var(--line)]">
+                  {[
+                    { label: 'Actual pace', value: `${sign(actualWeeklyRate)} lb / wk`, color: status === 'ahead' ? 'var(--positive)' : status === 'behind' ? 'var(--warn)' : 'var(--ink-0)' },
+                    { label: 'Plan rate',   value: `${sign(planWeeklyRate)} lb / wk`,   color: 'var(--ink-3)' },
+                    ...(projectedTotalWeeks !== null ? [{ label: 'At this pace', value: `~${Math.ceil(projectedTotalWeeks)} wks total`, color: 'var(--ink-1)' }] : []),
+                  ].map(r => (
+                    <div key={r.label} className="flex justify-between items-center px-3 py-2.5">
+                      <span className="font-mono text-[10px] text-[var(--ink-3)] tracking-[0.5px]">{r.label}</span>
+                      <span className="font-mono text-[11px] font-bold tracking-[0.5px]" style={{ color: r.color }}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Recent weigh-ins */}
+              {weightEntries.length > 0 && (
+                <div>
+                  <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] uppercase mb-2">Recent Weigh-ins</p>
+                  <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] divide-y divide-[var(--line)]">
+                    {[...weightEntries].reverse().slice(0, 6).map((e, i, arr) => {
+                      const prev   = arr[i + 1];
+                      const delta  = prev ? e.weight - prev.weight : e.weight - plan!.startWeight;
+                      const isGood = plan!.type === 'cut' ? delta <= 0 : delta >= 0;
+                      return (
+                        <div key={e.date} className="flex items-center justify-between px-3 py-2">
+                          <span className="font-mono text-[10px] text-[var(--ink-2)]">{fmtDateLong(e.date)}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono text-[10px] font-bold text-[var(--ink-1)]">{e.weight.toFixed(1)} lb</span>
+                            <span className="font-mono text-[9px] font-bold w-14 text-right"
+                              style={{ color: delta === 0 ? 'var(--ink-3)' : isGood ? 'var(--positive)' : 'var(--danger)' }}>
+                              {delta === 0 ? '—' : `${sign(delta)} lb`}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="font-mono text-[8px] text-[var(--ink-3)] mt-1.5 tracking-[0.5px]">
+                    Delta shown vs previous entry · missing days excluded
+                  </p>
+                </div>
+              )}
+
+              {weightEntries.length === 0 && (
+                <div className="rounded border border-dashed border-[var(--line-2)] py-8 text-center">
+                  <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">
+                    No weight logged since plan started
+                  </p>
+                  <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[0.5px]">
+                    Log weight in Today&apos;s Log to track progress
+                  </p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — PlanModal
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1533,8 +2097,10 @@ export default function MetricsDashboard() {
   } = useApp();
 
   const [profileOpen,  setProfileOpen]  = useState(false);
-  const [projVisible,  setProjVisible]  = useState(false);
-  const [planOpen,     setPlanOpen]     = useState(false);
+  const [projVisible,      setProjVisible]      = useState(false);
+  const [planOpen,         setPlanOpen]         = useState(false);
+  const [progressOpen,     setProgressOpen]     = useState(false);
+  const [celebrateVisible, setCelebrateVisible] = useState(false);
   const [cardio, setCardio]             = useState<CardioFields>(EMPTY_CARDIO);
   const [todayWeight, setTodayWeightRaw] = useState('');
   const [todayCals,   setTodayCalsRaw]   = useState('');
@@ -1575,16 +2141,106 @@ export default function MetricsDashboard() {
 
   const handleCalsChange = useCallback((val: string) => {
     setTodayCalsRaw(val);
-    updateDayRecord(todayStr, { calsEaten: val });
-  }, [todayStr, updateDayRecord]);
+    updateDayRecord(todayStr, { calsEaten: val, budget: m.budget });
+  }, [todayStr, m.budget, updateDayRecord]);
 
   const handleLogToday = useCallback(() => {
     updateDayRecord(todayStr, {
       burn: m.activityBurn, budget: m.budget,
       weight: todayWeight || undefined,
     });
-    setProjVisible(true);
-  }, [todayStr, m.activityBurn, m.budget, todayWeight, updateDayRecord]);
+
+    // Show celebration if user logged both weight AND calories AND hit their budget.
+    // m.budget already includes the 60% cardio eat-back, so the comparison is straightforward.
+    const cals      = parseNum(todayCals);
+    const hasWeight = !!todayWeight && parseNum(todayWeight) > 0;
+    const hasCals   = cals > 0;
+    const plan      = typeof window !== 'undefined' ? loadPlan() : null;
+
+    let hitGoal = false;
+    if (hasWeight && hasCals && m.budget > 0) {
+      // m.budget already includes 60% cardio eat-back, so this comparison
+      // is naturally cardio-aware. The lower bound avoids false positives
+      // when someone forgets to log most of their food.
+      const minReasonable = m.budget * 0.40;
+      if (plan?.type === 'bulk') {
+        hitGoal = cals >= m.budget * 0.9 && cals <= m.budget * 1.15;
+      } else {
+        hitGoal = cals <= m.budget && cals >= minReasonable;
+      }
+    }
+
+    if (hitGoal) {
+      setCelebrateVisible(true);
+    } else {
+      setProjVisible(true);
+    }
+  }, [todayStr, m.activityBurn, m.budget, todayWeight, todayCals, updateDayRecord]);
+
+  const prFlags = useMemo((): PRFlags => {
+    const today = (localDB[todayStr] ?? {}) as DayRecord;
+    const others = Object.entries(localDB)
+      .filter(([ds]) => ds !== todayStr)
+      .map(([, r]) => r as DayRecord);
+
+    // ── Cardio helpers ───────────────────────────────────────────────────────
+    const n = (v: string | number | undefined) => parseNum(String(v ?? 0));
+
+    const todayRunDist  = n(today.runDist);
+    const todayRunTime  = n(today.runTime);
+    const todayRunPace  = todayRunDist > 0 && todayRunTime > 0 ? todayRunDist / todayRunTime : 0;
+    const prevRunDist   = Math.max(0, ...others.map(r => n(r.runDist)));
+    const prevRunPace   = Math.max(0, ...others
+      .filter(r => n(r.runDist) > 0 && n(r.runTime) > 0)
+      .map(r => n(r.runDist) / n(r.runTime)));
+    const prRun = todayRunDist > 0 && (todayRunDist > prevRunDist || todayRunPace > prevRunPace);
+
+    const todayBikeDist = n(today.bikeDist);
+    const todayBikeTime = n(today.bikeTime);
+    const todayBikePace = todayBikeDist > 0 && todayBikeTime > 0 ? todayBikeDist / todayBikeTime : 0;
+    const prevBikeDist  = Math.max(0, ...others.map(r => n(r.bikeDist)));
+    const prevBikePace  = Math.max(0, ...others
+      .filter(r => n(r.bikeDist) > 0 && n(r.bikeTime) > 0)
+      .map(r => n(r.bikeDist) / n(r.bikeTime)));
+    const prBike = todayBikeDist > 0 && (todayBikeDist > prevBikeDist || todayBikePace > prevBikePace);
+
+    const todaySwimTime = n(today.swimTime);
+    const prevSwimTime  = Math.max(0, ...others.map(r => n(r.swimTime)));
+    const prSwim = todaySwimTime > 0 && todaySwimTime > prevSwimTime;
+
+    // ── Lifting PR ───────────────────────────────────────────────────────────
+    let prLift = false;
+    try {
+      type SetRow = { w?: string };
+      type ExRow  = { k?: string; name?: string; sets?: SetRow[] };
+      const todayExs: ExRow[] = today.exercises ? JSON.parse(String(today.exercises)) : [];
+
+      // Build all-time max per lift from every other day
+      const allTimeMax: Record<string, number> = {};
+      others.forEach(r => {
+        if (!r.exercises) return;
+        try {
+          (JSON.parse(String(r.exercises)) as ExRow[]).forEach(ex => {
+            if (ex.k !== 'lift' || !ex.name || !ex.sets) return;
+            ex.sets.forEach(s => {
+              const w = parseNum(s.w ?? '0');
+              if (w > 0) allTimeMax[ex.name!] = Math.max(allTimeMax[ex.name!] ?? 0, w);
+            });
+          });
+        } catch { /* skip corrupt records */ }
+      });
+
+      todayExs.forEach(ex => {
+        if (ex.k !== 'lift' || !ex.name || !ex.sets) return;
+        ex.sets.forEach(s => {
+          const w = parseNum(s.w ?? '0');
+          if (w > 0 && w > (allTimeMax[ex.name!] ?? 0)) prLift = true;
+        });
+      });
+    } catch { /* skip */ }
+
+    return { prRun, prBike, prSwim, prLift };
+  }, [localDB, todayStr]);
 
   const { calDays, avgNet, streak } = useMemo(() => {
     const days = Object.keys(localDB)
@@ -1644,7 +2300,7 @@ export default function MetricsDashboard() {
 
       {profileOpen && <ProfilePanel profile={profile} onChange={handleProfileChange} onOpenPlan={() => setPlanOpen(true)} />}
 
-      <CalorieBudgetCard m={m} />
+      <CalorieBudgetCard m={m} onOpenProgress={() => setProgressOpen(true)} prFlags={prFlags} />
 
       <DailyLogCard
         todayLabel={fmtDateLong(todayStr)}
@@ -1673,6 +2329,20 @@ export default function MetricsDashboard() {
         m={m}
         localDB={localDB}
         todayStr={todayStr}
+      />
+
+      <PlanProgressModal
+        open={progressOpen}
+        onClose={() => setProgressOpen(false)}
+        localDB={localDB}
+      />
+
+      <CelebrationModal
+        open={celebrateVisible}
+        onClose={() => setCelebrateVisible(false)}
+        localDB={localDB}
+        calsEaten={parseNum(todayCals)}
+        budget={m.budget}
       />
     </div>
   );

@@ -17,7 +17,7 @@ import {
   type ExerciseEntry, type SetData,
   type WorkoutPreset,
 } from '@/lib/AppContext';
-import { ActivityIcon } from '@/components/ActivityIcon';
+import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -199,9 +199,9 @@ function SetBadge({ sets, onSave }: {
 // Swipe right     → reveals DELETE; release past 120px deletes the entry
 // ─────────────────────────────────────────────────────────────────────────────
 function ReorderableExerciseItem({
-  entry, numIdx, onDelete, onUpdateName, onUpdateSets,
+  entry, numIdx, isPR, onDelete, onUpdateName, onUpdateSets,
 }: {
-  entry: NormalizedLift; numIdx: number;
+  entry: NormalizedLift; numIdx: number; isPR?: boolean;
   onDelete: (idx: number) => void;
   onUpdateName: (idx: number, name: string) => void;
   onUpdateSets: (idx: number, sets: Array<{ r: string; w: string }>) => void;
@@ -295,11 +295,14 @@ function ReorderableExerciseItem({
               }}
             />
           ) : (
-            <span
-              onClick={startNameEdit}
-              className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors truncate"
-            >
-              {entry.n ?? entry.k}
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span
+                onClick={startNameEdit}
+                className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors truncate"
+              >
+                {entry.n ?? entry.k}
+              </span>
+              <PRLiveBadge active={!!isPR} size={30} />
             </span>
           )}
 
@@ -751,6 +754,23 @@ export default function WorkoutLogger() {
         bikeTime:  bikes.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0),
         swimTime:  swims.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
       });
+      // Persist all-time lift PR records (only increases, never decreases)
+      const prRecs = prBaselineRef.current ?? {};
+      let prChanged = false;
+      arr.filter(e => e.k === 'lift' && e.n && e.sets).forEach(ex => {
+        (ex.sets ?? []).forEach(s => {
+          const w = parseFloat(String(s.w ?? '0')) || 0;
+          if (w > 0 && w > (prRecs[ex.n!] ?? 0)) {
+            prRecs[ex.n!] = w;
+            prChanged = true;
+          }
+        });
+      });
+      if (prChanged) {
+        prBaselineRef.current = prRecs;
+        localStorage.setItem('queLiftPRs', JSON.stringify(prRecs));
+      }
+
       setSaveFlash(true);
       if (notesFlashRef.current) clearTimeout(notesFlashRef.current);
       notesFlashRef.current = setTimeout(() => setSaveFlash(false), 2000);
@@ -878,6 +898,42 @@ export default function WorkoutLogger() {
     else commitLift();
   }, [pendingSetsCount, commitLift]);
 
+  // Pre-fill sets from the most recent logged session for this exercise
+  const prefillFromHistory = useCallback((name: string) => {
+    if (!name) return;
+    const days = Object.keys(localDB).sort().reverse(); // newest first
+    for (const ds of days) {
+      const raw = localDB[ds]?.exercises;
+      if (!raw) continue;
+      try {
+        const exs = parseEx(String(raw));
+        const match = exs.find(e => e.k === 'lift' && e.n === name);
+        if (match) {
+          const sets = normalizeSets(match);
+          if (sets.length > 0) {
+            setPendingSetsCount(sets.length);
+            setPendingSetData(sets);
+            return;
+          }
+        }
+      } catch { /* skip corrupt records */ }
+    }
+  }, [localDB, setPendingSetsCount, setPendingSetData]);
+
+  // Trigger pre-fill when the dropdown selection changes
+  useEffect(() => {
+    if (!isCustomEx && selectedEx && selectedEx !== '__custom__') {
+      prefillFromHistory(selectedEx);
+    }
+  }, [selectedEx, isCustomEx]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trigger pre-fill for custom names when an exact history match exists
+  useEffect(() => {
+    if (isCustomEx && customName.trim().length > 1) {
+      prefillFromHistory(customName.trim());
+    }
+  }, [customName, isCustomEx]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const addCardioEntry = useCallback((kind: CardioKind) => {
     exerciseKeysRef.current = [...exerciseKeysRef.current, nextKey()];
     setExercisesRaw([...exercises, { k: kind, v1: '', v2: '', note: '' }]);
@@ -943,6 +999,46 @@ export default function WorkoutLogger() {
   useEffect(() => {
     if (templateModal) setPresets(getWorkoutPresets());
   }, [templateModal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── PR detection ────────────────────────────────────────────────────────────
+  // queLiftPRs (localStorage) = permanent record of all-time maxes per exercise.
+  //   Written by persistExercises; never decreases.
+  // prBaselineRef = snapshot loaded from localStorage at session start.
+  //   Frozen during the session so live edits don't invalidate the comparison.
+  // sessionMaxRef = highest weight entered THIS session per exercise.
+  //   Persists across delete-and-re-add within the same session, so re-adding
+  //   a lower weight does not trigger a false PR.
+
+  const prBaselineRef = useRef<Record<string, number> | null>(null);
+  if (!prBaselineRef.current) {
+    try { prBaselineRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
+    catch { prBaselineRef.current = {}; }
+  }
+  const sessionMaxRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    sessionMaxRef.current = {};
+  }, [activeDayFocus]);
+
+  const prLiftNames = useMemo((): Set<string> => {
+    const baseline = prBaselineRef.current ?? {};
+    const session  = sessionMaxRef.current;
+    const prs      = new Set<string>();
+
+    lifts.forEach(ex => {
+      if (!ex.n || !ex.sets) return;
+      const trueMax = Math.max(baseline[ex.n!] ?? 0, session[ex.n!] ?? 0);
+      let exMax = 0;
+      ex.sets.forEach(s => {
+        const w = parseFloat(s.w ?? '0') || 0;
+        if (w > 0 && w >= trueMax) prs.add(ex.n!);
+        if (w > exMax) exMax = w;
+      });
+      // Update session memory so a lower re-entry won't show PR
+      if (exMax > (session[ex.n!] ?? 0)) session[ex.n!] = exMax;
+    });
+    return prs;
+  }, [lifts]);
 
   const loadRecurringWorkout = useCallback((preset: WorkoutPreset) => {
     const newEntries = parseEx(preset.exercises);
@@ -1340,6 +1436,7 @@ export default function WorkoutLogger() {
                       key={entry._key}
                       entry={entry}
                       numIdx={numIdx}
+                      isPR={!!entry.n && prLiftNames.has(entry.n)}
                       onDelete={deleteEntry}
                       onUpdateName={updateExerciseName}
                       onUpdateSets={updateExerciseSets}

@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { PRLiveBadge } from '@/components/ActivityIcon';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Calendar,
@@ -280,9 +281,25 @@ function WeekCell({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecord }) {
-  const arr = parseEx(rec.exercises ?? '');
+  const arr    = parseEx(rec.exercises ?? '');
   const lifts  = arr.filter(e => e.k === 'lift' || e.k === 'text');
   const cardio = arr.filter(e => ['swim','run','bike'].includes(e.k));
+
+  // PR detection: read from the persistent queLiftPRs record (written by WorkoutLogger).
+  // An exercise is a PR if its max weight in this session >= the stored all-time record.
+  const prLiftNames = useMemo(() => {
+    let prRecs: Record<string, number> = {};
+    try { prRecs = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); } catch { /* noop */ }
+
+    const prs = new Set<string>();
+    lifts.forEach(ex => {
+      if (ex.k !== 'lift' || !ex.n) return;
+      const record   = prRecs[ex.n!] ?? 0;
+      const maxToday = Math.max(0, ...normalizeSets(ex).map(s => parseFloat(s.w) || 0));
+      if (maxToday > 0 && maxToday >= record) prs.add(ex.n!);
+    });
+    return prs;
+  }, [lifts]);
 
   const today = new Date();
   const todayStr = toDateStr(today);
@@ -333,10 +350,14 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                       </div>
                       <div className="flex flex-col gap-2.5">
                         {entries.map((e, i) => {
-                          const sets = normalizeSets(e);
+                          const sets  = normalizeSets(e);
+                          const isPR  = !!e.n && prLiftNames.has(e.n);
                           return (
-                            <div key={i} className="flex items-baseline justify-between gap-3">
-                              <span className="text-[14px] font-semibold text-[var(--ink-0)] truncate">{e.n ?? e.k}</span>
+                            <div key={i} className="flex items-center justify-between gap-3">
+                              <span className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-[14px] font-semibold text-[var(--ink-0)] truncate">{e.n ?? e.k}</span>
+                                <PRLiveBadge active={isPR} size={30} />
+                              </span>
                               <div className="flex flex-wrap gap-1 justify-end">
                                 {sets.map((s, si) => (
                                   <span
