@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSession, signIn, signOut } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import Image from 'next/image';
 import {
   applyAccent, applyBg,
@@ -74,9 +74,9 @@ function SignInButton() {
   return (
     <button
       type="button"
-      onClick={() => signIn('github')}
+      onClick={() => window.location.href = '/auth/signin'}
       className="auth-signin-btn"
-      aria-label="Sign in with GitHub OAuth"
+      aria-label="Sign in"
     >
       <GitHubMark />
       Sign in

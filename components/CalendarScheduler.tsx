@@ -297,6 +297,9 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
   const lifts  = arr.filter(e => e.k === 'lift' || e.k === 'text');
   const cardio = arr.filter(e => ['swim','run','bike'].includes(e.k));
 
+  // Ref for the weight input so Enter on reps can advance focus
+  const editWeightRef = useRef<HTMLInputElement>(null);
+
   // ── Exercise history sparkline (Feature 6) ───────────────────────────────
   const [historyEx, setHistoryEx] = useState<string | null>(null);
 
@@ -439,26 +442,42 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                                       onClick={() => !isEditing && startEdit(e.arrIdx, si, String(s.r || '1'), s.w || '')}
                                     >
                                       {isEditing ? (
-                                        <>
+                                        // Container onBlur only commits when focus leaves
+                                        // the entire chip — not when moving between inputs.
+                                        // This fixes mobile: tapping the weight field no longer
+                                        // blurs-and-commits before it can receive focus.
+                                        <span
+                                          className="inline-flex items-center gap-1"
+                                          onBlur={ev => {
+                                            if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) {
+                                              commitEdit();
+                                            }
+                                          }}
+                                        >
                                           <input
                                             autoFocus
                                             type="text" inputMode="numeric"
                                             value={editR}
                                             onChange={ev => setEditR(ev.target.value)}
-                                            onBlur={commitEdit}
-                                            onKeyDown={ev => { if (ev.key === 'Enter') commitEdit(); if (ev.key === 'Escape') setEditCell(null); }}
-                                            className="w-7 text-center bg-transparent text-[var(--ink-0)] font-bold outline-none"
+                                            onKeyDown={ev => {
+                                              if (ev.key === 'Enter') { ev.preventDefault(); editWeightRef.current?.focus(); }
+                                              if (ev.key === 'Escape') setEditCell(null);
+                                            }}
+                                            className="w-8 text-center bg-transparent text-[var(--ink-0)] font-bold outline-none"
                                           />
                                           <span className="text-[9px] text-[var(--ink-3)]">@</span>
                                           <input
+                                            ref={editWeightRef}
                                             type="text" inputMode="decimal"
                                             value={editW}
                                             onChange={ev => setEditW(ev.target.value)}
-                                            onBlur={commitEdit}
-                                            onKeyDown={ev => { if (ev.key === 'Enter') commitEdit(); if (ev.key === 'Escape') setEditCell(null); }}
-                                            className="w-14 text-center bg-transparent text-[var(--ink-2)] outline-none"
+                                            onKeyDown={ev => {
+                                              if (ev.key === 'Enter') commitEdit();
+                                              if (ev.key === 'Escape') setEditCell(null);
+                                            }}
+                                            className="w-16 text-center bg-transparent text-[var(--ink-2)] outline-none"
                                           />
-                                        </>
+                                        </span>
                                       ) : (
                                         <>
                                           <span className="text-[9px] text-[var(--ink-3)]">{si+1}</span>
