@@ -17,6 +17,7 @@ import {
   type ExerciseEntry, type SetData,
   type WorkoutPreset,
 } from '@/lib/AppContext';
+import { ActivityIcon } from '@/components/ActivityIcon';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -336,6 +337,9 @@ function CardioEntryCard({
       <span className="absolute left-0 top-0 bottom-0 w-[2px] bg-[var(--accent)]" />
 
       <div className="flex items-center gap-3 mb-4">
+        <span className="text-[var(--accent)] flex-shrink-0">
+          <ActivityIcon kind={entry.k} active={true} size={22} />
+        </span>
         <span className="font-mono text-[10px] font-bold tracking-[2px] text-[var(--accent)] uppercase">{cfg.code}</span>
         <span className="text-[14px] font-semibold text-[var(--ink-0)] flex-1">{cfg.label}</span>
         <button
@@ -1365,15 +1369,20 @@ export default function WorkoutLogger() {
           >
             {/* Add cardio buttons */}
             <div className="flex gap-2 mb-4">
-              {(['swim','run','bike'] as CardioKind[]).map(kind => (
-                <button
-                  key={kind}
-                  onClick={() => addCardioEntry(kind)}
-                  className="flex-1 font-mono text-[10px] font-bold tracking-[1.5px] uppercase py-2.5 rounded border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-all"
-                >
-                  + {kind}
-                </button>
-              ))}
+              {(['swim','run','bike'] as CardioKind[]).map(kind => {
+                const hasLogged = cardios.some(e => e.k === kind);
+                return (
+                  <button
+                    key={kind}
+                    onClick={() => addCardioEntry(kind)}
+                    className="flex-1 flex flex-col items-center gap-1.5 font-mono text-[10px] font-bold tracking-[1.5px] uppercase py-3 rounded border border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--accent)] transition-all"
+                    style={{ color: hasLogged ? 'var(--accent)' : 'var(--ink-2)' }}
+                  >
+                    <ActivityIcon kind={kind} active={hasLogged} size={22} />
+                    + {kind}
+                  </button>
+                );
+              })}
             </div>
 
             {cardios.length === 0 ? (

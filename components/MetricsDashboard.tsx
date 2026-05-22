@@ -15,6 +15,7 @@ import {
   useApp, MONTHS,
   type DayRecord, type UserProfile,
 } from '@/lib/AppContext';
+import { ActivityIcon } from '@/components/ActivityIcon';
 import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -380,34 +381,46 @@ function CalorieBudgetCard({ m }: { m: BudgetMetrics }) {
 
         {/* Math breakdown — telemetry strip */}
         <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] px-4 mb-4">
-          {[
-            { label: 'BMR (Mifflin-St Jeor)', value: `${fmt(m.bmr)} kcal`, indent: false, bold: false },
-            { label: '× Activity Multiplier',  value: `× ${m.multiplier}`, indent: true,  bold: false },
-            { label: '= Maintenance (TDEE)',   value: `${fmt(m.tdee)} kcal`, indent: false, bold: true },
+          {([
+            { label: 'BMR (Mifflin-St Jeor)', value: `${fmt(m.bmr)} kcal`,           indent: false, bold: false },
+            { label: '× Activity Multiplier',  value: `× ${m.multiplier}`,             indent: true,  bold: false },
+            { label: '= Maintenance (TDEE)',   value: `${fmt(m.tdee)} kcal`,           indent: false, bold: true  },
             null,
-            { label: '− Deficit Goal',         value: `−${fmt(m.deficit)} kcal`, indent: false, bold: false, red: true },
+            { label: '− Deficit Goal',         value: `−${fmt(m.deficit)} kcal`,       indent: false, bold: false, red: true },
             { label: 'Tracked cardio burn',    value: m.activityBurn > 0 ? `${fmt(m.activityBurn)} kcal` : '— kcal', indent: true, bold: false, accent: true },
+            { label: 'Run',  value: m.runBurn  > 0 ? `${fmt(m.runBurn)}  kcal` : '—', indent: true,  bold: false, icon: 'run'  as const, iconActive: m.runBurn  > 0 },
+            { label: 'Bike', value: m.bikeBurn > 0 ? `${fmt(m.bikeBurn)} kcal` : '—', indent: true,  bold: false, icon: 'bike' as const, iconActive: m.bikeBurn > 0 },
+            { label: 'Swim', value: m.swimBurn > 0 ? `${fmt(m.swimBurn)} kcal` : '—', indent: true,  bold: false, icon: 'swim' as const, iconActive: m.swimBurn > 0 },
             { label: '+ 60% Eat-Back',         value: m.eatBack > 0 ? `+${fmt(m.eatBack)} kcal` : '+0 kcal', indent: false, bold: false, green: true },
-          ].map((row, i) => {
+          ] as const).map((row, i) => {
             if (row === null) {
               return <hr key={i} className="my-1 border-0 h-px bg-[var(--line)]" />;
             }
+            const hasIcon = 'icon' in row;
             return (
-              <div key={i} className="flex justify-between items-center py-2.5 border-b border-[var(--line)] last:border-b-0">
+              <div key={i} className="flex justify-between items-center py-2 border-b border-[var(--line)] last:border-b-0">
                 <span className={[
-                  'font-mono text-[11px] tracking-[0.5px]',
+                  'flex items-center gap-2 font-mono text-[11px] tracking-[0.5px]',
                   row.indent ? 'pl-4 text-[var(--ink-3)]' : 'text-[var(--ink-1)]',
                   row.bold   ? '!text-[12px] !font-bold !text-[var(--ink-0)] uppercase tracking-[1px]' : '',
                 ].join(' ')}>
+                  {hasIcon && (
+                    <ActivityIcon
+                      kind={(row as { icon: 'run'|'bike'|'swim' }).icon}
+                      active={(row as { iconActive: boolean }).iconActive}
+                      size={24}
+                    />
+                  )}
                   {row.label}
                 </span>
                 <span className={[
                   'font-mono font-bold tabular text-[13px]',
                   row.indent ? 'text-[11px] text-[var(--ink-3)]' : 'text-[var(--ink-0)]',
                   row.bold   ? '!text-[16px] !text-[var(--ink-0)]' : '',
-                  row.red    ? '!text-[var(--danger)]' : '',
-                  row.accent ? '!text-[var(--accent)]' : '',
-                  row.green  ? '!text-[var(--positive)]' : '',
+                  'red'    in row && row.red    ? '!text-[var(--danger)]'   : '',
+                  'accent' in row && row.accent ? '!text-[var(--accent)]'   : '',
+                  'green'  in row && row.green  ? '!text-[var(--positive)]' : '',
+                  hasIcon && (row as { iconActive: boolean }).iconActive ? '!text-[var(--positive)]' : '',
                 ].join(' ')}>
                   {row.value}
                 </span>
@@ -418,33 +431,54 @@ function CalorieBudgetCard({ m }: { m: BudgetMetrics }) {
 
         {/* Per-activity burn tiles */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {tiles.map(t => (
-            <div
-              key={t.key}
-              className={[
-                'rounded p-3 border transition-all',
-                t.dim
-                  ? 'border-[var(--line)] bg-[var(--bg-2)] opacity-60'
-                  : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--accent)]',
-              ].join(' ')}
-            >
-              <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] mb-2">
-                {t.label}
-              </p>
-              <p
-                className="font-display tabular leading-none text-[26px]"
-                style={{
-                  color: t.dim ? 'var(--ink-3)' : 'var(--accent)',
-                  textShadow: t.dim ? 'none' : '0 0 16px var(--accent-24)',
-                }}
+          {tiles.map(t => {
+            const lit = !t.dim && t.value > 0;
+            return (
+              <div
+                key={t.key}
+                className={[
+                  'relative rounded p-3 border overflow-hidden',
+                  t.dim ? 'border-[var(--line)] bg-[var(--bg-2)] opacity-60'
+                    : lit ? 'border-[var(--positive)]/40'
+                    : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--accent)] transition-all',
+                ].join(' ')}
+                style={lit ? {
+                  background: 'rgba(109,255,153,0.05)',
+                  animation:  'tile-glow-pulse 2.8s ease-in-out infinite',
+                } : undefined}
               >
-                {t.value > 0 ? fmt(t.value) : '—'}
-              </p>
-              <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[1px]">
-                {t.dim ? 'IN MULTIPLIER' : 'KCAL'}
-              </p>
-            </div>
-          ))}
+                {/* One-shot green flash on activation */}
+                {lit && (
+                  <span
+                    key={`flash-${t.key}-active`}
+                    className="absolute inset-0 pointer-events-none rounded"
+                    style={{ animation: 'tile-activate 1s ease-out forwards' }}
+                  />
+                )}
+
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)]">
+                    {t.label}
+                  </p>
+                  {!t.dim && (
+                    <ActivityIcon kind={t.key as 'run' | 'bike' | 'swim'} active={lit} size={28} />
+                  )}
+                </div>
+                <p
+                  className="font-display tabular leading-none text-[26px]"
+                  style={{
+                    color:      t.dim ? 'var(--ink-3)' : lit ? 'var(--positive)' : 'var(--accent)',
+                    textShadow: t.dim || !lit ? 'none' : '0 0 16px rgba(109,255,153,0.3)',
+                  }}
+                >
+                  {t.value > 0 ? fmt(t.value) : '—'}
+                </p>
+                <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[1px]">
+                  {t.dim ? 'IN MULTIPLIER' : 'KCAL'}
+                </p>
+              </div>
+            );
+          })}
         </div>
 
         {/* ── Active Plan Progress ─────────────────────────────────────── */}
@@ -1112,7 +1146,7 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
             style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
           >
             {/* ── Scrollable content ── */}
-            <div className="overflow-y-auto flex-1 p-4 md:p-6">
+            <div className="overflow-y-auto flex-1 p-4 md:p-6 overscroll-contain">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-display text-[22px] md:text-[26px] tracking-[2px] uppercase text-[var(--ink-0)]">
                 Create Plan
@@ -1303,7 +1337,10 @@ function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
             </div>{/* end scrollable content */}
 
             {/* ── Sticky Save button — always visible ── */}
-            <div className="flex-shrink-0 p-4 md:px-6 md:pb-6 border-t border-[var(--line)] bg-[var(--bg-1)]">
+            <div
+              className="flex-shrink-0 px-4 pt-4 md:px-6 md:pt-6 border-t border-[var(--line)] bg-[var(--bg-1)]"
+              style={{ paddingBottom: 'max(16px, calc(12px + env(safe-area-inset-bottom)))' }}
+            >
               <button onClick={handleSave} disabled={!isValid} className="que-btn-primary w-full py-4">
                 {loadPlan() ? 'Update Plan' : 'Save Plan'}
               </button>
