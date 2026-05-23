@@ -29,6 +29,7 @@ model AppUser {
   sentChallenges Challenge[]  @relation("Challenger")
   recvChallenges Challenge[]  @relation("Challengee")
   wonChallenges  Challenge[]  @relation("ChallengeWinner")
+  dayRecords     DayRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -60,6 +61,22 @@ model HealthConnection {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ── Day Records (normalised workout/food log — replaces WorkoutData.localDB blob) ──
+
+model DayRecord {
+  id     String  @id @default(cuid())
+  userId String
+  date   String  // YYYY-MM-DD
+  data   Json    @default("{}")
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId])
 }
 
 // ── Social ─────────────────────────────────────────────────────────────────────
