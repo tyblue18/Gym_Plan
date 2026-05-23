@@ -136,13 +136,29 @@ function dispatch(status: SyncStatus) {
 async function _push(payload: SyncPayload): Promise<void> {
   dispatch('syncing');
   try {
-    const res = await fetch('/api/sync', {
+    const res  = await fetch('/api/sync', {
       method:      'POST',
       credentials: 'include',
       headers:     { 'Content-Type': 'application/json' },
       body:        JSON.stringify(payload),
     });
-    dispatch(res.ok ? 'ok' : 'error');
+
+    if (res.ok) {
+      const json = await res.json() as { conflicts?: Array<{ date: string; data: unknown }> };
+      if (json.conflicts?.length) {
+        // Server won these days — write them to localStorage and notify AppContext
+        try {
+          const raw = localStorage.getItem('ironmanCoreDB_v2');
+          const db  = (raw ? JSON.parse(raw) : {}) as Record<string, unknown>;
+          for (const { date, data } of json.conflicts) db[date] = data;
+          localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(db));
+          window.dispatchEvent(new CustomEvent('que-conflict', { detail: json.conflicts }));
+        } catch { /* storage full — skip */ }
+      }
+      dispatch('ok');
+    } else {
+      dispatch('error');
+    }
   } catch {
     dispatch('error');
   }

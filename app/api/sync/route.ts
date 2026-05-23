@@ -26,14 +26,24 @@ export async function GET(): Promise<NextResponse> {
 
   const userId = session.user.id;
 
+  const dayRecordClient = (prisma as unknown as {
+    dayRecord: { findMany: (args: unknown) => Promise<Array<{ date: string; data: unknown; updatedAt: Date }>> };
+  }).dayRecord;
+
   const [wd, dayRows] = await Promise.all([
     prisma.workoutData.findUnique({ where: { userId } }),
-    prisma.dayRecord.findMany({ where: { userId }, select: { date: true, data: true } }),
+    dayRecordClient.findMany({ where: { userId }, select: { date: true, data: true, updatedAt: true } }),
   ]);
 
-  // Merge: legacy blob provides the base, DayRecord rows win for days already migrated
+  // Merge: legacy blob provides the base, DayRecord rows win for days already migrated.
+  // Embed _syncedAt so the client can send it back and we can detect stale writes.
   const blobDB  = (wd?.localDB ?? {}) as Record<string, unknown>;
-  const rowsMap = Object.fromEntries(dayRows.map(r => [r.date, r.data]));
+  const rowsMap = Object.fromEntries(
+    dayRows.map((r: { date: string; data: unknown; updatedAt: Date }) => [
+      r.date,
+      { ...(r.data as object), _syncedAt: r.updatedAt.toISOString() },
+    ])
+  );
   const localDB = { ...blobDB, ...rowsMap };
 
   return NextResponse.json({
@@ -91,14 +101,54 @@ export async function POST(req: Request): Promise<NextResponse> {
     },
   });
 
-  // ── Each day goes to its own DayRecord row ───────────────────────────────────
+  // ── Each day goes to its own DayRecord row (with conflict detection) ─────────
+  const conflicts: Array<{ date: string; data: unknown }> = [];
+
   if (body.localDB && Object.keys(body.localDB).length > 0) {
+    const dates = Object.keys(body.localDB);
+
+    // Single query to fetch all existing rows for these dates
+    const existingRows = await (prisma as unknown as {
+      dayRecord: {
+        findMany: (args: unknown) => Promise<Array<{ date: string; updatedAt: Date; data: unknown }>>;
+      };
+    }).dayRecord.findMany({
+      where:  { userId, date: { in: dates } },
+      select: { date: true, updatedAt: true, data: true },
+    });
+    const existingMap = new Map(existingRows.map((r: { date: string; updatedAt: Date; data: unknown }) => [r.date, r]));
+
+    const toUpsert: Array<{ date: string; data: unknown }> = [];
+
+    for (const [date, rawData] of Object.entries(body.localDB)) {
+      const incoming   = rawData as Record<string, unknown>;
+      const syncedAt   = incoming._syncedAt as string | undefined;
+      // Strip _syncedAt before storing — it's a transport field, not persisted data
+      const { _syncedAt: _, ...cleanData } = incoming;
+
+      const stored = existingMap.get(date) as { date: string; updatedAt: Date; data: unknown } | undefined;
+      if (stored && syncedAt && stored.updatedAt > new Date(syncedAt)) {
+        // Server row is newer than what the client last saw — client data is stale
+        conflicts.push({
+          date,
+          data: { ...(stored.data as object), _syncedAt: stored.updatedAt.toISOString() },
+        });
+        continue;
+      }
+
+      toUpsert.push({ date, data: cleanData });
+    }
+
+    const dr = (prisma as unknown as {
+      dayRecord: { upsert: (args: unknown) => Promise<unknown> };
+    }).dayRecord;
+
     await Promise.all(
-      Object.entries(body.localDB).map(([date, data]) =>
-        prisma.dayRecord.upsert({
+      toUpsert.map(({ date, data }) =>
+        dr.upsert({
           where:  { userId_date: { userId, date } },
-          create: { userId, date, data: data as never },
-          update: { data: data as never },
+          create: { userId, date, data },
+          update: { data },
         })
       )
     );
@@ -110,5 +160,5 @@ export async function POST(req: Request): Promise<NextResponse> {
     settings: mergedSettings,
   }).catch(() => { /* non-critical */ });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...(conflicts.length > 0 && { conflicts }) });
 }

@@ -474,6 +474,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCurrentDisplayDate(new Date(y, m - 1, d));
   }, []);
 
+  // Merge server-won days back into React state when the sync engine detects a conflict.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const conflicts = (e as CustomEvent<Array<{ date: string; data: unknown }>>).detail;
+      if (!Array.isArray(conflicts) || conflicts.length === 0) return;
+      setLocalDB(prev => {
+        const next = { ...prev };
+        for (const { date, data } of conflicts) {
+          next[date] = data as DayRecord;
+          dirtyDaysRef.current.delete(date); // don't re-push what the server just won
+        }
+        try { localStorage.setItem(DB_KEY, JSON.stringify(next)); } catch { /* noop */ }
+        return next;
+      });
+    };
+    window.addEventListener('que-conflict', handler);
+    return () => window.removeEventListener('que-conflict', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Tracks which dates were written since the last sync — only those are pushed.
   const dirtyDaysRef    = useRef<Set<string>>(new Set());
   const syncSkipCountRef = useRef(2); // skip first 2 fires (mount + cloud-pull merge)
