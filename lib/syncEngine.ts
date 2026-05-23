@@ -32,6 +32,9 @@ const SETTINGS_KEYS = [
   'ironmanTemplatesPool',  // custom templates
   'queExerciseUsage',      // exercise frequency (for sorting)
   'queLastStreak',         // calorie streak
+  'queLiftPRs',            // all-time lift maxes — read by badge engine server-side
+  'queMacroGoals',         // macro targets — sync across devices
+  'queCalorieCoins',       // coin balance — used for battle wagering later
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────

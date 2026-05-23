@@ -1,22 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, BarChart2, Layers, Utensils } from 'lucide-react';
+import { Calendar, BarChart2, Layers, Utensils, Users } from 'lucide-react';
 import { AuthHeader }    from '@/components/header';
 import CalendarScheduler from '@/components/CalendarScheduler';
 import MetricsDashboard  from '@/components/MetricsDashboard';
 import WorkoutLogger     from '@/components/WorkoutLogger';
 import CalorieTracker    from '@/components/CalorieTracker';
+import SocialTab         from '@/components/SocialTab';
 import { Onboarding, needsOnboarding } from '@/components/Onboarding';
 import { useApp } from '@/lib/AppContext';
 
-type Tab = 'calendar' | 'calories' | 'metrics' | 'protocol';
+type Tab = 'calendar' | 'calories' | 'metrics' | 'protocol' | 'social';
 
 const TABS = [
   { id: 'calendar' as Tab, label: 'Calendar', Icon: Calendar  },
   { id: 'calories' as Tab, label: 'Calories', Icon: Utensils  },
   { id: 'metrics'  as Tab, label: 'Metrics',  Icon: BarChart2 },
   { id: 'protocol' as Tab, label: 'Protocol', Icon: Layers    },
+  { id: 'social'   as Tab, label: 'Social',   Icon: Users     },
 ] as const;
 
 export default function WorkoutPage() {
@@ -47,6 +49,7 @@ export default function WorkoutPage() {
             <WorkoutLogger />
           </div>
         )}
+        {tab === 'social' && <SocialTab />}
       </main>
 
       <nav className="app-tabs" role="tablist" aria-label="App navigation">

@@ -466,7 +466,7 @@ function MacroBar({ label, value, max, color, hit = false, allHit = false }: {
       >
         {/* Fill — spring physics, overshoots on hit for satisfying "pop" */}
         <motion.div
-          className="absolute inset-y-0 left-0 rounded-full origin-left"
+          className="absolute inset-y-0 left-0 w-full rounded-full origin-left"
           style={{ background: barColor }}
           animate={{ scaleX: pct }}
           transition={{

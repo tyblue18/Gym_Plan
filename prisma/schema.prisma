@@ -8,12 +8,27 @@ datasource db {
 }
 
 model AppUser {
-  id    String  @id @default(cuid())
-  email String  @unique
-  name  String?
+  id       String  @id @default(cuid())
+  email    String  @unique
+  name     String?
+  username String? @unique // for friend search, set during onboarding
 
   workoutData WorkoutData?
   healthConn  HealthConnection?
+
+  // Profile
+  status          String?   // short status message
+  statusExpiresAt DateTime? // null = indefinite; set = expires at this time
+  showcaseBadges  Json?     // string[] of badge slugs, ordered, max 8
+
+  // Social
+  sentRequests   Friendship[] @relation("FriendRequester")
+  recvRequests   Friendship[] @relation("FriendReceiver")
+  badges         Badge[]
+  coinWallet     CoinWallet?
+  sentChallenges Challenge[]  @relation("Challenger")
+  recvChallenges Challenge[]  @relation("Challengee")
+  wonChallenges  Challenge[]  @relation("ChallengeWinner")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -45,4 +60,94 @@ model HealthConnection {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ── Social ─────────────────────────────────────────────────────────────────────
+
+model Friendship {
+  id          String @id @default(cuid())
+  requesterId String
+  receiverId  String
+  // pending | accepted | rejected
+  status      String @default("pending")
+
+  requester AppUser @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  AppUser @relation("FriendReceiver",  fields: [receiverId],  references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([requesterId, receiverId])
+  @@index([receiverId])
+}
+
+// ── Badges ─────────────────────────────────────────────────────────────────────
+
+model Badge {
+  id       String @id @default(cuid())
+  userId   String
+  // lift | cardio | nutrition
+  category String
+  // e.g. bench_225 | squat_315 | streak_30
+  slug     String
+  label    String
+  icon     String @default("🏅")
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  earnedAt DateTime @default(now())
+
+  @@unique([userId, slug])
+  @@index([userId])
+}
+
+// ── Coins (server-authoritative for competitive play) ──────────────────────────
+
+model CoinWallet {
+  id      String @id @default(cuid())
+  userId  String @unique
+  balance Int    @default(0)
+
+  user         AppUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions CoinTransaction[]
+}
+
+model CoinTransaction {
+  id       String  @id @default(cuid())
+  walletId String
+  // positive = credit, negative = debit
+  amount   Int
+  // goal_hit | badge_earned | battle_win | battle_loss | battle_bet | refund
+  reason   String
+  refId    String? // Challenge.id if from a battle
+
+  wallet CoinWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([walletId])
+}
+
+// ── Battles ────────────────────────────────────────────────────────────────────
+
+model Challenge {
+  id           String    @id @default(cuid())
+  challengerId String
+  challengeeId String
+  wager        Int       @default(0)   // coins bet by each side
+  // pending | active | resolved | cancelled
+  status       String    @default("pending")
+  categories   Json      // string[] — badge slugs being compared
+  winnerId     String?
+  resolvedAt   DateTime?
+
+  challenger AppUser  @relation("Challenger",      fields: [challengerId], references: [id])
+  challengee AppUser  @relation("Challengee",      fields: [challengeeId], references: [id])
+  winner     AppUser? @relation("ChallengeWinner", fields: [winnerId],     references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([challengerId])
+  @@index([challengeeId])
 }

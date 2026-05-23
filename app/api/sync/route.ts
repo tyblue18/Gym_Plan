@@ -8,10 +8,11 @@
  * Data model: one WorkoutData row per AppUser, storing JSON blobs.
  */
 
-import { getServerSession }  from 'next-auth/next';
-import { NextResponse }      from 'next/server';
-import { authOptions }       from '@/lib/auth';
-import { prisma }            from '@/lib/prisma';
+import { getServerSession }        from 'next-auth/next';
+import { NextResponse }            from 'next/server';
+import { authOptions }             from '@/lib/auth';
+import { prisma }                  from '@/lib/prisma';
+import { checkAndAwardBadges }     from '@/lib/badgeEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET — pull latest snapshot
@@ -76,7 +77,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     ? { ...existingSettings, ...body.settings }
     : existingSettings;
 
-  await prisma.workoutData.upsert({
+  const saved = await prisma.workoutData.upsert({
     where:  { userId: user.id },
     create: {
       userId:   user.id,
@@ -92,6 +93,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       syncedAt: new Date(),
     },
   });
+
+  // Award any newly earned badges — fire-and-forget, never blocks the sync response
+  checkAndAwardBadges(user.id, {
+    localDB:  saved.localDB  as Record<string, unknown>,
+    settings: mergedSettings as Record<string, unknown>,
+  }).catch(() => { /* non-critical */ });
 
   return NextResponse.json({ ok: true });
 }
