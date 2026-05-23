@@ -14,7 +14,8 @@ import {
   ACCENT_SWATCHES, BG_PRESETS,
   type BgPreset,
 } from '@/lib/colorScheme';
-import { pushNow } from '@/lib/syncEngine';
+import { pushNow }         from '@/lib/syncEngine';
+import { PushPermission }  from '@/components/PushPermission';
 
 const PHOTO_KEY = 'queProfilePhoto';
 const PLAN_KEY  = 'queAthletePlan';
@@ -266,6 +267,12 @@ function UserPill({ image, name, email }: UserPillProps) {
                 </svg>
                 Export data
               </button>
+
+              <div className="auth-dropdown-divider" />
+
+              <div className="px-3 py-2">
+                <PushPermission />
+              </div>
 
               <div className="auth-dropdown-divider" />
 

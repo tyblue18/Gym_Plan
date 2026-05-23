@@ -30,6 +30,7 @@ model AppUser {
   recvChallenges Challenge[]  @relation("Challengee")
   wonChallenges  Challenge[]  @relation("ChallengeWinner")
   dayRecords     DayRecord[]
+  pushSubs       PushSubscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -76,6 +77,23 @@ model DayRecord {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
+  @@index([userId])
+}
+
+// ── Push Notifications ─────────────────────────────────────────────────────────
+
+model PushSubscription {
+  id       String  @id @default(cuid())
+  userId   String
+  endpoint String
+  p256dh   String
+  auth     String
+
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, endpoint])
   @@index([userId])
 }
 

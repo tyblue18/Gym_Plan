@@ -7,6 +7,7 @@ import { getServerSession } from 'next-auth/next';
 import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
+import { sendPushToUser }   from '@/lib/push';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
@@ -121,6 +122,16 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
     throw e;
   }
+
+  const challenger = await prisma.appUser.findUnique({
+    where:  { id: me.id },
+    select: { name: true, username: true },
+  });
+  sendPushToUser(friendId, {
+    title: 'New challenge!',
+    body:  `${challenger?.name ?? challenger?.username ?? 'Someone'} challenged you to a battle`,
+    url:   '/',
+  }).catch(() => {});
 
   return NextResponse.json({ ok: true, challengeId: challenge.id });
 }

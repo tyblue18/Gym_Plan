@@ -8,6 +8,7 @@ import { getServerSession } from 'next-auth/next';
 import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
+import { sendPushToUser }   from '@/lib/push';
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
@@ -30,6 +31,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     where: { id: friendshipId },
     data:  { status: accept ? 'accepted' : 'rejected' },
   });
+
+  if (accept) {
+    const accepter = await prisma.appUser.findUnique({
+      where:  { id: me.id },
+      select: { name: true, username: true },
+    });
+    sendPushToUser(friendship.requesterId, {
+      title: 'Friend request accepted',
+      body:  `${accepter?.name ?? accepter?.username ?? 'Someone'} accepted your friend request`,
+      url:   '/',
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ ok: true });
 }

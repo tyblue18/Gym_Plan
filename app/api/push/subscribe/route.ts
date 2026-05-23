@@ -1,0 +1,41 @@
+import { getServerSession } from 'next-auth/next';
+import { NextResponse }     from 'next/server';
+import { authOptions }      from '@/lib/auth';
+import { prisma }           from '@/lib/prisma';
+
+interface SubBody {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export async function POST(req: Request): Promise<NextResponse> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
+
+  const body = await req.json() as SubBody;
+  if (!body.endpoint || !body.keys?.p256dh || !body.keys?.auth) {
+    return NextResponse.json({ error: 'Invalid subscription' }, { status: 400 });
+  }
+
+  await prisma.pushSubscription.upsert({
+    where:  { userId_endpoint: { userId: session.user.id, endpoint: body.endpoint } },
+    create: { userId: session.user.id, endpoint: body.endpoint, p256dh: body.keys.p256dh, auth: body.keys.auth },
+    update: { p256dh: body.keys.p256dh, auth: body.keys.auth },
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(req: Request): Promise<NextResponse> {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
+
+  const { endpoint } = await req.json() as { endpoint: string };
+  if (!endpoint) return NextResponse.json({ error: 'Missing endpoint' }, { status: 400 });
+
+  await prisma.pushSubscription.deleteMany({
+    where: { userId: session.user.id, endpoint },
+  });
+
+  return NextResponse.json({ ok: true });
+}

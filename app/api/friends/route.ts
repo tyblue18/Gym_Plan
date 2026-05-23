@@ -4,10 +4,11 @@
  * DELETE /api/friends — remove a friend or cancel a request
  */
 
-import { getServerSession } from 'next-auth/next';
-import { NextResponse }     from 'next/server';
-import { authOptions }      from '@/lib/auth';
-import { prisma }           from '@/lib/prisma';
+import { getServerSession }  from 'next-auth/next';
+import { NextResponse }      from 'next/server';
+import { authOptions }       from '@/lib/auth';
+import { prisma }            from '@/lib/prisma';
+import { sendPushToUser }    from '@/lib/push';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
@@ -107,6 +108,12 @@ export async function POST(req: Request): Promise<NextResponse> {
   const friendship = await prisma.friendship.create({
     data: { requesterId: me.id, receiverId: target.id },
   });
+
+  sendPushToUser(target.id, {
+    title: 'New friend request',
+    body:  `${me.name ?? me.username ?? 'Someone'} wants to be friends`,
+    url:   '/',
+  }).catch(() => {});
 
   return NextResponse.json({ ok: true, friendshipId: friendship.id });
 }
