@@ -143,8 +143,15 @@ function UserPill({ image, name, email }: UserPillProps) {
     const file = e.target.files?.[0];
     if (!file) return;
     const compressed = await compressPhoto(file);
-    localStorage.setItem(PHOTO_KEY, compressed);
-    setLocalPhoto(compressed);
+    // Convert base64 back to a blob for upload
+    const res  = await fetch(compressed);
+    const blob = await res.blob();
+    const form = new FormData();
+    form.append('photo', new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
+    const data = await fetch('/api/profile/photo', { method: 'POST', body: form }).then(r => r.json()) as { url?: string };
+    const url  = data.url ?? compressed; // fall back to base64 if upload fails
+    localStorage.setItem(PHOTO_KEY, url);
+    setLocalPhoto(url);
     window.dispatchEvent(new Event('queProfilePhotoChanged'));
     e.target.value = '';
     setOpen(false);

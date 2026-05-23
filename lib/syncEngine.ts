@@ -26,7 +26,6 @@ const DEBOUNCE_MS = 4_000;
 
 // All localStorage keys that belong in the synced "settings" blob
 const SETTINGS_KEYS = [
-  'queProfilePhoto',       // base64 profile photo
   'queAthletePlan',        // cut/bulk plan
   'queWorkoutPresets',     // saved workout presets
   'ironmanTemplatesPool',  // custom templates
