@@ -906,7 +906,7 @@ function WeeklyVolumeCard() {
     Object.entries(localDB).forEach(([ds, rec]) => {
       if (ds < weekStart || ds > todayStr || !rec.exercises) return;
       try {
-        (JSON.parse(String(rec.exercises)) as Array<{ k?: string; g?: string; sets?: Array<{ r: string; w: string }> }>)
+        (JSON.parse(String(rec.exercises)) as Array<{ k?: string; g?: string; g2?: string; g3?: string; sets?: Array<{ r: string; w: string }> }>)
           .forEach(ex => {
             if (ex.k !== 'lift' || !ex.g || !ex.sets) return;
             const vol = ex.sets.reduce((s, set) => {
@@ -914,7 +914,11 @@ function WeeklyVolumeCard() {
               const w = parseFloat(String(set.w)) || 0;
               return s + r * w;
             }, 0);
-            if (vol > 0) groups[ex.g] = (groups[ex.g] ?? 0) + vol;
+            if (vol > 0) {
+              groups[ex.g]                      = (groups[ex.g]  ?? 0) + vol;
+              if (ex.g2) groups[ex.g2]          = (groups[ex.g2] ?? 0) + vol * 0.5;
+              if (ex.g3) groups[ex.g3]          = (groups[ex.g3] ?? 0) + vol * 0.25;
+            }
           });
       } catch { /* skip */ }
     });

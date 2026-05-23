@@ -45,7 +45,9 @@ export interface SetData {
 /** A single logged exercise or cardio entry */
 export interface ExerciseEntry {
   k: 'lift' | 'text' | 'run' | 'bike' | 'swim';
-  g?: string;       // muscle group (lift only)
+  g?: string;       // primary muscle group (lift only)
+  g2?: string;      // secondary muscle group
+  g3?: string;      // tertiary muscle group
   n?: string;       // exercise name
   sets?: SetData[]; // per-set data (lift only, new format)
   s?: string;       // legacy: set count
@@ -57,6 +59,21 @@ export interface ExerciseEntry {
 }
 
 /** One day's persisted data record */
+export interface FoodEntry {
+  id: string;
+  name: string;
+  brand?: string;
+  kcal: number;
+  protein: number;   // grams
+  carbs: number;     // grams
+  fat: number;       // grams
+  servingDesc: string;
+  servings: number;
+  meal: string;      // 'breakfast' | 'lunch' | 'dinner' | 'snack-{timestamp}'
+  barcode?: string;
+  loggedAt: number;
+}
+
 export interface DayRecord {
   steps?:    string | number;
   runDist?:  string | number;
@@ -71,6 +88,8 @@ export interface DayRecord {
   budget?:   number;
   calsEaten?: string;
   protein?:  number;
+  foods?: string;          // JSON-serialised FoodEntry[]
+  foodMealOrder?: string;  // JSON-serialised string[] — ordered list of section IDs
 }
 
 /** Keyed by "YYYY-MM-DD" */
@@ -124,6 +143,68 @@ export const PRESETS: Record<MuscleGroup, string[]> = {
   glutes:    ['Hip Thrust','Glute Bridge','Glute Kickback','Cable Pull-Through','Frog Pump','Donkey Kicks'],
   calfs:     ['Standing Calf Raise','Seated Calf Raise','Single-Leg Calf Raise','Donkey Calf Raise','Leg Press Calf Raise'],
   adductors: ['Hip Adduction Machine','Copenhagen Plank','Wide-Stance Squat','Side Lunges','Cable Hip Adduction','Sumo Squat'],
+};
+
+/** Secondary/tertiary muscle groups for compound lifts.
+ *  Keys match exercise names in PRESETS exactly.
+ *  Values use the same lowercase group keys as PRESETS. */
+export const SECONDARY_MUSCLES: Record<string, { g2?: string; g3?: string }> = {
+  // ── Chest ──────────────────────────────────────────────────────
+  'Bench Press':            { g2: 'tricep',    g3: 'shoulders' },
+  'Incline Bench Press':    { g2: 'tricep',    g3: 'shoulders' },
+  'Decline Bench Press':    { g2: 'tricep',    g3: 'shoulders' },
+  'Machine Chest Press':    { g2: 'tricep' },
+  'Smith Machine Press':    { g2: 'tricep',    g3: 'shoulders' },
+  'Push-ups':               { g2: 'tricep',    g3: 'shoulders' },
+  'Dumbbell Pullover':      { g2: 'back' },
+
+  // ── Back ───────────────────────────────────────────────────────
+  'Deadlift':               { g2: 'hamstring', g3: 'glutes'    },
+  'Sumo Deadlift':          { g2: 'hamstring', g3: 'glutes'    },
+  'Rack Pull':              { g2: 'hamstring', g3: 'glutes'    },
+  'Pull-ups':               { g2: 'bicep' },
+  'Chin-ups':               { g2: 'bicep' },
+  'Lat Pulldown':           { g2: 'bicep' },
+  'T-Bar Row':              { g2: 'bicep' },
+  'Barbell Row':            { g2: 'bicep' },
+  'Seated Cable Row':       { g2: 'bicep' },
+  'Single-Arm Row':         { g2: 'bicep' },
+  'Straight-Arm Pulldown':  { g2: 'bicep' },
+  'Shrugs':                 { g2: 'forearms' },
+  'Face Pulls':             { g2: 'shoulders' },
+
+  // ── Triceps ────────────────────────────────────────────────────
+  'Dips':                   { g2: 'chest',     g3: 'shoulders' },
+  'Close-Grip Bench':       { g2: 'chest' },
+
+  // ── Shoulders ──────────────────────────────────────────────────
+  'Overhead Press':         { g2: 'tricep' },
+  'Arnold Press':           { g2: 'tricep' },
+  'Upright Row':            { g2: 'bicep',    g3: 'back'       },
+
+  // ── Quads ──────────────────────────────────────────────────────
+  'Back Squat':             { g2: 'glutes',   g3: 'hamstring'  },
+  'Front Squat':            { g2: 'glutes',   g3: 'hamstring'  },
+  'Leg Press':              { g2: 'glutes',   g3: 'hamstring'  },
+  'Lunges':                 { g2: 'glutes',   g3: 'hamstring'  },
+  'Bulgarian Split Squat':  { g2: 'glutes',   g3: 'hamstring'  },
+  'Pendulum Squat':         { g2: 'glutes' },
+  'Hack Squat':             { g2: 'glutes' },
+  'Step-ups':               { g2: 'glutes',   g3: 'hamstring'  },
+
+  // ── Hamstrings ─────────────────────────────────────────────────
+  'Romanian Deadlift':      { g2: 'glutes',   g3: 'back'       },
+  'Stiff-Leg Deadlift':     { g2: 'glutes',   g3: 'back'       },
+  'Good Mornings':          { g2: 'back' },
+
+  // ── Glutes ─────────────────────────────────────────────────────
+  'Hip Thrust':             { g2: 'hamstring' },
+  'Glute Bridge':           { g2: 'hamstring' },
+  'Glute Kickback':         { g2: 'hamstring' },
+  'Cable Pull-Through':     { g2: 'hamstring', g3: 'back'      },
+
+  // ── Forearms ───────────────────────────────────────────────────
+  'Farmer Carries':         { g2: 'shoulders', g3: 'back'      },
 };
 
 export const DEFAULT_TEMPLATES: WorkoutTemplate[] = [

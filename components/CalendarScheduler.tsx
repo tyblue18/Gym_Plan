@@ -35,7 +35,7 @@ interface CellData {
   summary: string;
 }
 interface ParsedEntry {
-  k: string; g?: string; n?: string;
+  k: string; g?: string; g2?: string; g3?: string; n?: string;
   sets?: Array<{ r: string; w: string }>;
   s?: string; r?: string; w?: string;
   v1?: string; v2?: string; note?: string;
@@ -327,6 +327,34 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
     setEditCell(null);
   };
 
+  const removeSet = (arrIdx: number, setIdx: number) => {
+    const exs = parseEx(String(rec.exercises ?? ''));
+    const ex  = exs[arrIdx];
+    if (!ex) return;
+    const sets: Array<{ r: string; w: string }> = Array.isArray(ex.sets)
+      ? (ex.sets as Array<{ r: string; w: string }>).slice()
+      : normalizeSets(ex);
+    if (sets.length <= 1) return; // always keep at least one set
+    sets.splice(setIdx, 1);
+    ex.sets = sets as typeof ex.sets;
+    updateDayRecord(dateStr, { exercises: JSON.stringify(exs) });
+    setEditCell(null);
+  };
+
+  const addSet = (arrIdx: number) => {
+    const exs = parseEx(String(rec.exercises ?? ''));
+    const ex  = exs[arrIdx];
+    if (!ex) return;
+    const sets: Array<{ r: string; w: string }> = Array.isArray(ex.sets)
+      ? (ex.sets as Array<{ r: string; w: string }>).slice()
+      : normalizeSets(ex);
+    // Copy last set's values so the user only needs to change what differs
+    const last = sets[sets.length - 1] ?? { r: '1', w: '' };
+    sets.push({ r: last.r, w: last.w });
+    ex.sets = sets as typeof ex.sets;
+    updateDayRecord(dateStr, { exercises: JSON.stringify(exs) });
+  };
+
   // ── Swipe to change day ──────────────────────────────────────────────────
   const touchStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -414,7 +442,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                         const sets = normalizeSets(e);
                         const isPR = !!e.n && prLiftNames.has(e.n);
                         return (
-                          <div key={e.arrIdx} className="flex flex-col gap-1.5">
+                          <div key={e.arrIdx} className="flex flex-col gap-1">
                             <div className="flex items-center gap-1.5">
                               <button
                                 type="button"
@@ -426,6 +454,15 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                               </button>
                               <PRLiveBadge active={isPR} size={26} />
                             </div>
+                            {(e.g2 || e.g3) && (
+                              <div className="flex items-center gap-1">
+                                {([e.g2, e.g3].filter(Boolean) as string[]).map((g, i) => (
+                                  <span key={g} className="font-mono text-[8px] font-bold tracking-[0.8px] uppercase text-[var(--ink-3)] border border-[var(--line)] rounded-sm px-1 py-px">
+                                    {i === 0 ? '2°' : '3°'} {g}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                             {sets.length > 0 && (
                               <div className="flex flex-wrap gap-1">
                                 {sets.map((s, si) => {
@@ -477,6 +514,18 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                                             }}
                                             className="w-16 text-center bg-transparent text-[var(--ink-2)] outline-none"
                                           />
+                                          {/* Remove this set — only if more than one set exists */}
+                                          {sets.length > 1 && (
+                                            <button
+                                              type="button"
+                                              onMouseDown={ev => {
+                                                ev.preventDefault(); // prevent blur firing before remove
+                                                removeSet(e.arrIdx, si);
+                                              }}
+                                              className="ml-0.5 text-[var(--danger)] text-[12px] font-bold leading-none hover:text-[var(--danger)] flex-shrink-0"
+                                              title="Remove set"
+                                            >×</button>
+                                          )}
                                         </span>
                                       ) : (
                                         <>
@@ -488,6 +537,13 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                                     </span>
                                   );
                                 })}
+                                {/* Add set button */}
+                                <button
+                                  type="button"
+                                  onClick={() => addSet(e.arrIdx)}
+                                  className="inline-flex items-center justify-center font-mono text-[11px] font-bold text-[var(--accent)] border border-[var(--accent)]/40 rounded-sm px-2 py-0.5 hover:bg-[var(--accent)]/10 active:bg-[var(--accent)]/20 transition-colors"
+                                  title="Add set"
+                                >+</button>
                               </div>
                             )}
                           </div>

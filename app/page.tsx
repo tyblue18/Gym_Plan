@@ -1,18 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, BarChart2, Layers } from 'lucide-react';
+import { Calendar, BarChart2, Layers, Utensils } from 'lucide-react';
 import { AuthHeader }    from '@/components/header';
 import CalendarScheduler from '@/components/CalendarScheduler';
 import MetricsDashboard  from '@/components/MetricsDashboard';
 import WorkoutLogger     from '@/components/WorkoutLogger';
+import CalorieTracker    from '@/components/CalorieTracker';
 import { Onboarding, needsOnboarding } from '@/components/Onboarding';
 import { useApp } from '@/lib/AppContext';
 
-type Tab = 'calendar' | 'metrics' | 'protocol';
+type Tab = 'calendar' | 'calories' | 'metrics' | 'protocol';
 
 const TABS = [
   { id: 'calendar' as Tab, label: 'Calendar', Icon: Calendar  },
+  { id: 'calories' as Tab, label: 'Calories', Icon: Utensils  },
   { id: 'metrics'  as Tab, label: 'Metrics',  Icon: BarChart2 },
   { id: 'protocol' as Tab, label: 'Protocol', Icon: Layers    },
 ] as const;
@@ -22,7 +24,6 @@ export default function WorkoutPage() {
   const [showOnboarding, setOnboarding] = useState(false);
   const { isLoaded }                    = useApp();
 
-  // Only check after localStorage has been hydrated
   useEffect(() => {
     if (!isLoaded) return;
     setOnboarding(needsOnboarding());
@@ -39,6 +40,7 @@ export default function WorkoutPage() {
             <WorkoutLogger />
           </div>
         )}
+        {tab === 'calories' && <CalorieTracker />}
         {tab === 'metrics'  && <MetricsDashboard />}
         {tab === 'protocol' && (
           <div className="app-protocol-layout">
@@ -57,7 +59,7 @@ export default function WorkoutPage() {
             onClick={() => setTab(id)}
             className="app-tab"
           >
-            <Icon size={20} aria-hidden="true" />
+            <Icon size={18} aria-hidden="true" />
             <span>{label}</span>
           </button>
         ))}

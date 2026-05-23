@@ -13,7 +13,7 @@ import {
   Layers, Plus, Save, Trash2, X,
 } from 'lucide-react';
 import {
-  useApp, PRESETS,
+  useApp, PRESETS, SECONDARY_MUSCLES,
   type ExerciseEntry, type SetData,
   type WorkoutPreset,
 } from '@/lib/AppContext';
@@ -297,13 +297,24 @@ function ReorderableExerciseItem({
               }}
             />
           ) : (
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span
-                onClick={startNameEdit}
-                className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors truncate"
-              >
-                {entry.n ?? entry.k}
-              </span>
+            <div className="flex items-start gap-1.5 min-w-0">
+              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <span
+                  onClick={startNameEdit}
+                  className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors truncate"
+                >
+                  {entry.n ?? entry.k}
+                </span>
+                {(entry.g2 || entry.g3) && (
+                  <div className="flex items-center gap-1">
+                    {([entry.g2, entry.g3].filter(Boolean) as string[]).map((g, i) => (
+                      <span key={g} className="font-mono text-[8px] font-bold tracking-[0.8px] uppercase text-[var(--ink-3)] border border-[var(--line)] rounded-sm px-1 py-px">
+                        {i === 0 ? '2°' : '3°'} {g}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <PRLiveBadge active={!!isPR} size={26} />
               {onViewHistory && (
                 <button
@@ -732,6 +743,8 @@ export default function WorkoutLogger() {
   const [selectedEx,    setSelectedEx]    = useState('');
   const [isCustomEx,    setIsCustomEx]    = useState(false);
   const [customName,    setCustomName]    = useState('');
+  const [customG2,      setCustomG2]      = useState('');
+  const [customG3,      setCustomG3]      = useState('');
   const [exSearch,      setExSearch]      = useState('');
   const [pendingDelete, setPendingDelete] = useState<{ entry: ExerciseEntry; key: string } | null>(null);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -825,18 +838,33 @@ export default function WorkoutLogger() {
   );
 
   const exerciseOptions = useMemo(() => {
-    const presets = PRESETS[currentGroup as keyof typeof PRESETS] ?? [];
-    // Only read localStorage after hydration — prevents server/client mismatch
-    if (!isLoaded) return presets;
-    const usage = getUsage()[currentGroup] ?? {};
-    const usedNames = Object.keys(usage).sort((a, b) => (usage[b] ?? 0) - (usage[a] ?? 0));
-    const unusedPresets = presets.filter(e => !usage[e]);
-    return [...usedNames, ...unusedPresets];
+    const grp = currentGroup as keyof typeof PRESETS;
+    const presets = PRESETS[grp] ?? [];
+
+    // Primary exercises — sorted by usage frequency
+    const usage       = isLoaded ? (getUsage()[currentGroup] ?? {}) : {};
+    const usedNames   = Object.keys(usage).filter(n => presets.includes(n)).sort((a, b) => (usage[b] ?? 0) - (usage[a] ?? 0));
+    const unused      = presets.filter(n => !usage[n]);
+    const primary     = [...usedNames, ...unused];
+
+    // Secondary exercises — exercises from other groups where currentGroup is g2 or g3
+    const secondary: Array<{ n: string; fromGroup: string }> = [];
+    (Object.keys(PRESETS) as Array<keyof typeof PRESETS>).forEach(g => {
+      if (g === grp) return;
+      PRESETS[g].forEach(name => {
+        const m = SECONDARY_MUSCLES[name];
+        if (m?.g2 === currentGroup || m?.g3 === currentGroup) {
+          secondary.push({ n: name, fromGroup: capitalize(String(g)) });
+        }
+      });
+    });
+
+    return { primary, secondary };
   }, [currentGroup, getUsage, isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    setSelectedEx(exerciseOptions[0] ?? '');
-    setIsCustomEx(false); setCustomName('');
+    setSelectedEx(exerciseOptions.primary[0] ?? '');
+    setIsCustomEx(false); setCustomName(''); setCustomG2(''); setCustomG3('');
   }, [currentGroup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── pill drag
@@ -906,13 +934,24 @@ export default function WorkoutLogger() {
       w: weightRefs.current[i]?.value.trim() || s.w || '',
     }));
     bumpUsage(currentGroup, name);
-    const next = [...exercises, { k: 'lift' as const, g: currentGroup, n: name, sets: snappedSets }];
+
+    // Auto-fill secondary/tertiary from the map; custom exercises use the explicit selectors
+    const muscles = isCustomEx
+      ? { g2: customG2 || undefined, g3: customG3 || undefined }
+      : SECONDARY_MUSCLES[name] ?? {};
+
+    const entry: ExerciseEntry = {
+      k: 'lift', g: currentGroup, n: name, sets: snappedSets,
+      ...(muscles.g2 && { g2: muscles.g2 }),
+      ...(muscles.g3 && { g3: muscles.g3 }),
+    };
+    const next = [...exercises, entry];
     exerciseKeysRef.current = [...exerciseKeysRef.current, nextKey()];
     setExercisesRaw(next);
     setPendingSetData(Array.from({ length: pendingSetsCount }, () => ({ r: '1', w: '' })));
-    if (isCustomEx) setCustomName('');
+    if (isCustomEx) { setCustomName(''); setCustomG2(''); setCustomG3(''); }
   }, [
-    isCustomEx, customName, selectedEx, pendingSetData,
+    isCustomEx, customName, customG2, customG3, selectedEx, pendingSetData,
     currentGroup, exercises, pendingSetsCount,
     bumpUsage, setPendingSetData,
   ]);
@@ -1379,34 +1418,80 @@ export default function WorkoutLogger() {
                         </button>
                       )}
                     </div>
-                    {/* Filtered select */}
+                    {/* Filtered select with primary + secondary grouping */}
                     <div className="relative">
-                      <select
-                        className="que-input pr-9 cursor-pointer"
-                        value={selectedEx}
-                        onChange={e => {
-                          if (e.target.value === '__custom__') {
-                            setIsCustomEx(true); setSelectedEx(''); setExSearch('');
-                          } else { setSelectedEx(e.target.value); setExSearch(''); }
-                        }}
-                          size={exSearch ? Math.min(6, exerciseOptions.filter(ex => ex.toLowerCase().includes(exSearch.toLowerCase())).length + 1) : 1}
-                      >
-                        {exerciseOptions
-                          .filter(ex => !exSearch || ex.toLowerCase().includes(exSearch.toLowerCase()))
-                          .map(ex => <option key={ex} value={ex}>{ex}</option>)}
-                        <option value="__custom__">+ Custom exercise…</option>
-                      </select>
+                      {(() => {
+                        const q = exSearch.toLowerCase();
+                        const filteredPrimary   = exerciseOptions.primary.filter(n => !q || n.toLowerCase().includes(q));
+                        const filteredSecondary = exerciseOptions.secondary.filter(({ n }) => !q || n.toLowerCase().includes(q));
+                        const totalVisible      = filteredPrimary.length + filteredSecondary.length;
+                        return (
+                          <select
+                            className="que-input pr-9 cursor-pointer"
+                            value={selectedEx}
+                            onChange={e => {
+                              if (e.target.value === '__custom__') {
+                                setIsCustomEx(true); setSelectedEx(''); setExSearch('');
+                              } else { setSelectedEx(e.target.value); setExSearch(''); }
+                            }}
+                            size={exSearch ? Math.min(8, totalVisible + 1) : 1}
+                          >
+                            {filteredPrimary.map(n => <option key={n} value={n}>{n}</option>)}
+                            {filteredSecondary.length > 0 && (
+                              <optgroup label="── Also trains this muscle ──">
+                                {filteredSecondary.map(({ n, fromGroup }) => (
+                                  <option key={n} value={n}>{n} · {fromGroup}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            <option value="__custom__">+ Custom exercise…</option>
+                          </select>
+                        );
+                      })()}
                       {!exSearch && <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-2)] pointer-events-none" />}
                     </div>
                   </div>
                 )}
                 {isCustomEx && (
-                  <button
-                    onClick={() => { setIsCustomEx(false); setCustomName(''); }}
-                    className="mt-2 font-mono text-[10px] text-[var(--ink-3)] hover:text-[var(--accent)] transition-colors tracking-[1px] uppercase"
-                  >
-                    ← back to presets
-                  </button>
+                  <div className="mt-2 space-y-2">
+                    {/* Secondary + tertiary muscle selectors for custom exercises */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: 'Primary muscle', value: currentGroup, disabled: true },
+                      ].map(f => (
+                        <div key={f.label}>
+                          <label className="que-label">{f.label}</label>
+                          <select className="que-input cursor-not-allowed opacity-60" disabled value={f.value}>
+                            <option value={f.value}>{capitalize(f.value)}</option>
+                          </select>
+                        </div>
+                      ))}
+                      <div>
+                        <label className="que-label">Secondary <span className="font-normal text-[var(--ink-3)] normal-case">(opt)</span></label>
+                        <select className="que-input cursor-pointer" value={customG2} onChange={e => setCustomG2(e.target.value)}>
+                          <option value="">None</option>
+                          {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).filter(g => g !== currentGroup).map(g => (
+                            <option key={g} value={g}>{capitalize(String(g))}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="que-label">Tertiary <span className="font-normal text-[var(--ink-3)] normal-case">(opt)</span></label>
+                        <select className="que-input cursor-pointer" value={customG3} onChange={e => setCustomG3(e.target.value)} disabled={!customG2}>
+                          <option value="">None</option>
+                          {(Object.keys(PRESETS) as Array<keyof typeof PRESETS>).filter(g => g !== currentGroup && g !== customG2).map(g => (
+                            <option key={g} value={g}>{capitalize(String(g))}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setIsCustomEx(false); setCustomName(''); setCustomG2(''); setCustomG3(''); }}
+                      className="font-mono text-[10px] text-[var(--ink-3)] hover:text-[var(--accent)] transition-colors tracking-[1px] uppercase"
+                    >
+                      ← back to presets
+                    </button>
+                  </div>
                 )}
               </div>
 
