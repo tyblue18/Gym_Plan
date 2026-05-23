@@ -13,6 +13,12 @@
 
 import { NextResponse } from 'next/server';
 import { foodLimit }   from '@/lib/ratelimit';
+import { Redis }       from '@upstash/redis';
+
+const redis = new Redis({
+  url:   process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
 interface NormalizedProduct {
   product_name:     string;
@@ -131,14 +137,19 @@ export async function GET(req: Request): Promise<NextResponse> {
   const { success } = await foodLimit.limit(ip);
   if (!success) return NextResponse.json({ products: [], error: 'Rate limited' }, { status: 429 });
 
-  const key = process.env.USDA_API_KEY ?? 'DEMO_KEY';
+  // ── Cache check (24 h TTL) ─────────────────────────────────────────────────
+  const cacheKey = `food:${q.toLowerCase()}`;
+  const cached   = await redis.get<{ products: NormalizedProduct[]; source: string }>(cacheKey);
+  if (cached) return NextResponse.json({ ...cached, cached: true });
+
+  const apiKey = process.env.USDA_API_KEY ?? 'DEMO_KEY';
 
   // Try USDA first (better accuracy for raw/generic foods)
   let products: NormalizedProduct[] = [];
   let source: 'usda' | 'off' | 'none' = 'none';
 
   try {
-    const usda = await searchUSDA(q, key);
+    const usda = await searchUSDA(q, apiKey);
     if (usda.length > 0) { products = usda; source = 'usda'; }
   } catch {
     // USDA unavailable or rate-limited — fall through to OFF
@@ -154,5 +165,12 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
   }
 
-  return NextResponse.json({ products: products.slice(0, 12), source });
+  const result = { products: products.slice(0, 12), source };
+
+  // Cache successful results — skip if both sources failed
+  if (products.length > 0) {
+    await redis.setex(cacheKey, 86_400, result);
+  }
+
+  return NextResponse.json(result);
 }
