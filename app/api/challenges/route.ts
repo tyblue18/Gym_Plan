@@ -8,16 +8,11 @@ import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
 
-async function getUser(email: string) {
-  return prisma.appUser.findUnique({ where: { email } });
-}
-
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const me = await getUser(session.user.email);
-  if (!me) return NextResponse.json({ incoming: [], sent: [], resolved: [] });
+  const me = { id: session.user.id };
 
   const select = {
     id: true, wager: true, status: true, categories: true,
@@ -53,7 +48,7 @@ export async function GET(): Promise<NextResponse> {
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   const { friendId, wager } = await req.json() as { friendId?: string; wager?: number };
   if (!friendId) return NextResponse.json({ error: 'friendId required' }, { status: 400 });
@@ -61,8 +56,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Wager must be at least 1 coin' }, { status: 400 });
   }
 
-  const me = await getUser(session.user.email);
-  if (!me) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const me = { id: session.user.id };
 
   // Verify friendship
   const friendship = await prisma.friendship.findFirst({

@@ -11,16 +11,14 @@ import { getUserBadges }    from '@/lib/badgeEngine';
 
 export async function GET(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const me = await prisma.appUser.findUnique({ where: { email: session.user.email } });
-  if (!me) return NextResponse.json(null, { status: 404 });
-
+  const myId     = session.user.id;
   const targetId = new URL(req.url).searchParams.get('userId');
 
   // Own badges
-  if (!targetId || targetId === me.id) {
-    const badges = await getUserBadges(me.id);
+  if (!targetId || targetId === myId) {
+    const badges = await getUserBadges(myId);
     return NextResponse.json({ badges });
   }
 
@@ -29,8 +27,8 @@ export async function GET(req: Request): Promise<NextResponse> {
     where: {
       status: 'accepted',
       OR: [
-        { requesterId: me.id, receiverId: targetId },
-        { requesterId: targetId, receiverId: me.id },
+        { requesterId: myId, receiverId: targetId },
+        { requesterId: targetId, receiverId: myId },
       ],
     },
   });

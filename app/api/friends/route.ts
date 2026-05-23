@@ -11,10 +11,9 @@ import { prisma }           from '@/lib/prisma';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const me = await prisma.appUser.findUnique({ where: { email: session.user.email } });
-  if (!me) return NextResponse.json({ friends: [], incoming: [], outgoing: [] });
+  const me = { id: session.user.id };
 
   const [sent, received] = await Promise.all([
     prisma.friendship.findMany({
@@ -71,12 +70,12 @@ export async function GET(): Promise<NextResponse> {
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   const { username } = await req.json() as { username?: string };
   if (!username?.trim()) return NextResponse.json({ error: 'Username required' }, { status: 400 });
 
-  const me = await prisma.appUser.findUnique({ where: { email: session.user.email } });
+  const me = await prisma.appUser.findUnique({ where: { id: session.user.id } });
   if (!me) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   if (!me.username) {
@@ -114,13 +113,12 @@ export async function POST(req: Request): Promise<NextResponse> {
 
 export async function DELETE(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   const { friendshipId } = await req.json() as { friendshipId?: string };
   if (!friendshipId) return NextResponse.json({ error: 'friendshipId required' }, { status: 400 });
 
-  const me = await prisma.appUser.findUnique({ where: { email: session.user.email } });
-  if (!me) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const me = { id: session.user.id };
 
   const friendship = await prisma.friendship.findUnique({ where: { id: friendshipId } });
   if (!friendship || (friendship.requesterId !== me.id && friendship.receiverId !== me.id)) {

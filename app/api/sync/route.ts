@@ -20,23 +20,18 @@ import { checkAndAwardBadges }     from '@/lib/badgeEngine';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    return NextResponse.json(null, { status: 401 });
-  }
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const user = await prisma.appUser.findUnique({
-    where:   { email: session.user.email },
-    include: { workoutData: true },
+  const wd = await prisma.workoutData.findUnique({
+    where: { userId: session.user.id },
   });
 
-  if (!user?.workoutData) {
-    return NextResponse.json({});
-  }
+  if (!wd) return NextResponse.json({});
 
   return NextResponse.json({
-    localDB:  user.workoutData.localDB,
-    profile:  user.workoutData.profile,
-    settings: user.workoutData.settings,
+    localDB:  wd.localDB,
+    profile:  wd.profile,
+    settings: wd.settings,
   });
 }
 
@@ -46,9 +41,9 @@ export async function GET(): Promise<NextResponse> {
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    return NextResponse.json(null, { status: 401 });
-  }
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
+
+  const userId = session.user.id;
 
   let body: {
     localDB?:  Record<string, unknown>;
@@ -62,25 +57,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // Upsert the user row (first sync creates it)
-  const user = await prisma.appUser.upsert({
-    where:  { email: session.user.email },
-    create: { email: session.user.email, name: session.user.name ?? undefined },
-    update: { name: session.user.name ?? undefined },
-  });
-
   // Read existing row so we can deep-merge settings (never discard keys like
-  // queProfilePhoto that might not be in every push payload).
-  const existing = await prisma.workoutData.findUnique({ where: { userId: user.id } });
+  // queAthletePlan that might not be in every push payload).
+  const existing = await prisma.workoutData.findUnique({ where: { userId } });
   const existingSettings = (existing?.settings ?? {}) as Record<string, unknown>;
   const mergedSettings   = body.settings !== undefined
     ? { ...existingSettings, ...body.settings }
     : existingSettings;
 
   const saved = await prisma.workoutData.upsert({
-    where:  { userId: user.id },
+    where:  { userId },
     create: {
-      userId:   user.id,
+      userId,
       localDB:  (body.localDB  ?? {}) as never,
       profile:  (body.profile  ?? {}) as never,
       settings: mergedSettings as never,
@@ -95,7 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   });
 
   // Award any newly earned badges — fire-and-forget, never blocks the sync response
-  checkAndAwardBadges(user.id, {
+  checkAndAwardBadges(userId, {
     localDB:  saved.localDB  as Record<string, unknown>,
     settings: mergedSettings as Record<string, unknown>,
   }).catch(() => { /* non-critical */ });

@@ -18,15 +18,14 @@ export async function POST(
 ): Promise<NextResponse> {
   const { id } = await params;
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   const { action } = await req.json() as { action?: 'accept' | 'decline' };
   if (action !== 'accept' && action !== 'decline') {
     return NextResponse.json({ error: 'action must be accept or decline' }, { status: 400 });
   }
 
-  const me = await prisma.appUser.findUnique({ where: { email: session.user.email } });
-  if (!me) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const me = { id: session.user.id };
 
   const challenge = await prisma.challenge.findUnique({ where: { id } });
   if (!challenge || challenge.status !== 'pending') {

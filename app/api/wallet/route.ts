@@ -8,20 +8,13 @@ import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
 
-async function getUser(email: string) {
-  return prisma.appUser.findUnique({ where: { email } });
-}
-
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
-
-  const user = await getUser(session.user.email);
-  if (!user) return NextResponse.json(null, { status: 404 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   const wallet = await prisma.coinWallet.upsert({
-    where:  { userId: user.id },
-    create: { userId: user.id, balance: 0 },
+    where:  { userId: session.user.id },
+    create: { userId: session.user.id, balance: 0 },
     update: {},
   });
 
@@ -30,20 +23,19 @@ export async function GET(): Promise<NextResponse> {
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   const { balance } = await req.json() as { balance?: number };
   if (typeof balance !== 'number' || balance < 0) {
     return NextResponse.json({ error: 'Invalid balance' }, { status: 400 });
   }
 
-  const user = await getUser(session.user.email);
-  if (!user) return NextResponse.json(null, { status: 404 });
+  const userId = session.user.id;
 
   // Idempotent: only seed if wallet has never been imported (balance === 0 and no prior transactions)
   const wallet = await prisma.coinWallet.upsert({
-    where:  { userId: user.id },
-    create: { userId: user.id, balance: 0 },
+    where:  { userId },
+    create: { userId, balance: 0 },
     update: {},
     include: { transactions: { take: 1 } },
   });

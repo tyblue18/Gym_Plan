@@ -10,10 +10,10 @@ import { prisma }           from '@/lib/prisma';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   const user = await prisma.appUser.findUnique({
-    where:   { email: session.user.email },
+    where:   { id: session.user.id },
     include: { badges: { orderBy: { earnedAt: 'desc' } }, workoutData: { select: { settings: true } } },
   });
   if (!user) return NextResponse.json(null, { status: 404 });
@@ -36,7 +36,7 @@ export async function GET(): Promise<NextResponse> {
 
 export async function PATCH(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) return NextResponse.json(null, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   let body: {
     username?:       string;
@@ -81,7 +81,7 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   }
 
   try {
-    await prisma.appUser.update({ where: { email: session.user.email }, data: update });
+    await prisma.appUser.update({ where: { id: session.user.id }, data: update });
     return NextResponse.json({ ok: true });
   } catch (e) {
     // P2002 = unique constraint violation (username taken)

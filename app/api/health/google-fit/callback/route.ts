@@ -13,7 +13,7 @@ import { prisma }           from '@/lib/prisma';
 
 export async function GET(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/?error=not_authenticated`);
   }
 
@@ -54,17 +54,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     scope:         string;
   };
 
-  // Upsert the user, then upsert the health connection
-  const user = await prisma.appUser.upsert({
-    where:  { email: session.user.email },
-    create: { email: session.user.email, name: session.user.name ?? undefined },
-    update: {},
-  });
-
   await prisma.healthConnection.upsert({
-    where:  { userId: user.id },
+    where:  { userId: session.user.id },
     create: {
-      userId:              user.id,
+      userId:              session.user.id,
       googleAccessToken:   tokens.access_token,
       googleRefreshToken:  tokens.refresh_token ?? null,
       googleExpiresAt:     new Date(Date.now() + tokens.expires_in * 1000),

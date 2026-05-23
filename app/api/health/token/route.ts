@@ -19,25 +19,20 @@ function generateToken(): string {
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  const user = await prisma.appUser.upsert({
-    where:  { email: session.user.email },
-    create: { email: session.user.email, name: session.user.name ?? undefined },
-    update: {},
-    include: { workoutData: true },
-  });
-
-  const settings = (user.workoutData?.settings ?? {}) as Record<string, unknown>;
+  const userId = session.user.id;
+  const wd = await prisma.workoutData.findUnique({ where: { userId } });
+  const settings = (wd?.settings ?? {}) as Record<string, unknown>;
   let token = settings.stepApiToken as string | undefined;
 
   if (!token) {
     token = generateToken();
     await prisma.workoutData.upsert({
-      where:  { userId: user.id },
-      create: { userId: user.id, settings: { ...settings, stepApiToken: token } },
+      where:  { userId },
+      create: { userId, settings: { ...settings, stepApiToken: token } },
       update: { settings: { ...settings, stepApiToken: token } },
     });
   }

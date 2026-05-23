@@ -1,6 +1,7 @@
 import GithubProvider from 'next-auth/providers/github';
 import GoogleProvider  from 'next-auth/providers/google';
 import type { NextAuthOptions } from 'next-auth';
+import { prisma } from '@/lib/prisma';
 
 /**
  * Centralised NextAuth config — imported by:
@@ -38,12 +39,22 @@ export const authOptions: NextAuthOptions = {
       if (account && profile) {
         token.githubId = (profile as { id?: number }).id;
       }
+      // Upsert the DB user once and cache their id in the JWT.
+      // After this, every route reads session.user.id with no extra DB query.
+      if (!token.userId && token.email) {
+        const user = await prisma.appUser.upsert({
+          where:  { email: token.email },
+          create: { email: token.email, name: token.name ?? undefined },
+          update: { name: token.name ?? undefined },
+        });
+        token.userId = user.id;
+      }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as typeof session.user & { githubId?: number }).githubId =
-          token.githubId as number | undefined;
+        session.user.id       = token.userId as string;
+        session.user.githubId = token.githubId as number | undefined;
       }
       return session;
     },

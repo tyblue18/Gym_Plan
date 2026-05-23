@@ -56,30 +56,29 @@ async function refreshAccessToken(conn: {
 
 export async function GET(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
   const dateStr = searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
 
-  const user = await prisma.appUser.findUnique({
-    where:   { email: session.user.email },
-    include: { healthConn: true },
+  const conn = await prisma.healthConnection.findUnique({
+    where: { userId: session.user.id },
   });
 
-  if (!user?.healthConn?.googleAccessToken) {
+  if (!conn?.googleAccessToken) {
     return NextResponse.json({ error: 'Google Fit not connected' }, { status: 404 });
   }
 
-  let token = user.healthConn.googleAccessToken;
+  let token = conn.googleAccessToken;
 
   // Refresh if expired (with 60 s buffer)
-  const expiry = user.healthConn.googleExpiresAt;
+  const expiry = conn.googleExpiresAt;
   if (expiry && expiry.getTime() < Date.now() + 60_000) {
     const refreshed = await refreshAccessToken({
-      googleRefreshToken: user.healthConn.googleRefreshToken,
-      userId:             user.id,
+      googleRefreshToken: conn.googleRefreshToken,
+      userId:             session.user.id,
     });
     if (!refreshed) {
       return NextResponse.json({ error: 'Token refresh failed' }, { status: 401 });
