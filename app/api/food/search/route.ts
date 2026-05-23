@@ -12,6 +12,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { foodLimit }   from '@/lib/ratelimit';
 
 interface NormalizedProduct {
   product_name:     string;
@@ -125,6 +126,10 @@ async function searchOFF(q: string): Promise<NormalizedProduct[]> {
 export async function GET(req: Request): Promise<NextResponse> {
   const q = new URL(req.url).searchParams.get('q')?.trim();
   if (!q) return NextResponse.json({ products: [] });
+
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'anon';
+  const { success } = await foodLimit.limit(ip);
+  if (!success) return NextResponse.json({ products: [], error: 'Rate limited' }, { status: 429 });
 
   const key = process.env.USDA_API_KEY ?? 'DEMO_KEY';
 

@@ -13,6 +13,7 @@ import { NextResponse }            from 'next/server';
 import { authOptions }             from '@/lib/auth';
 import { prisma }                  from '@/lib/prisma';
 import { checkAndAwardBadges }     from '@/lib/badgeEngine';
+import { syncLimit }               from '@/lib/ratelimit';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET — pull latest snapshot
@@ -44,6 +45,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
   const userId = session.user.id;
+
+  const { success } = await syncLimit.limit(userId);
+  if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
 
   let body: {
     localDB?:  Record<string, unknown>;
