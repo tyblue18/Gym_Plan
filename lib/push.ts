@@ -1,11 +1,24 @@
 import webPush from 'web-push';
 import { prisma } from '@/lib/prisma';
 
-webPush.setVapidDetails(
-  'mailto:tanishqsomania21@gmail.com',
-  process.env.VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!,
-);
+type PushSubClient = {
+  findMany: (args: { where: { userId: string } }) => Promise<Array<{ id: string; endpoint: string; p256dh: string; auth: string }>>;
+  delete:   (args: { where: { id: string } })     => Promise<unknown>;
+};
+const ps = () => (prisma as unknown as { pushSubscription: PushSubClient }).pushSubscription;
+
+let vapidSet = false;
+
+function ensureVapid() {
+  if (vapidSet) return;
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
+  webPush.setVapidDetails(
+    'mailto:tanishqsomania21@gmail.com',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY,
+  );
+  vapidSet = true;
+}
 
 export interface PushPayload {
   title: string;
@@ -14,7 +27,10 @@ export interface PushPayload {
 }
 
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
-  const subs = await prisma.pushSubscription.findMany({ where: { userId } });
+  ensureVapid();
+  if (!vapidSet) return;
+
+  const subs = await ps().findMany({ where: { userId } });
   if (subs.length === 0) return;
 
   await Promise.allSettled(
@@ -27,7 +43,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
       } catch (err: unknown) {
         const status = (err as { statusCode?: number }).statusCode;
         if (status === 410 || status === 404) {
-          await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+          await ps().delete({ where: { id: sub.id } }).catch(() => {});
         }
       }
     })

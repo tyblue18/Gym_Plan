@@ -3,6 +3,12 @@ import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
 
+type PushSubClient = {
+  upsert:      (args: unknown) => Promise<unknown>;
+  deleteMany:  (args: unknown) => Promise<unknown>;
+};
+const ps = () => (prisma as unknown as { pushSubscription: PushSubClient }).pushSubscription;
+
 interface SubBody {
   endpoint: string;
   keys: { p256dh: string; auth: string };
@@ -17,7 +23,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid subscription' }, { status: 400 });
   }
 
-  await prisma.pushSubscription.upsert({
+  await ps().upsert({
     where:  { userId_endpoint: { userId: session.user.id, endpoint: body.endpoint } },
     create: { userId: session.user.id, endpoint: body.endpoint, p256dh: body.keys.p256dh, auth: body.keys.auth },
     update: { p256dh: body.keys.p256dh, auth: body.keys.auth },
@@ -33,7 +39,7 @@ export async function DELETE(req: Request): Promise<NextResponse> {
   const { endpoint } = await req.json() as { endpoint: string };
   if (!endpoint) return NextResponse.json({ error: 'Missing endpoint' }, { status: 400 });
 
-  await prisma.pushSubscription.deleteMany({
+  await ps().deleteMany({
     where: { userId: session.user.id, endpoint },
   });
 
