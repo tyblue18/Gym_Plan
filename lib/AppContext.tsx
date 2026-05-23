@@ -474,20 +474,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCurrentDisplayDate(new Date(y, m - 1, d));
   }, []);
 
-  // Sync localDB to cloud on every change, but skip the very first render
-  // (initial localStorage hydration + cloud pull shouldn't count as a user write).
+  // Tracks which dates were written since the last sync — only those are pushed.
+  const dirtyDaysRef    = useRef<Set<string>>(new Set());
   const syncSkipCountRef = useRef(2); // skip first 2 fires (mount + cloud-pull merge)
   useEffect(() => {
     if (syncSkipCountRef.current > 0) {
       syncSkipCountRef.current -= 1;
       return;
     }
-    queueSync({ localDB: localDB as Record<string, unknown> });
+    const dirty = dirtyDaysRef.current;
+    if (dirty.size === 0) return;
+    const partial: Record<string, unknown> = {};
+    for (const d of dirty) partial[d] = localDB[d] as unknown;
+    dirty.clear();
+    queueSync({ localDB: partial });
   }, [localDB]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Merge a partial update into one day's record and immediately persist. */
   const updateDayRecord = useCallback(
     (dateStr: string, updates: Partial<DayRecord>) => {
+      dirtyDaysRef.current.add(dateStr);
       setLocalDB(prev => {
         const next = {
           ...prev,
@@ -515,9 +521,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         localStorage.setItem(DB_KEY, JSON.stringify(target));
       } catch { /* storage quota exceeded */ }
-      if (db) setLocalDB(db);
-      // Queue a cloud sync — debounced 4 s, fire-and-forget
-      queueSync({ localDB: target as Record<string, unknown> });
+      if (db) {
+        // Only push the newly supplied days, not the entire DB
+        const partial: Record<string, unknown> = {};
+        for (const d of Object.keys(db)) partial[d] = db[d] as unknown;
+        setLocalDB(db);
+        queueSync({ localDB: partial });
+      }
     },
     [localDB]
   );
