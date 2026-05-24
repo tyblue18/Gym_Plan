@@ -19,6 +19,7 @@ import {
 } from '@/lib/AppContext';
 import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
 import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
+import { queueSync } from '@/lib/syncEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -1184,6 +1185,7 @@ export default function WorkoutLogger() {
       createdAt:   activeDayFocus,
     };
     saveWorkoutPresets([...existing, preset]);
+    queueSync({});
     setSaveModal(false);
   }, [swm, lifts, activeDayFocus, getWorkoutPresets, saveWorkoutPresets]);
 

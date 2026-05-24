@@ -451,18 +451,22 @@ function MacroBar({ label, value, max, color, hit = false, allHit = false }: {
         </motion.span>
       </div>
 
-      {/* Bar track — glow pulses when hit, bigger when allHit */}
+      {/* Bar track — glow pulses when hit, pulses golden continuously when allHit */}
       <motion.div
         className="h-2 rounded-full relative"
         style={{ background: 'var(--bg-3)' }}
         animate={{
           boxShadow: allHit
-            ? ['0 0 0px rgba(255,181,71,0)', '0 0 18px rgba(255,181,71,0.7)', '0 0 10px rgba(255,181,71,0.45)']
+            ? ['0 0 8px rgba(255,181,71,0.5)', '0 0 24px rgba(255,181,71,1)', '0 0 8px rgba(255,181,71,0.5)']
             : hit
             ? ['0 0 0px rgba(109,255,153,0)', '0 0 12px rgba(109,255,153,0.65)', '0 0 6px rgba(109,255,153,0.35)']
             : '0 0 0px transparent',
         }}
-        transition={{ duration: 0.6, times: [0, 0.4, 1] }}
+        transition={
+          allHit
+            ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }
+            : { duration: 0.6, times: [0, 0.4, 1] }
+        }
       >
         {/* Fill — spring physics, overshoots on hit for satisfying "pop" */}
         <motion.div
@@ -1336,7 +1340,7 @@ export default function CalorieTracker() {
 
   useEffect(() => {
     if (isPerfect && !prevAllHitRef.current) {
-      navigator.vibrate?.([40, 20, 80, 20, 40]);
+      navigator.vibrate?.([30, 15, 50, 15, 80, 20, 120, 20, 80, 15, 50, 15, 30]);
       setMacroCelebrate(true);
     }
     prevAllHitRef.current = isPerfect;
@@ -1443,20 +1447,30 @@ export default function CalorieTracker() {
         </div>
       </div>
 
-      {/* Calorie summary hero — glows gold when goal is hit */}
-      <div
-        className="que-card mb-4 transition-all duration-700"
-        style={
-          isPerfect ? {
-            borderColor: 'rgba(255,181,71,0.6)',
-            boxShadow:   '0 0 0 1px rgba(255,181,71,0.5), 0 0 40px rgba(255,181,71,0.25)',
-          } : undefined
+      {/* Calorie summary hero — pulses golden when perfect */}
+      <motion.div
+        className="que-card mb-4"
+        animate={isPerfect ? {
+          boxShadow: [
+            '0 0 0 1px rgba(255,181,71,0.35), 0 0 28px rgba(255,181,71,0.18)',
+            '0 0 0 1px rgba(255,181,71,0.85), 0 0 56px rgba(255,181,71,0.5)',
+            '0 0 0 1px rgba(255,181,71,0.35), 0 0 28px rgba(255,181,71,0.18)',
+          ],
+        } : { boxShadow: '0 0 0 0px transparent' }}
+        transition={isPerfect
+          ? { duration: 2, repeat: Infinity, ease: 'easeInOut' }
+          : { duration: 0.5 }
         }
       >
         <div className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="que-section-label !mb-0">
-              <span className="dot" style={todayGoalHit ? { background: '#FFB547' } : undefined} />
+              <motion.span
+                className="dot"
+                style={{ background: todayGoalHit ? '#FFB547' : undefined }}
+                animate={isPerfect ? { boxShadow: ['0 0 4px rgba(255,181,71,0.4)', '0 0 12px rgba(255,181,71,1)', '0 0 4px rgba(255,181,71,0.4)'] } : {}}
+                transition={isPerfect ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : {}}
+              />
               TODAY'S INTAKE
             </h2>
             {/* Coin stack badge */}
@@ -1553,7 +1567,7 @@ export default function CalorieTracker() {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* ── Meal sections ──────────────────────────────────────────── */}
       {mealOrder.map((sectionId, sectionIdx) => {
@@ -1719,14 +1733,19 @@ export default function CalorieTracker() {
           <motion.div
             className="fixed inset-0 z-[450] flex items-center justify-center pointer-events-none"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.25 }}
           >
+            {/* golden radial burst behind the animation */}
+            <div
+              className="absolute inset-0"
+              style={{ background: 'radial-gradient(ellipse at center, rgba(255,181,71,0.18) 0%, transparent 70%)' }}
+            />
             <Lottie
               animationData={celebrateAnim}
               loop={false}
               autoplay={true}
               onComplete={() => setMacroCelebrate(false)}
-              style={{ width: 340, height: 340 }}
+              style={{ width: '100%', height: '100%', maxWidth: 600, maxHeight: 600 }}
             />
           </motion.div>
         )}

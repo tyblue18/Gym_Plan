@@ -20,6 +20,7 @@ export type SyncPayload = {
 type SyncStatus = 'idle' | 'syncing' | 'error' | 'ok';
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingLocalDB: Record<string, unknown> = {};
 let _status: SyncStatus = 'idle';
 
 const DEBOUNCE_MS = 4_000;
@@ -81,28 +82,41 @@ export function restoreSettings(settings: Record<string, unknown>): void {
  */
 export function queueSync(payload: SyncPayload): void {
   if (typeof window === 'undefined') return;
-  const withSettings: SyncPayload = {
-    ...payload,
-    settings: { ...gatherSettings(), ...(payload.settings ?? {}) },
-  };
+  // Accumulate localDB days so rapid successive calls don't lose earlier data
+  if (payload.localDB) {
+    pendingLocalDB = { ...pendingLocalDB, ...payload.localDB };
+  }
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    void _push(withSettings);
+    void _push({ localDB: pendingLocalDB, settings: gatherSettings() });
+    pendingLocalDB = {};
     debounceTimer = null;
   }, DEBOUNCE_MS);
 }
 
 /**
- * Immediate push — bypasses debounce. Use for photo uploads and other
- * one-shot settings changes that don't go through localDB.
+ * Immediate push — bypasses debounce. Drains any accumulated pending data too.
+ * Use for photo uploads, preset saves, and other one-shot settings changes.
  */
 export function pushNow(payload: SyncPayload): void {
   if (typeof window === 'undefined') return;
   if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
   void _push({
-    ...payload,
+    localDB: { ...pendingLocalDB, ...(payload.localDB ?? {}) },
     settings: { ...gatherSettings(), ...(payload.settings ?? {}) },
   });
+  pendingLocalDB = {};
+}
+
+/**
+ * Flush any pending debounced sync immediately (e.g. on visibilitychange).
+ * No-op if nothing is queued.
+ */
+export function flushPending(): void {
+  if (!debounceTimer && Object.keys(pendingLocalDB).length === 0) return;
+  if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+  void _push({ localDB: pendingLocalDB, settings: gatherSettings() });
+  pendingLocalDB = {};
 }
 
 /**

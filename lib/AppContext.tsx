@@ -24,7 +24,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { queueSync, pullFromCloud, restoreSettings } from '@/lib/syncEngine';
+import { queueSync, pushNow, flushPending, pullFromCloud, restoreSettings } from '@/lib/syncEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -435,9 +435,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (remote.localDB && typeof remote.localDB === 'object') {
         const remoteDB = remote.localDB as Record<string, unknown>;
-        setLocalDB(prev => ({ ...prev, ...remoteDB } as typeof prev));
+        // Remote wins — but never overwrite days the user already modified locally
+        // since app load (those are dirty and will be pushed to cloud shortly).
+        setLocalDB(prev => {
+          const next = { ...prev };
+          for (const [date, data] of Object.entries(remoteDB)) {
+            if (!dirtyDaysRef.current.has(date)) {
+              next[date] = data as DayRecord;
+            }
+          }
+          return next;
+        });
         try {
-          const merged = { ...JSON.parse(localStorage.getItem(DB_KEY) ?? '{}'), ...remoteDB };
+          const local = JSON.parse(localStorage.getItem(DB_KEY) ?? '{}') as Record<string, unknown>;
+          const merged: Record<string, unknown> = { ...local };
+          for (const [date, data] of Object.entries(remoteDB)) {
+            if (!dirtyDaysRef.current.has(date)) {
+              merged[date] = data;
+            }
+          }
           localStorage.setItem(DB_KEY, JSON.stringify(merged));
         } catch { /* storage full — skip */ }
       }
@@ -508,6 +524,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dirty.clear();
     queueSync({ localDB: partial });
   }, [localDB]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Always-current ref so the visibilitychange handler sees the latest localDB
+  const localDBRef = useRef<LocalDB>({});
+  localDBRef.current = localDB;
+
+  // Flush any pending debounced sync when the user closes/hides the tab
+  useEffect(() => {
+    const handleHide = () => {
+      if (document.visibilityState !== 'hidden') return;
+      const dirty = dirtyDaysRef.current;
+      if (dirty.size === 0) { flushPending(); return; }
+      const partial: Record<string, unknown> = {};
+      for (const d of dirty) partial[d] = localDBRef.current[d] as unknown;
+      dirty.clear();
+      pushNow({ localDB: partial });
+    };
+    document.addEventListener('visibilitychange', handleHide);
+    return () => document.removeEventListener('visibilitychange', handleHide);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Merge a partial update into one day's record and immediately persist. */
   const updateDayRecord = useCallback(
