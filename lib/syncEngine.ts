@@ -34,6 +34,7 @@ const SETTINGS_KEYS = [
   'queLiftPRs',            // all-time lift maxes — read by badge engine server-side
   'queMacroGoals',         // macro targets — sync across devices
   'queCalorieCoins',       // coin balance — used for battle wagering later
+  'queProfilePhoto',       // profile photo URL (Vercel Blob) or base64 fallback
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
