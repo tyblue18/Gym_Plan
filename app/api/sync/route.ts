@@ -10,14 +10,21 @@
  */
 
 import { getServerSession }        from 'next-auth/next';
-import { NextResponse }            from 'next/server';
+import { after, NextResponse }     from 'next/server';
+import { Redis }                   from '@upstash/redis';
 import { authOptions }             from '@/lib/auth';
 import { prisma }                  from '@/lib/prisma';
 import { checkAndAwardBadges }     from '@/lib/badgeEngine';
+import type { AwardedBadge }       from '@/lib/badgeEngine';
 import { checkAndAwardCoins }      from '@/lib/coinEngine';
 import type { CoinAward }          from '@/lib/coinEngine';
 import { syncLimit }               from '@/lib/ratelimit';
 import { syncPostSchema }          from '@/lib/validators';
+
+const redis = new Redis({
+  url:   process.env.KV_REST_API_URL!,
+  token: process.env.KV_REST_API_TOKEN!,
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET — pull latest snapshot
@@ -79,8 +86,18 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   const body = parsed.data;
 
+  // ── Fetch pending notifications from the previous background run (in parallel
+  //    with the WorkoutData read so the Redis calls add zero extra latency) ────
+  const [existing, pendingBadgesRaw, pendingCoinsRaw] = await Promise.all([
+    prisma.workoutData.findUnique({ where: { userId } }),
+    redis.getdel<AwardedBadge[]>(`pending:badges:${userId}`),
+    redis.getdel<{ newCoins: CoinAward[]; walletBalance: number }>(`pending:coins:${userId}`),
+  ]);
+  const newBadges: AwardedBadge[] = pendingBadgesRaw ?? [];
+  const newCoins:  CoinAward[]    = pendingCoinsRaw?.newCoins  ?? [];
+  const walletBalance              = pendingCoinsRaw?.walletBalance;
+
   // ── Profile + settings go to WorkoutData ────────────────────────────────────
-  const existing = await prisma.workoutData.findUnique({ where: { userId } });
   const existingSettings = (existing?.settings ?? {}) as Record<string, unknown>;
   const mergedSettings   = body.settings !== undefined
     ? { ...existingSettings, ...body.settings }
@@ -155,24 +172,28 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // Award newly earned badges and revoke any no longer qualifying
-  let newBadges: import('@/lib/badgeEngine').AwardedBadge[] = [];
-  try {
-    const result = await checkAndAwardBadges(userId, {
-      localDB:  (body.localDB  ?? {}) as Record<string, unknown>,
-      settings: mergedSettings,
-    });
-    newBadges = result.awarded;
-  } catch { /* non-critical — badge failure never blocks sync */ }
-
-  // Award coins for calorie-goal hits (server-authoritative for challenge wagering)
-  let newCoins:      CoinAward[] = [];
-  let walletBalance: number | undefined;
-  try {
-    const coins = await checkAndAwardCoins(userId);
-    newCoins      = coins.awarded;
-    walletBalance = coins.walletBalance;
-  } catch { /* non-critical — coin failure never blocks sync */ }
+  // Badge and coin checks run after the response is sent so they don't add
+  // latency to the sync. Results are stored in Redis and returned on the next push.
+  const capturedLocalDB  = (body.localDB ?? {}) as Record<string, unknown>;
+  const capturedSettings = mergedSettings;
+  after(async () => {
+    try {
+      const [badgeResult, coinResult] = await Promise.all([
+        checkAndAwardBadges(userId, { localDB: capturedLocalDB, settings: capturedSettings }),
+        checkAndAwardCoins(userId),
+      ]);
+      await Promise.all([
+        badgeResult.awarded.length > 0
+          ? redis.setex(`pending:badges:${userId}`, 3600, JSON.stringify(badgeResult.awarded))
+          : Promise.resolve(),
+        coinResult.awarded.length > 0
+          ? redis.setex(`pending:coins:${userId}`, 3600, JSON.stringify({
+              newCoins: coinResult.awarded, walletBalance: coinResult.walletBalance,
+            }))
+          : Promise.resolve(),
+      ]);
+    } catch { /* non-critical */ }
+  });
 
   return NextResponse.json({
     ok: true,

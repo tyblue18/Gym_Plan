@@ -358,22 +358,67 @@ export function AddFoodModal({ open, onClose, onAdd }: {
     setError('');
     setScanning(true);
     try {
-      const { BrowserMultiFormatReader } = await import('@zxing/browser');
-      if (!videoRef.current) { setScanning(false); return; }
-      const reader = new BrowserMultiFormatReader();
-      const controls = await reader.decodeFromConstraints(
-        { video: { facingMode: 'environment' } },
-        videoRef.current,
-        (result, _err, ctrl) => {
-          if (result) {
-            ctrl.stop();
-            controlsRef.current = null;
-            setScanning(false);
-            void lookupBarcode(result.getText());
+      if ('BarcodeDetector' in window) {
+        // Native API — Chrome 83+, Edge, iOS 17+. Much faster and more reliable than ZXing.
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+        if (!videoRef.current) { stream.getTracks().forEach(t => t.stop()); setScanning(false); return; }
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+
+        let active = true;
+        controlsRef.current = {
+          stop: () => {
+            active = false;
+            stream.getTracks().forEach(t => t.stop());
+            if (videoRef.current) videoRef.current.srcObject = null;
+          },
+        };
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const detector = new (window as any).BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar', 'qr_code'],
+        });
+
+        const tick = async () => {
+          if (!active) return;
+          if (videoRef.current && videoRef.current.readyState >= 2) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const codes: any[] = await detector.detect(videoRef.current);
+              if (codes.length > 0) {
+                controlsRef.current?.stop();
+                controlsRef.current = null;
+                setScanning(false);
+                void lookupBarcode(codes[0].rawValue);
+                return;
+              }
+            } catch { /* no barcode on this frame — continue */ }
           }
-        },
-      );
-      controlsRef.current = controls;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+
+      } else {
+        // ZXing fallback — Firefox and older Safari
+        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        if (!videoRef.current) { setScanning(false); return; }
+        const reader = new BrowserMultiFormatReader();
+        const controls = await reader.decodeFromConstraints(
+          { video: { facingMode: 'environment' } },
+          videoRef.current,
+          (result, _err, ctrl) => {
+            if (result) {
+              ctrl.stop();
+              controlsRef.current = null;
+              setScanning(false);
+              void lookupBarcode(result.getText());
+            }
+          },
+        );
+        controlsRef.current = controls;
+      }
     } catch {
       setScanning(false);
       setError('Camera access denied. Use the barcode field below.');
