@@ -16,6 +16,7 @@ import {
   AddFoodModal,
   FIXED_MEALS, MEAL_LABELS, DEFAULT_ORDER, getMealLabel,
 } from '@/components/calorie/AddFoodModal';
+import { useBudgetMetrics, type CardioFields } from '@/lib/metricsTypes';
 
 // ── Calorie Coin system ───────────────────────────────────────────────────────
 
@@ -201,20 +202,20 @@ function EditFoodModal({ food, onClose, onSave, mealOrder = DEFAULT_ORDER }: {
           onClick={e => { if (e.target === e.currentTarget) onClose(); }}
         >
           <motion.div
-            className="w-full md:max-w-[460px] rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
+            className="w-full md:max-w-[460px] max-h-[88dvh] flex flex-col rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
             initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[var(--line)]">
+            <div className="flex-shrink-0 flex items-center justify-between px-5 pt-5 pb-4 border-b border-[var(--line)]">
               <h3 className="font-display text-[18px] tracking-[2px] uppercase text-[var(--ink-0)]">Edit Food</h3>
               <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 pb-8">
               {/* Name */}
               <div>
                 <label className="que-label">Name</label>
@@ -403,9 +404,20 @@ export default function CalorieTracker() {
     fat:     +(foods.reduce((s, f) => s + f.fat,     0)).toFixed(1),
   }), [foods]);
 
-  const baseBudget    = useMemo(() => computeBaseBudget(profile), [profile]);
-  const savedBudget   = parseFloat(String(todayRec.budget ?? '0')) || 0;
-  const budget        = savedBudget || baseBudget;
+  const baseBudget = useMemo(() => computeBaseBudget(profile), [profile]);
+
+  // Build cardio from today's record so eat-back is live (no "Log Today" click required)
+  const todayCardio = useMemo((): CardioFields => ({
+    steps:    String(todayRec.steps    ?? '0'),
+    runDist:  String(todayRec.runDist  ?? '0'),
+    runTime:  String(todayRec.runTime  ?? '0'),
+    bikeDist: String(todayRec.bikeDist ?? '0'),
+    bikeTime: String(todayRec.bikeTime ?? '0'),
+    swimTime: String(todayRec.swimTime ?? '0'),
+  }), [todayRec.steps, todayRec.runDist, todayRec.runTime, todayRec.bikeDist, todayRec.bikeTime, todayRec.swimTime]);
+
+  const liveMetrics = useBudgetMetrics(profile, todayCardio);
+  const budget      = liveMetrics.budget || baseBudget;
   const proteinTarget = Math.round(parseFloat(profile.weight) * 0.8) || 0;
 
   const todayGoalHit = budget > 0 && totals.kcal > 0 && Math.abs(totals.kcal - budget) <= GOAL_TOLERANCE;
@@ -637,11 +649,28 @@ export default function CalorieTracker() {
                   ✓ Goal hit!
                 </p>
               )}
-              {budget > 0 && !todayGoalHit && (
-                <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px] mt-0.5">
-                  of {budget} budget · {Math.max(0, budget - totals.kcal)} remaining
-                </p>
-              )}
+              {budget > 0 && !todayGoalHit && (() => {
+                const rem = budget - totals.kcal;
+                const over = rem < 0;
+                return (
+                  <div className="mt-0.5">
+                    <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px]">
+                      of {budget} budget
+                    </p>
+                    <p
+                      className="font-mono text-[13px] font-bold tracking-[0.5px]"
+                      style={{
+                        color:      over ? 'var(--danger)' : 'var(--accent)',
+                        textShadow: over
+                          ? '0 0 12px rgba(255,77,94,0.6)'
+                          : '0 0 12px var(--accent-40)',
+                      }}
+                    >
+                      {over ? `${Math.abs(rem)} over` : `${rem} left`}
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

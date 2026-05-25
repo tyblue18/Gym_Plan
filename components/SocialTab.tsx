@@ -306,6 +306,20 @@ export default function SocialTab() {
     setLoading(false);
   }, []);
 
+  // Refresh badge collection whenever the sync engine reports a revocation.
+  useEffect(() => {
+    const onRevoked = () => void refresh();
+    window.addEventListener('que-badges-revoked', onRevoked);
+    return () => window.removeEventListener('que-badges-revoked', onRevoked);
+  }, [refresh]);
+
+  // Also refresh when new badges are earned so the collection shows them immediately.
+  useEffect(() => {
+    const onEarned = () => void refresh();
+    window.addEventListener('que-badge-earned', onEarned);
+    return () => window.removeEventListener('que-badge-earned', onEarned);
+  }, [refresh]);
+
   useEffect(() => {
     const importCoins = async () => {
       if (typeof window === 'undefined' || localStorage.getItem('queCoinsMigrated')) return;

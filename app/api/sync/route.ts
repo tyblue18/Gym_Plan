@@ -40,9 +40,10 @@ export async function GET(): Promise<NextResponse> {
     dayRecord: { findMany: (args: unknown) => Promise<Array<{ date: string; data: unknown; updatedAt: Date }>> };
   }).dayRecord;
 
-  const [wd, dayRows] = await Promise.all([
+  const [wd, dayRows, pendingBadgesRaw] = await Promise.all([
     prisma.workoutData.findUnique({ where: { userId } }),
     dayRecordClient.findMany({ where: { userId }, select: { date: true, data: true, updatedAt: true } }),
+    redis.getdel<AwardedBadge[]>(`pending:badges:${userId}`),
   ]);
 
   // Merge: legacy blob provides the base, DayRecord rows win for days already migrated.
@@ -54,12 +55,14 @@ export async function GET(): Promise<NextResponse> {
       { ...(r.data as object), _syncedAt: r.updatedAt.toISOString() },
     ])
   );
-  const localDB = { ...blobDB, ...rowsMap };
+  const localDB   = { ...blobDB, ...rowsMap };
+  const newBadges = pendingBadgesRaw ?? [];
 
   return NextResponse.json({
     localDB,
     profile:  wd?.profile  ?? {},
     settings: wd?.settings ?? {},
+    ...(newBadges.length > 0 && { newBadges }),
   });
 }
 
@@ -172,33 +175,38 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // Badge and coin checks run after the response is sent so they don't add
-  // latency to the sync. Results are stored in Redis and returned on the next push.
-  const capturedLocalDB  = (body.localDB ?? {}) as Record<string, unknown>;
-  const capturedSettings = mergedSettings;
+  // Badge check runs synchronously so the result is returned in THIS response,
+  // giving immediate popup feedback. It runs after upserts so the DB has the
+  // latest data when we scan for qualifying runs/streaks.
+  // Coins run in after() since they are less time-critical.
+  let earnedBadges: AwardedBadge[] = [];
+  let revokedBadges: AwardedBadge[] = [];
+  try {
+    const badgeResult = await checkAndAwardBadges(userId, mergedSettings);
+    earnedBadges  = badgeResult.awarded;
+    revokedBadges = badgeResult.revoked;
+  } catch { /* non-critical — don't fail the sync */ }
+
   after(async () => {
     try {
-      const [badgeResult, coinResult] = await Promise.all([
-        checkAndAwardBadges(userId, { localDB: capturedLocalDB, settings: capturedSettings }),
-        checkAndAwardCoins(userId),
-      ]);
-      await Promise.all([
-        badgeResult.awarded.length > 0
-          ? redis.setex(`pending:badges:${userId}`, 3600, JSON.stringify(badgeResult.awarded))
-          : Promise.resolve(),
-        coinResult.awarded.length > 0
-          ? redis.setex(`pending:coins:${userId}`, 3600, JSON.stringify({
-              newCoins: coinResult.awarded, walletBalance: coinResult.walletBalance,
-            }))
-          : Promise.resolve(),
-      ]);
+      const coinResult = await checkAndAwardCoins(userId);
+      if (coinResult.awarded.length > 0) {
+        await redis.setex(`pending:coins:${userId}`, 3600, JSON.stringify({
+          newCoins: coinResult.awarded, walletBalance: coinResult.walletBalance,
+        }));
+      }
     } catch { /* non-critical */ }
   });
 
+  // Merge any badges that were queued in Redis from a prior session (backward compat)
+  // with badges awarded synchronously in this request.
+  const allNewBadges = [...newBadges, ...earnedBadges];
+
   return NextResponse.json({
     ok: true,
-    ...(conflicts.length > 0  && { conflicts }),
-    ...(newBadges.length > 0  && { newBadges }),
+    ...(conflicts.length    > 0 && { conflicts }),
+    ...(allNewBadges.length > 0 && { newBadges: allNewBadges }),
+    ...(revokedBadges.length > 0 && { revokedBadges }),
     ...(newCoins.length  > 0  && { newCoins, walletBalance }),
   });
 }

@@ -37,6 +37,18 @@ function BadgeIcon({ icon, size = 28 }: { icon: string; size?: number }) {
   return <span style={{ fontSize: size, lineHeight: 1 }}>{icon}</span>;
 }
 
+function fmtBadgeDate(iso: string): string {
+  const d   = new Date(iso);
+  const day = d.getUTCDate();
+  const sfx = [11, 12, 13].includes(day % 100) ? 'th'
+    : day % 10 === 1 ? 'st'
+    : day % 10 === 2 ? 'nd'
+    : day % 10 === 3 ? 'rd'
+    : 'th';
+  const month = d.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+  return `${month} ${day}${sfx}, ${d.getUTCFullYear()}`;
+}
+
 function timeRemaining(iso: string): string {
   const diff = new Date(iso).getTime() - Date.now();
   if (diff <= 0) return 'Expired';
@@ -274,6 +286,7 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
                     <BadgeIcon icon={badge.icon} size={36} />
                     <p className="font-mono text-[8px] font-bold text-[var(--ink-0)] leading-tight">{badge.label}</p>
                     <p className="font-mono text-[7px] text-[var(--ink-3)] capitalize mt-0.5">{badge.category}</p>
+                    <p className="font-mono text-[6px] text-[var(--ink-3)] mt-0.5 opacity-70">{fmtBadgeDate(badge.earnedAt)}</p>
                   </button>
                 );
               })}
@@ -300,22 +313,23 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
   isOwn:     boolean;
   onEdit?:   () => void;
 }) {
-  // Build 8-slot array
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
   const slots = Array.from({ length: 8 }, (_, i) => {
-    const slug  = showcase[i] ?? null;
+    const slug = showcase[i] ?? null;
     return slug ? allBadges.find(b => b.slug === slug) ?? null : null;
   });
 
-  // Determine glow color per badge category
   const glowColors: Record<string, string> = {
     lift:      'rgba(79,195,247,0.5)',
     nutrition: 'rgba(255,181,71,0.5)',
     cardio:    'rgba(109,255,153,0.5)',
   };
 
+  const hoveredBadge = hoveredIdx !== null ? slots[hoveredIdx] : null;
+
   return (
     <div className="mt-4">
-      {/* Case container */}
       <div
         className="relative rounded-xl overflow-hidden px-4 py-5"
         style={{
@@ -323,7 +337,7 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
           boxShadow: 'inset 0 0 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)',
         }}
       >
-        {/* Red trim — like a Pokémon badge case lid */}
+        {/* Red trim */}
         <div className="absolute top-0 left-0 right-0 h-2 rounded-t-xl"
           style={{ background: 'linear-gradient(90deg, #CC1100, #EE2200, #CC1100)' }} />
 
@@ -342,6 +356,8 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
               onClick={isOwn ? onEdit : undefined}
               disabled={!isOwn}
               whileTap={isOwn ? { scale: 0.92 } : undefined}
+              onMouseEnter={() => badge && setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
               className="aspect-square flex items-center justify-center relative"
               style={badge?.icon.startsWith('/') ? {} : {
                 borderRadius: '50%',
@@ -373,13 +389,29 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
           ))}
         </div>
 
-        {/* Edit hint */}
-        {isOwn && (
-          <p className="font-mono text-[7px] text-center mt-3 tracking-[1px] uppercase"
-            style={{ color: 'rgba(255,255,255,0.18)' }}>
-            Tap to edit
-          </p>
-        )}
+        {/* Hover tooltip — shows badge name + date inside the case */}
+        <div className="mt-3 h-7 flex flex-col items-center justify-center">
+          {hoveredBadge ? (
+            <motion.div
+              key={hoveredBadge.slug}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <p className="font-mono text-[9px] font-bold text-center leading-tight" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                {hoveredBadge.label}
+              </p>
+              <p className="font-mono text-[8px] text-center" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                Assigned {fmtBadgeDate(hoveredBadge.earnedAt)}
+              </p>
+            </motion.div>
+          ) : isOwn ? (
+            <p className="font-mono text-[7px] text-center tracking-[1px] uppercase" style={{ color: 'rgba(255,255,255,0.18)' }}>
+              Tap to edit · hover to inspect
+            </p>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -528,7 +560,7 @@ export default function ProfileCard({
             {localProfile.badges.slice(0, 12).map(b => (
               <div
                 key={b.id}
-                title={b.label}
+                title={`${b.label} · Assigned ${fmtBadgeDate(b.earnedAt)}`}
                 className="w-9 h-9 flex items-center justify-center"
                 style={b.icon.startsWith('/') ? {} : {
                   borderRadius: '50%',

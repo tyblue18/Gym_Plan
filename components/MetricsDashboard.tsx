@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronRight, Plus, User, X } from 'lucide-react';
+import { Activity, ChevronRight, Plus, User, X } from 'lucide-react';
 import {
   useApp,
   type DayRecord, type UserProfile,
@@ -27,6 +27,7 @@ import { drawProjection, drawLineChart } from '@/lib/metricsCharts';
 import {
   MilestoneModal, CelebrationModal, PlanProgressModal, PlanModal, ProjectionModal,
 } from '@/components/metrics/MetricsModals';
+import RunningPlanBuilder from '@/components/running/RunningPlanBuilder';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — StepSyncPanel
@@ -117,10 +118,11 @@ function StepSyncPanel() {
 // SUB-COMPONENT — ProfilePanel
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProfilePanel({ profile, onChange, onOpenPlan }: {
+function ProfilePanel({ profile, onChange, onOpenPlan, onOpenRunPlan }: {
   profile: UserProfile;
   onChange: (updates: Partial<UserProfile>) => void;
   onOpenPlan: () => void;
+  onOpenRunPlan: () => void;
 }) {
   const activityOptions = [
     { value: '1.20', label: 'Desk job, no gym (×1.20)' },
@@ -192,7 +194,10 @@ function ProfilePanel({ profile, onChange, onOpenPlan }: {
           </div>
         </div>
 
-        <div className="flex justify-end mt-4 pt-4 border-t border-[var(--line)]">
+        <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-[var(--line)]">
+          <button onClick={onOpenRunPlan} className="que-btn-ghost flex items-center gap-2">
+            <Activity size={13} /> Running Plan
+          </button>
           <button onClick={onOpenPlan} className="que-btn-ghost flex items-center gap-2">
             <Plus size={13} /> Create Plan
           </button>
@@ -268,11 +273,28 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
     setCardioModal(null);
   }, [cardioModal, f1, f2, todayStr, updateDayRecord]);
 
+  const todayRec = localDB[todayStr] ?? {};
+  const runDist  = parseNum(String(todayRec.runDist  ?? 0));
+  const bikeDist = parseNum(String(todayRec.bikeDist ?? 0));
+  const swimMin  = parseNum(String(todayRec.swimTime ?? 0));
+
   const tiles = [
-    { label: 'RUN',  value: m.runBurn,  key: 'run' },
-    { label: 'BIKE', value: m.bikeBurn, key: 'bike' },
-    { label: 'SWIM', value: m.swimBurn, key: 'swim' },
-    { label: 'STEPS', value: m.stepBurn, key: 'step', dim: true },
+    {
+      label: 'RUN',  value: m.runBurn,  key: 'run',
+      dist: runDist  > 0 ? `${runDist} mi`        : undefined,
+      pace: m.runPaceStr                           || undefined,
+    },
+    {
+      label: 'BIKE', value: m.bikeBurn, key: 'bike',
+      dist: bikeDist > 0 ? `${bikeDist} mi`        : undefined,
+      pace: m.bikeSpeed > 0 ? `${m.bikeSpeed} mph` : undefined,
+    },
+    {
+      label: 'SWIM', value: m.swimBurn, key: 'swim',
+      dist: undefined,
+      pace: swimMin  > 0 ? `${swimMin} min`        : undefined,
+    },
+    { label: 'STEPS', value: m.stepBurn, key: 'step', dim: true, dist: undefined, pace: undefined },
   ];
 
   return (
@@ -440,18 +462,36 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
                     </div>
                   )}
                 </div>
-                <p
-                  className="font-display tabular leading-none text-[26px]"
-                  style={{
-                    color:      t.dim ? 'var(--ink-3)' : lit ? 'var(--positive)' : 'var(--accent)',
-                    textShadow: t.dim || !lit ? 'none' : '0 0 16px rgba(109,255,153,0.3)',
-                  }}
-                >
-                  {t.value > 0 ? fmt(t.value) : '—'}
-                </p>
-                <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[1px]">
-                  {t.dim ? 'IN MULTIPLIER' : 'KCAL'}
-                </p>
+                <div className="flex items-end justify-between gap-1">
+                  <div>
+                    <p
+                      className="font-display tabular leading-none text-[26px]"
+                      style={{
+                        color:      t.dim ? 'var(--ink-3)' : lit ? 'var(--positive)' : 'var(--accent)',
+                        textShadow: t.dim || !lit ? 'none' : '0 0 16px rgba(109,255,153,0.3)',
+                      }}
+                    >
+                      {t.value > 0 ? fmt(t.value) : '—'}
+                    </p>
+                    <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[1px]">
+                      {t.dim ? 'IN MULTIPLIER' : 'KCAL'}
+                    </p>
+                  </div>
+                  {lit && (t.dist || t.pace) && (
+                    <div className="flex flex-col items-end gap-0.5 pb-0.5">
+                      {t.dist && (
+                        <p className="font-mono text-[11px] font-semibold text-[var(--positive)] tracking-[0.5px]">
+                          {t.dist}
+                        </p>
+                      )}
+                      {t.pace && (
+                        <p className="font-mono text-[11px] text-[var(--ink-2)] tracking-[0.5px]">
+                          {t.pace}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -1134,6 +1174,7 @@ export default function MetricsDashboard() {
   const [progressOpen,     setProgressOpen]     = useState(false);
   const [celebrateVisible, setCelebrateVisible] = useState(false);
   const [milestone,        setMilestone]        = useState<{ pct: number; weightChange: number } | null>(null);
+  const [runPlanOpen,      setRunPlanOpen]      = useState(false);
 
   const milestoneCheckedRef = useRef(false);
   useEffect(() => {
@@ -1417,7 +1458,7 @@ export default function MetricsDashboard() {
 
       <WeeklyRecapCard />
 
-      {profileOpen && <ProfilePanel profile={profile} onChange={handleProfileChange} onOpenPlan={() => setPlanOpen(true)} />}
+      {profileOpen && <ProfilePanel profile={profile} onChange={handleProfileChange} onOpenPlan={() => setPlanOpen(true)} onOpenRunPlan={() => setRunPlanOpen(true)} />}
 
       <CalorieBudgetCard m={m} onOpenProgress={() => setProgressOpen(true)} prFlags={prFlags} />
 
@@ -1477,6 +1518,31 @@ export default function MetricsDashboard() {
         pct={milestone?.pct ?? 0}
         weightChange={milestone?.weightChange ?? 0}
       />
+
+      <AnimatePresence>
+        {runPlanOpen && (
+          <motion.div
+            className="fixed inset-0 z-[400] flex flex-col bg-[var(--bg-0)]"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--line)]">
+              <button
+                onClick={() => setRunPlanOpen(false)}
+                className="w-8 h-8 rounded flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--ink-1)] transition-colors"
+              >
+                <X size={18} />
+              </button>
+              <span className="font-mono text-[11px] font-bold tracking-[2px] uppercase text-[var(--ink-1)]">Running Plan</span>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <RunningPlanBuilder />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

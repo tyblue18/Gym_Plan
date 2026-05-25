@@ -122,6 +122,7 @@ export function flushPending(): void {
 /**
  * Pull the latest cloud snapshot.
  * Returns null if not authenticated or network is unavailable.
+ * Also fires que-badge-earned if the server had pending badges from a prior push's after().
  */
 export async function pullFromCloud(): Promise<SyncPayload | null> {
   if (typeof window === 'undefined') return null;
@@ -129,7 +130,13 @@ export async function pullFromCloud(): Promise<SyncPayload | null> {
     const res = await fetch('/api/sync', { credentials: 'include' });
     if (res.status === 401) return null;
     if (!res.ok) return null;
-    return await res.json() as SyncPayload;
+    const json = await res.json() as SyncPayload & {
+      newBadges?: Array<{ slug: string; label: string; icon: string; category: string }>;
+    };
+    if (json.newBadges?.length) {
+      window.dispatchEvent(new CustomEvent('que-badge-earned', { detail: json.newBadges }));
+    }
+    return json;
   } catch {
     return null;
   }
@@ -160,9 +167,10 @@ async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
 
     if (res.ok) {
       const json = await res.json() as {
-        conflicts?:    Array<{ date: string; data: unknown }>;
-        newBadges?:    Array<{ slug: string; label: string; icon: string; category: string }>;
-        newCoins?:     Array<{ date: string; coins: number }>;
+        conflicts?:     Array<{ date: string; data: unknown }>;
+        newBadges?:     Array<{ slug: string; label: string; icon: string; category: string }>;
+        revokedBadges?: Array<{ slug: string; label: string; icon: string; category: string }>;
+        newCoins?:      Array<{ date: string; coins: number }>;
         walletBalance?: number;
       };
       if (json.conflicts?.length) {
@@ -177,6 +185,9 @@ async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
       }
       if (json.newBadges?.length) {
         window.dispatchEvent(new CustomEvent('que-badge-earned', { detail: json.newBadges }));
+      }
+      if (json.revokedBadges?.length) {
+        window.dispatchEvent(new CustomEvent('que-badges-revoked', { detail: json.revokedBadges }));
       }
       if (json.newCoins?.length) {
         // Server confirmed these dates — add them to queCalorieCoins.awardedDates

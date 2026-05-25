@@ -132,6 +132,40 @@ const BADGE_DEFS: BadgeDef[] = [
   lb('ohp_185', '185 OHP Club',       '💪', OHP, 185),
   lb('ohp_225', 'Two Plate OHP',      '👑', OHP, 225),
 
+  // ── Running distances ─────────────────────────────────────────────────────────
+  // Thresholds use the standard runner's round-number equivalents (mi):
+  // 5K=3.1, 10K=6.2, 15K=9.3, half=13.1, marathon=26.2
+  {
+    slug: 'run_5k', label: 'First 5K', icon: '/Badges/First_5K_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      parseFloat(String(d.runDist ?? '0')) >= 3.1
+    ),
+  },
+  {
+    slug: 'run_10k', label: 'First 10K', icon: '/Badges/First_10K_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      parseFloat(String(d.runDist ?? '0')) >= 6.2
+    ),
+  },
+  {
+    slug: 'run_15k', label: 'First 15K', icon: '/Badges/First_15K_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      parseFloat(String(d.runDist ?? '0')) >= 9.3
+    ),
+  },
+  {
+    slug: 'run_half', label: 'First Half Marathon', icon: '/Badges/First_half_marathon_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      parseFloat(String(d.runDist ?? '0')) >= 13.1
+    ),
+  },
+  {
+    slug: 'run_marathon', label: 'First Marathon', icon: '/Badges/First_marathon_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      parseFloat(String(d.runDist ?? '0')) >= 26.2
+    ),
+  },
+
   // ── Nutrition streaks ─────────────────────────────────────────────────────────
   {
     slug: 'streak_3',   label: '3-Day Streak',       icon: '🔥', category: 'nutrition',
@@ -168,35 +202,51 @@ export interface AwardedBadge {
   category: string;
 }
 
+// DayRecord table cast — model was added after initial Prisma client generation
+type DayRecordRow = { date: string; data: unknown };
+const dayRecordTable = (prisma as unknown as {
+  dayRecord: { findMany: (args: unknown) => Promise<DayRecordRow[]> };
+}).dayRecord;
+
 /**
  * Checks all badge thresholds for a user, awards newly earned badges, and
  * revokes badges the user no longer qualifies for (e.g. after a corrected entry).
+ *
+ * Fetches the user's full workout history directly from the DB so checks are
+ * always accurate regardless of what the sync push contained. Run this AFTER
+ * DayRecord upserts so the latest data is visible.
+ *
  * Safe to call on every sync. Throws only if Prisma is unavailable; callers should catch.
  */
 export async function checkAndAwardBadges(
-  userId:      string,
-  workoutData: { localDB?: unknown; settings?: unknown },
+  userId:   string,
+  settings: Record<string, unknown>,
 ): Promise<{ awarded: AwardedBadge[]; revoked: AwardedBadge[] }> {
-  const localDB  = (workoutData.localDB  ?? {}) as Record<string, DayRecord>;
-  const settings = (workoutData.settings ?? {}) as Record<string, unknown>;
-
   let liftPRs: Record<string, number> = {};
   try { liftPRs = (settings['queLiftPRs'] ?? {}) as Record<string, number>; }
   catch { /* malformed — treat as empty */ }
 
-  const data: BadgeCheckData = { liftPRs, localDB };
+  // Fetch full history and existing badges in parallel.
+  const [existing, dayRows] = await Promise.all([
+    prisma.badge.findMany({
+      where:  { userId },
+      select: { slug: true, label: true, icon: true, category: true },
+    }),
+    dayRecordTable.findMany({ where: { userId }, select: { date: true, data: true } }),
+  ]);
 
-  const existing = await prisma.badge.findMany({
-    where:  { userId },
-    select: { slug: true, label: true, icon: true, category: true },
-  });
+  const localDB: Record<string, DayRecord> = Object.fromEntries(
+    dayRows.map(r => [r.date, r.data as DayRecord])
+  );
+
+  const data: BadgeCheckData = { liftPRs, localDB };
   const earnedMap = new Map(existing.map(b => [b.slug, b]));
 
   const toAward  = BADGE_DEFS.filter(def => !earnedMap.has(def.slug) && def.check(data));
-  // Only revoke lift badges — streak/cardio badges need full localDB history to
-  // evaluate correctly, but we only receive dirty (partial) days per sync.
+  // Revoke lift and cardio badges when thresholds are no longer met (corrected entry).
+  // Nutrition streak badges are never revoked — past streaks are permanent achievements.
   const toRevoke = BADGE_DEFS.filter(def =>
-    earnedMap.has(def.slug) && def.category === 'lift' && !def.check(data)
+    earnedMap.has(def.slug) && def.category !== 'nutrition' && !def.check(data)
   );
 
   if (toAward.length > 0) {

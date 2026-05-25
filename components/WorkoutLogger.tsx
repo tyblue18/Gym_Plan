@@ -32,6 +32,15 @@ const SQUAT_NAMES = new Set(['Squat','Back Squat','Barbell Squat','Low Bar Squat
 const DEAD_NAMES  = new Set(['Deadlift','Barbell Deadlift','Conventional Deadlift','Romanian Deadlift']);
 const BADGE_WEIGHTS = [135, 225, 315, 405, 495, 540, 630];
 
+// Run distance milestones — ordered descending so we surface the highest one earned.
+const RUN_MILESTONES = [
+  { threshold: 26.2, icon: '/Badges/First_marathon_badge.png' },
+  { threshold: 13.1, icon: '/Badges/First_half_marathon_badge.png' },
+  { threshold: 9.3,  icon: '/Badges/First_15K_badge.png' },
+  { threshold: 6.2,  icon: '/Badges/First_10K_badge.png' },
+  { threshold: 3.1,  icon: '/Badges/First_5K_badge.png' },
+];
+
 function liftBadgeIcon(exerciseName: string, prWeight: number): string | null {
   let key: string | null = null;
   if (BENCH_NAMES.has(exerciseName)) key = 'bench';
@@ -383,11 +392,12 @@ function ReorderableExerciseItem({
 // SUB-COMPONENT — CardioEntryCard
 // ─────────────────────────────────────────────────────────────────────────────
 function CardioEntryCard({
-  entry, onDelete, onUpdateField,
+  entry, onDelete, onUpdateField, firstBadgeIcon,
 }: {
   entry: CardioItem;
   onDelete: (idx: number) => void;
   onUpdateField: (idx: number, field: 'v1' | 'v2' | 'note', val: string) => void;
+  firstBadgeIcon?: string | null;
 }) {
   const cfg = CARDIO_CFG[entry.k];
   return (
@@ -400,6 +410,9 @@ function CardioEntryCard({
         </span>
         <span className="font-mono text-[10px] font-bold tracking-[2px] text-[var(--accent)] uppercase">{cfg.code}</span>
         <span className="text-[14px] font-semibold text-[var(--ink-0)] flex-1">{cfg.label}</span>
+        {firstBadgeIcon && (
+          <img src={firstBadgeIcon} alt="first milestone" className="w-6 h-6 object-contain flex-shrink-0" title="First time hitting this distance!" />
+        )}
         <button
           onClick={() => onDelete(entry._idx)}
           className="w-7 h-7 flex items-center justify-center rounded text-[var(--ink-3)] hover:text-[var(--danger)] hover:bg-[var(--danger-12)] transition-all"
@@ -1206,6 +1219,42 @@ export default function WorkoutLogger() {
     prevPRRef.current = new Set(prLiftNames);
   }, [prLiftNames]);
 
+  // ── Run first-distance badge ─────────────────────────────────────────────────
+  // historicalMaxRunDist: highest single-day run distance logged on any day OTHER
+  // than today. Recomputed when localDB or the focused day changes.
+  const historicalMaxRunDist = useMemo(() => {
+    let max = 0;
+    for (const [date, rec] of Object.entries(localDB)) {
+      if (date === activeDayFocus) continue;
+      const d = parseFloat(String(rec.runDist ?? '0')) || 0;
+      if (d > max) max = d;
+    }
+    return max;
+  }, [localDB, activeDayFocus]);
+
+  // Total run distance entered in today's session (live, sums all run entries).
+  const todayRunDist = useMemo(
+    () => cardios.filter(e => e.k === 'run').reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
+    [cardios],
+  );
+
+  // Badge image for the highest milestone crossed for the first time today.
+  const runFirstBadgeIcon = useMemo((): string | null => {
+    for (const { threshold, icon } of RUN_MILESTONES) {
+      if (todayRunDist >= threshold && historicalMaxRunDist < threshold) return icon;
+    }
+    return null;
+  }, [todayRunDist, historicalMaxRunDist]);
+
+  // Haptic pulse when a new run milestone is first crossed this session.
+  const prevRunBadgeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (runFirstBadgeIcon && runFirstBadgeIcon !== prevRunBadgeRef.current) {
+      navigator.vibrate?.([30, 20, 60, 20, 30]);
+    }
+    prevRunBadgeRef.current = runFirstBadgeIcon;
+  }, [runFirstBadgeIcon]);
+
   // Listen for badges awarded by the sync engine
   useEffect(() => {
     function onBadgeEarned(e: Event) {
@@ -1780,6 +1829,7 @@ export default function WorkoutLogger() {
                         entry={entry}
                         onDelete={deleteEntry}
                         onUpdateField={updateCardioField}
+                        firstBadgeIcon={entry.k === 'run' ? runFirstBadgeIcon : null}
                       />
                     </motion.div>
                   ))}

@@ -231,7 +231,7 @@ function MyFoodsTab({ onSelect }: { onSelect: (p: OFFProduct) => void }) {
   });
 
   if (creating) return (
-    <div className="space-y-3">
+    <div className="space-y-3 pb-8">
       <div className="flex items-center gap-2 mb-1">
         <button type="button" onClick={() => { setCreating(false); setFormError(''); }}
           className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors">
@@ -267,7 +267,7 @@ function MyFoodsTab({ onSelect }: { onSelect: (p: OFFProduct) => void }) {
         {([['kcal','Calories','numeric'],['protein','Protein / g','decimal'],['carbs','Carbs / g','decimal'],['fat','Fat / g','decimal']] as const).map(([k, label, mode]) => (
           <div key={k}>
             <label className="que-label">{label}{k !== 'kcal' && <span className="font-normal text-[var(--ink-3)] normal-case"> (opt)</span>}</label>
-            <input type="number" inputMode={mode} className="que-input"
+            <input type="text" inputMode={mode} className="que-input"
               value={(form as Record<string,string>)[k]} onChange={e => set(k, e.target.value)} />
           </div>
         ))}
