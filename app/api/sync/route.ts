@@ -154,13 +154,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // Award any newly earned badges and include them in the response
+  // Award newly earned badges and revoke any no longer qualifying
   let newBadges: import('@/lib/badgeEngine').AwardedBadge[] = [];
   try {
-    newBadges = await checkAndAwardBadges(userId, {
+    const result = await checkAndAwardBadges(userId, {
       localDB:  (body.localDB  ?? {}) as Record<string, unknown>,
       settings: mergedSettings,
     });
+    newBadges = result.awarded;
   } catch { /* non-critical — badge failure never blocks sync */ }
 
   return NextResponse.json({

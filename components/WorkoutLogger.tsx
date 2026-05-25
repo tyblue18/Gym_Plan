@@ -815,18 +815,23 @@ export default function WorkoutLogger() {
         bikeTime:  bikes.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0),
         swimTime:  swims.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
       });
-      // Persist all-time lift PR records (only increases, never decreases)
-      const prRecs = prBaselineRef.current ?? {};
-      let prChanged = false;
+      // Recalculate PRs from pre-session baseline so corrections flow back down.
+      // preSessionPRsRef is frozen at session start — today's edits can't inflate it.
+      const preSessionPRs = preSessionPRsRef.current ?? {};
+      const prRecs: Record<string, number> = { ...preSessionPRs };
       arr.filter(e => e.k === 'lift' && e.n && e.sets).forEach(ex => {
-        (ex.sets ?? []).forEach(s => {
+        const sessionMax = (ex.sets ?? []).reduce((m, s) => {
           const w = parseFloat(String(s.w ?? '0')) || 0;
-          if (w > 0 && w > (prRecs[ex.n!] ?? 0)) {
-            prRecs[ex.n!] = w;
-            prChanged = true;
-          }
-        });
+          return w > m ? w : m;
+        }, 0);
+        if (sessionMax > 0) {
+          prRecs[ex.n!] = Math.max(preSessionPRs[ex.n!] ?? 0, sessionMax);
+        }
       });
+      const curr = prBaselineRef.current ?? {};
+      const prChanged = Object.keys({ ...curr, ...prRecs }).some(
+        k => (curr[k] ?? 0) !== (prRecs[k] ?? 0)
+      );
       if (prChanged) {
         prBaselineRef.current = prRecs;
         localStorage.setItem('queLiftPRs', JSON.stringify(prRecs));
@@ -1073,8 +1078,8 @@ export default function WorkoutLogger() {
   }, [exercises]);
 
   const updateExerciseSets = useCallback((idx: number, sets: Array<{ r: string; w: string }>) => {
-    setExercisesRaw(exercises.map((e, i) => i === idx ? { ...e, sets } : e));
-  }, [exercises]);
+    setExercises(exercises.map((e, i) => i === idx ? { ...e, sets } : e));
+  }, [exercises, setExercises]);
 
   const clearWorkout = useCallback(() => {
     exerciseKeysRef.current = [];
@@ -1131,10 +1136,20 @@ export default function WorkoutLogger() {
     try { prBaselineRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
     catch { prBaselineRef.current = {}; }
   }
+  // Frozen snapshot of PRs before this session began — used as floor when recalculating.
+  const preSessionPRsRef = useRef<Record<string, number> | null>(null);
+  if (!preSessionPRsRef.current) {
+    try { preSessionPRsRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
+    catch { preSessionPRsRef.current = {}; }
+  }
   const sessionMaxRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     sessionMaxRef.current = {};
+    // Refresh the pre-session baseline when switching days so a PR set on day A
+    // can't be erased by a lower entry on day B in the same app session.
+    try { preSessionPRsRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
+    catch { preSessionPRsRef.current = {}; }
   }, [activeDayFocus]);
 
   const prLiftNames = useMemo((): Set<string> => {

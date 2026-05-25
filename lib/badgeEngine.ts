@@ -169,15 +169,14 @@ export interface AwardedBadge {
 }
 
 /**
- * Checks all badge thresholds for a user and awards any newly earned badges.
- * Safe to call on every sync — skips badges the user already holds.
- * Returns the list of newly awarded badges (empty array if none).
- * Throws only if Prisma is unavailable; callers should catch.
+ * Checks all badge thresholds for a user, awards newly earned badges, and
+ * revokes badges the user no longer qualifies for (e.g. after a corrected entry).
+ * Safe to call on every sync. Throws only if Prisma is unavailable; callers should catch.
  */
 export async function checkAndAwardBadges(
   userId:      string,
   workoutData: { localDB?: unknown; settings?: unknown },
-): Promise<AwardedBadge[]> {
+): Promise<{ awarded: AwardedBadge[]; revoked: AwardedBadge[] }> {
   const localDB  = (workoutData.localDB  ?? {}) as Record<string, DayRecord>;
   const settings = (workoutData.settings ?? {}) as Record<string, unknown>;
 
@@ -187,33 +186,38 @@ export async function checkAndAwardBadges(
 
   const data: BadgeCheckData = { liftPRs, localDB };
 
-  // Load slugs the user already has so we don't re-award
   const existing = await prisma.badge.findMany({
     where:  { userId },
-    select: { slug: true },
+    select: { slug: true, label: true, icon: true, category: true },
   });
-  const earned = new Set(existing.map(b => b.slug));
+  const earnedMap = new Map(existing.map(b => [b.slug, b]));
 
-  const toAward = BADGE_DEFS.filter(def => !earned.has(def.slug) && def.check(data));
-  if (toAward.length === 0) return [];
+  const toAward  = BADGE_DEFS.filter(def => !earnedMap.has(def.slug) && def.check(data));
+  const toRevoke = BADGE_DEFS.filter(def => earnedMap.has(def.slug)  && !def.check(data));
 
-  await prisma.badge.createMany({
-    data: toAward.map(def => ({
-      userId,
-      category: def.category,
-      slug:     def.slug,
-      label:    def.label,
-      icon:     def.icon,
-    })),
-    skipDuplicates: true, // race-condition safety
-  });
+  if (toAward.length > 0) {
+    await prisma.badge.createMany({
+      data: toAward.map(def => ({
+        userId,
+        category: def.category,
+        slug:     def.slug,
+        label:    def.label,
+        icon:     def.icon,
+      })),
+      skipDuplicates: true,
+    });
+  }
 
-  return toAward.map(def => ({
-    slug:     def.slug,
-    label:    def.label,
-    icon:     def.icon,
-    category: def.category,
-  }));
+  if (toRevoke.length > 0) {
+    await prisma.badge.deleteMany({
+      where: { userId, slug: { in: toRevoke.map(d => d.slug) } },
+    });
+  }
+
+  return {
+    awarded: toAward.map(def => ({ slug: def.slug, label: def.label, icon: def.icon, category: def.category })),
+    revoked: toRevoke.map(def => ({ slug: def.slug, label: def.label, icon: def.icon, category: def.category })),
+  };
 }
 
 /** Returns all badges for a user, newest first. */
