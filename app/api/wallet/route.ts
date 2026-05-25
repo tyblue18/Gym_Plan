@@ -3,10 +3,11 @@
  * POST /api/wallet/import  — one-time seed from localStorage coins
  */
 
-import { getServerSession } from 'next-auth/next';
-import { NextResponse }     from 'next/server';
-import { authOptions }      from '@/lib/auth';
-import { prisma }           from '@/lib/prisma';
+import { getServerSession }   from 'next-auth/next';
+import { NextResponse }       from 'next/server';
+import { authOptions }        from '@/lib/auth';
+import { prisma }             from '@/lib/prisma';
+import { walletImportSchema } from '@/lib/validators';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
@@ -25,10 +26,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const { balance } = await req.json() as { balance?: number };
-  if (typeof balance !== 'number' || balance < 0) {
-    return NextResponse.json({ error: 'Invalid balance' }, { status: 400 });
-  }
+  const parsed = walletImportSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid balance' }, { status: 400 });
+  const { balance } = parsed.data;
 
   const userId = session.user.id;
 

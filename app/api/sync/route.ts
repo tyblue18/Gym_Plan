@@ -14,7 +14,10 @@ import { NextResponse }            from 'next/server';
 import { authOptions }             from '@/lib/auth';
 import { prisma }                  from '@/lib/prisma';
 import { checkAndAwardBadges }     from '@/lib/badgeEngine';
+import { checkAndAwardCoins }      from '@/lib/coinEngine';
+import type { CoinAward }          from '@/lib/coinEngine';
 import { syncLimit }               from '@/lib/ratelimit';
+import { syncPostSchema }          from '@/lib/validators';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET — pull latest snapshot
@@ -66,17 +69,15 @@ export async function POST(req: Request): Promise<NextResponse> {
   const { success } = await syncLimit.limit(userId);
   if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
 
-  let body: {
-    localDB?:  Record<string, unknown>;
-    profile?:  Record<string, unknown>;
-    settings?: Record<string, unknown>;
-  };
+  let raw: unknown;
+  try { raw = await req.json(); }
+  catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  const parsed = syncPostSchema.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid request', issues: parsed.error.issues }, { status: 400 });
   }
+  const body = parsed.data;
 
   // ── Profile + settings go to WorkoutData ────────────────────────────────────
   const existing = await prisma.workoutData.findUnique({ where: { userId } });
@@ -164,9 +165,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     newBadges = result.awarded;
   } catch { /* non-critical — badge failure never blocks sync */ }
 
+  // Award coins for calorie-goal hits (server-authoritative for challenge wagering)
+  let newCoins:      CoinAward[] = [];
+  let walletBalance: number | undefined;
+  try {
+    const coins = await checkAndAwardCoins(userId);
+    newCoins      = coins.awarded;
+    walletBalance = coins.walletBalance;
+  } catch { /* non-critical — coin failure never blocks sync */ }
+
   return NextResponse.json({
     ok: true,
     ...(conflicts.length > 0  && { conflicts }),
     ...(newBadges.length > 0  && { newBadges }),
+    ...(newCoins.length  > 0  && { newCoins, walletBalance }),
   });
 }

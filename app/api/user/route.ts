@@ -7,6 +7,7 @@ import { getServerSession } from 'next-auth/next';
 import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
+import { userPatchSchema }  from '@/lib/validators';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
@@ -38,14 +39,15 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  let body: {
-    username?:       string;
-    status?:         string | null;
-    statusDuration?: '24h' | 'forever' | 'clear';
-    showcaseBadges?: string[];
-  };
-  try { body = await req.json(); }
+  let raw: unknown;
+  try { raw = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
+
+  const parsed = userPatchSchema.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid request', issues: parsed.error.issues }, { status: 400 });
+  }
+  const body = parsed.data;
 
   const update: Record<string, unknown> = {};
 

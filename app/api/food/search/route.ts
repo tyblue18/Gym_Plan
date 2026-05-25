@@ -11,9 +11,10 @@
  * Both sources are normalised to identical shape so the client needs no changes.
  */
 
-import { NextResponse } from 'next/server';
-import { foodLimit }   from '@/lib/ratelimit';
-import { Redis }       from '@upstash/redis';
+import { NextResponse }    from 'next/server';
+import { foodLimit }      from '@/lib/ratelimit';
+import { Redis }          from '@upstash/redis';
+import { foodSearchSchema } from '@/lib/validators';
 
 const redis = new Redis({
   url:   process.env.KV_REST_API_URL!,
@@ -130,8 +131,10 @@ async function searchOFF(q: string): Promise<NormalizedProduct[]> {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function GET(req: Request): Promise<NextResponse> {
-  const q = new URL(req.url).searchParams.get('q')?.trim();
-  if (!q) return NextResponse.json({ products: [] });
+  const qRaw = new URL(req.url).searchParams.get('q')?.trim();
+  const qParsed = foodSearchSchema.safeParse({ q: qRaw });
+  if (!qParsed.success) return NextResponse.json({ products: [] });
+  const q = qParsed.data.q;
 
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'anon';
   const { success } = await foodLimit.limit(ip);

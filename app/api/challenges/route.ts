@@ -8,6 +8,7 @@ import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
 import { sendPushToUser }   from '@/lib/push';
+import { challengePostSchema } from '@/lib/validators';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
@@ -51,11 +52,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const { friendId, wager } = await req.json() as { friendId?: string; wager?: number };
-  if (!friendId) return NextResponse.json({ error: 'friendId required' }, { status: 400 });
-  if (typeof wager !== 'number' || wager < 1) {
-    return NextResponse.json({ error: 'Wager must be at least 1 coin' }, { status: 400 });
+  const parsed = challengePostSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'friendId required and wager must be 1–100,000' }, { status: 400 });
   }
+  const { friendId, wager } = parsed.data;
 
   const me = { id: session.user.id };
 

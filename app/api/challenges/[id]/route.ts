@@ -11,6 +11,7 @@ import { getServerSession } from 'next-auth/next';
 import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
+import { challengeActionSchema } from '@/lib/validators';
 
 export async function POST(
   req: Request,
@@ -20,10 +21,11 @@ export async function POST(
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const { action } = await req.json() as { action?: 'accept' | 'decline' };
-  if (action !== 'accept' && action !== 'decline') {
+  const parsed = challengeActionSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
     return NextResponse.json({ error: 'action must be accept or decline' }, { status: 400 });
   }
+  const { action } = parsed.data;
 
   const me = { id: session.user.id };
 

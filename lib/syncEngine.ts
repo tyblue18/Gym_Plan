@@ -160,8 +160,10 @@ async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
 
     if (res.ok) {
       const json = await res.json() as {
-        conflicts?: Array<{ date: string; data: unknown }>;
-        newBadges?: Array<{ slug: string; label: string; icon: string; category: string }>;
+        conflicts?:    Array<{ date: string; data: unknown }>;
+        newBadges?:    Array<{ slug: string; label: string; icon: string; category: string }>;
+        newCoins?:     Array<{ date: string; coins: number }>;
+        walletBalance?: number;
       };
       if (json.conflicts?.length) {
         // Server won these days — write them to localStorage and notify AppContext
@@ -175,6 +177,20 @@ async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
       }
       if (json.newBadges?.length) {
         window.dispatchEvent(new CustomEvent('que-badge-earned', { detail: json.newBadges }));
+      }
+      if (json.newCoins?.length) {
+        // Server confirmed these dates — add them to queCalorieCoins.awardedDates
+        // so the client never double-shows the coin animation.
+        try {
+          const stored = JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null')
+            ?? { total: 0, awardedDates: [] };
+          const known = new Set<string>(stored.awardedDates);
+          for (const { date } of json.newCoins) known.add(date);
+          localStorage.setItem('queCalorieCoins', JSON.stringify({ ...stored, awardedDates: Array.from(known) }));
+        } catch { /* storage full */ }
+        window.dispatchEvent(new CustomEvent('que-coins-awarded', {
+          detail: { newCoins: json.newCoins, walletBalance: json.walletBalance },
+        }));
       }
       // Notify AppContext to stamp _syncedAt on the pushed dates so subsequent
       // pushes in the same session don't trigger false conflicts.

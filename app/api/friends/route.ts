@@ -9,6 +9,7 @@ import { NextResponse }      from 'next/server';
 import { authOptions }       from '@/lib/auth';
 import { prisma }            from '@/lib/prisma';
 import { sendPushToUser }    from '@/lib/push';
+import { friendPostSchema, friendDeleteSchema } from '@/lib/validators';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
@@ -79,8 +80,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const { username } = await req.json() as { username?: string };
-  if (!username?.trim()) return NextResponse.json({ error: 'Username required' }, { status: 400 });
+  const parsed = friendPostSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Username required' }, { status: 400 });
+  const { username } = parsed.data;
 
   const me = await prisma.appUser.findUnique({ where: { id: session.user.id } });
   if (!me) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -128,8 +130,9 @@ export async function DELETE(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const { friendshipId } = await req.json() as { friendshipId?: string };
-  if (!friendshipId) return NextResponse.json({ error: 'friendshipId required' }, { status: 400 });
+  const dparsed = friendDeleteSchema.safeParse(await req.json().catch(() => null));
+  if (!dparsed.success) return NextResponse.json({ error: 'friendshipId required' }, { status: 400 });
+  const { friendshipId } = dparsed.data;
 
   const me = { id: session.user.id };
 

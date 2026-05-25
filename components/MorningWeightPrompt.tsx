@@ -68,10 +68,13 @@ export function MorningWeightPrompt() {
   }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dismiss = (saveWeight: boolean) => {
-    if (saveWeight && weight && parseFloat(weight) > 0) {
+    const didEnter = saveWeight && weight && parseFloat(weight) > 0;
+    if (didEnter) {
       updateDayRecord(todayStr, { weight });
+      // Only mark today as done once a weight is actually entered.
+      // Skipping leaves RECAP_KEY unset so the prompt reappears on next open.
+      localStorage.setItem(RECAP_KEY, todayStr);
     }
-    localStorage.setItem(RECAP_KEY, todayStr);
     setOpen(false);
   };
 

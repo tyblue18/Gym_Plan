@@ -1,7 +1,8 @@
-import { getServerSession } from 'next-auth/next';
-import { NextResponse }     from 'next/server';
-import { authOptions }      from '@/lib/auth';
-import { prisma }           from '@/lib/prisma';
+import { getServerSession }                     from 'next-auth/next';
+import { NextResponse }                         from 'next/server';
+import { authOptions }                          from '@/lib/auth';
+import { prisma }                               from '@/lib/prisma';
+import { pushSubscribeSchema, pushDeleteSchema } from '@/lib/validators';
 
 type PushSubClient = {
   upsert:      (args: unknown) => Promise<unknown>;
@@ -18,10 +19,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const body = await req.json() as SubBody;
-  if (!body.endpoint || !body.keys?.p256dh || !body.keys?.auth) {
-    return NextResponse.json({ error: 'Invalid subscription' }, { status: 400 });
-  }
+  const parsed = pushSubscribeSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid subscription' }, { status: 400 });
+  const body = parsed.data as SubBody;
 
   await ps().upsert({
     where:  { userId_endpoint: { userId: session.user.id, endpoint: body.endpoint } },
@@ -36,8 +36,9 @@ export async function DELETE(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const { endpoint } = await req.json() as { endpoint: string };
-  if (!endpoint) return NextResponse.json({ error: 'Missing endpoint' }, { status: 400 });
+  const dparsed = pushDeleteSchema.safeParse(await req.json().catch(() => null));
+  if (!dparsed.success) return NextResponse.json({ error: 'Missing endpoint' }, { status: 400 });
+  const { endpoint } = dparsed.data;
 
   await ps().deleteMany({
     where: { userId: session.user.id, endpoint },

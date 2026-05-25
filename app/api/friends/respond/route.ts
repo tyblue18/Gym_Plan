@@ -9,16 +9,15 @@ import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
 import { sendPushToUser }   from '@/lib/push';
+import { friendRespondSchema } from '@/lib/validators';
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const { friendshipId, accept } = await req.json() as {
-    friendshipId?: string;
-    accept?: boolean;
-  };
-  if (!friendshipId) return NextResponse.json({ error: 'friendshipId required' }, { status: 400 });
+  const parsed = friendRespondSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'friendshipId and accept required' }, { status: 400 });
+  const { friendshipId, accept } = parsed.data;
 
   const me = { id: session.user.id };
 
