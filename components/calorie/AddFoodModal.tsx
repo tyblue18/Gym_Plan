@@ -355,40 +355,32 @@ export function AddFoodModal({ open, onClose, onAdd }: {
   };
 
   const startCamera = useCallback(async () => {
-    console.log('[cam] startCamera called');
     setError('');
     setScanning(true);
 
-    // ── 1. API availability ──────────────────────────────────────────────────
     if (!navigator.mediaDevices?.getUserMedia) {
-      console.log('[cam] getUserMedia not available');
       setScanning(false);
-      setError('Camera API not available. Try HTTPS or a supported browser.');
+      setError('Camera not supported in this browser (requires HTTPS).');
       return;
     }
 
-    // ── 2. Open camera stream ────────────────────────────────────────────────
+    // ── 1. Open camera stream ────────────────────────────────────────────────
     let stream: MediaStream;
     try {
-      console.log('[cam] calling getUserMedia...');
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
       });
-      console.log('[cam] stream obtained', stream.getVideoTracks()[0]?.label);
     } catch (err) {
-      console.log('[cam] getUserMedia error', err);
       setScanning(false);
       setError(
         err instanceof Error && err.name === 'NotAllowedError'
-          ? 'Camera permission denied — tap Allow when your browser asks, or check site settings.'
+          ? 'Camera permission denied. Allow access in your browser settings.'
           : `Camera error (${err instanceof Error ? err.name : 'unknown'}). Try the barcode field below.`
       );
       return;
     }
 
-    // ── 3. Attach to video element ───────────────────────────────────────────
     if (!videoRef.current) {
-      console.log('[cam] videoRef.current is null');
       stream.getTracks().forEach(t => t.stop());
       setScanning(false);
       setError('Video element missing — please close and reopen this panel.');
@@ -396,87 +388,73 @@ export function AddFoodModal({ open, onClose, onAdd }: {
     }
 
     const video = videoRef.current;
-    console.log('[cam] attaching stream to video element');
-    video.srcObject = stream;
-
     let active = true;
-    controlsRef.current = {
-      stop: () => {
-        active = false;
-        stream.getTracks().forEach(t => t.stop());
-        if (videoRef.current) videoRef.current.srcObject = null;
-      },
+
+    const stopStream = () => {
+      active = false;
+      stream.getTracks().forEach(t => t.stop());
+      if (videoRef.current) videoRef.current.srcObject = null;
     };
+    controlsRef.current = { stop: stopStream };
 
-    // ── 4. Play — retry on canplay if browser wasn't ready ───────────────────
-    await new Promise<void>(resolve => {
-      video.play()
-        .then(() => { console.log('[cam] play() succeeded'); resolve(); })
-        .catch(playErr => {
-          console.log('[cam] play() failed, waiting for canplay...', playErr);
-          const onCanPlay = () => {
-            video.removeEventListener('canplay', onCanPlay);
-            video.play()
-              .then(() => console.log('[cam] play() on canplay succeeded'))
-              .catch(e => console.log('[cam] play() on canplay failed', e))
-              .finally(() => resolve());
+    // ── 2. Video setup + barcode detection ──────────────────────────────────
+    // BrowserCodeReader.attachStreamToVideo is ZXing's battle-tested mobile
+    // video setup: it sets autoplay/muted/playsinline as HTML attributes (not
+    // just DOM properties) and retries play() on the canplay event — the exact
+    // sequence that makes camera video render on iOS and Android.
+    try {
+      const { BrowserCodeReader, BrowserMultiFormatReader } = await import('@zxing/browser');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (BrowserCodeReader as any).attachStreamToVideo(stream, video, 5000);
+
+      if ('BarcodeDetector' in window) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const detector = new (window as any).BarcodeDetector({
+            formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
+          });
+          const tick = async () => {
+            if (!active) return;
+            if (video.readyState >= 2) {
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const codes: any[] = await detector.detect(video);
+                if (codes.length > 0) {
+                  controlsRef.current?.stop();
+                  controlsRef.current = null;
+                  setScanning(false);
+                  void lookupBarcode(codes[0].rawValue);
+                  return;
+                }
+              } catch { /* no barcode this frame */ }
+            }
+            requestAnimationFrame(tick);
           };
-          video.addEventListener('canplay', onCanPlay);
-          setTimeout(() => { video.removeEventListener('canplay', onCanPlay); console.log('[cam] canplay timeout'); resolve(); }, 5000);
-        });
-    });
-    console.log('[cam] video readyState after play:', video.readyState, 'paused:', video.paused);
-
-    // ── 5. Barcode detection (failures never hide the camera) ────────────────
-    if ('BarcodeDetector' in window) {
-      console.log('[cam] using BarcodeDetector');
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const detector = new (window as any).BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
-        });
-        const tick = async () => {
-          if (!active) return;
-          if (video.readyState >= 2) {
-            try {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const codes: any[] = await detector.detect(video);
-              if (codes.length > 0) {
-                controlsRef.current?.stop();
-                controlsRef.current = null;
-                setScanning(false);
-                void lookupBarcode(codes[0].rawValue);
-                return;
-              }
-            } catch { /* no barcode this frame */ }
-          }
           requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      } catch (e) {
-        console.log('[cam] BarcodeDetector init error', e);
-      }
-    } else {
-      console.log('[cam] BarcodeDetector not available, using ZXing');
-      try {
-        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        } catch {
+          // BarcodeDetector init failed — camera still visible, use manual entry
+        }
+      } else {
+        // ZXing for detection (video already set up, pass scan controls back)
         const reader = new BrowserMultiFormatReader();
-        const controls = await reader.decodeFromStream(
-          stream,
+        const scanControls = reader.scan(
           video,
           (result, _err, ctrl) => {
-            if (result) {
+            if (result && active) {
               ctrl.stop();
               controlsRef.current = null;
               setScanning(false);
               void lookupBarcode(result.getText());
             }
           },
+          stopStream,
         );
-        controlsRef.current = controls;
-      } catch (e) {
-        console.log('[cam] ZXing error', e);
+        controlsRef.current = { stop: () => scanControls.stop() };
       }
+    } catch {
+      stopStream();
+      setScanning(false);
+      setError('Could not start camera. Try the barcode field below.');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
