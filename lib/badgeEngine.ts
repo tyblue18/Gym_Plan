@@ -193,7 +193,11 @@ export async function checkAndAwardBadges(
   const earnedMap = new Map(existing.map(b => [b.slug, b]));
 
   const toAward  = BADGE_DEFS.filter(def => !earnedMap.has(def.slug) && def.check(data));
-  const toRevoke = BADGE_DEFS.filter(def => earnedMap.has(def.slug)  && !def.check(data));
+  // Only revoke lift badges — streak/cardio badges need full localDB history to
+  // evaluate correctly, but we only receive dirty (partial) days per sync.
+  const toRevoke = BADGE_DEFS.filter(def =>
+    earnedMap.has(def.slug) && def.category === 'lift' && !def.check(data)
+  );
 
   if (toAward.length > 0) {
     await prisma.badge.createMany({

@@ -148,7 +148,7 @@ function dispatch(status: SyncStatus) {
   }
 }
 
-async function _push(payload: SyncPayload): Promise<void> {
+async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
   dispatch('syncing');
   try {
     const res  = await fetch('/api/sync', {
@@ -184,10 +184,25 @@ async function _push(payload: SyncPayload): Promise<void> {
         }));
       }
       dispatch('ok');
+    } else if (res.status === 401 || res.status === 429) {
+      // Auth failure or rate limit — don't retry
+      dispatch('error');
+    } else if (attempt < 2) {
+      // Server error — retry with backoff (3s, then 9s).
+      // Re-gather settings so a weight correction between failure and retry
+      // uses the current queLiftPRs, not the stale value from the original push.
+      const retryPayload = { ...payload, settings: gatherSettings() };
+      setTimeout(() => void _push(retryPayload, attempt + 1), 3000 * (attempt + 1));
     } else {
       dispatch('error');
     }
   } catch {
-    dispatch('error');
+    // Network error — retry with backoff (3s, then 9s)
+    if (attempt < 2) {
+      const retryPayload = { ...payload, settings: gatherSettings() };
+      setTimeout(() => void _push(retryPayload, attempt + 1), 3000 * (attempt + 1));
+    } else {
+      dispatch('error');
+    }
   }
 }

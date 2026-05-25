@@ -815,18 +815,27 @@ export default function WorkoutLogger() {
         bikeTime:  bikes.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0),
         swimTime:  swims.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
       });
-      // Recalculate PRs from pre-session baseline so corrections flow back down.
-      // preSessionPRsRef is frozen at session start — today's edits can't inflate it.
-      const preSessionPRs = preSessionPRsRef.current ?? {};
-      const prRecs: Record<string, number> = { ...preSessionPRs };
+      // Recompute all-time PRs from the full localDB so corrections flow back down.
+      // Scan every OTHER day for historical maxes, then overlay today's arr.
+      // This means editing today's entry can only reduce queLiftPRs if no other
+      // day has a higher weight — which is the correct behaviour for mistake corrections.
+      const prRecs: Record<string, number> = {};
+      for (const [date, rec] of Object.entries(localDBRef.current)) {
+        if (date === activeDayFocus) continue; // today overlaid below from arr
+        parseEx((rec as { exercises?: string }).exercises ?? '')
+          .filter(e => e.k === 'lift' && e.n)
+          .forEach(ex => {
+            normalizeSets(ex).forEach(s => {
+              const w = parseFloat(String(s.w ?? '0')) || 0;
+              if (w > 0) prRecs[ex.n!] = Math.max(prRecs[ex.n!] ?? 0, w);
+            });
+          });
+      }
       arr.filter(e => e.k === 'lift' && e.n && e.sets).forEach(ex => {
-        const sessionMax = (ex.sets ?? []).reduce((m, s) => {
+        normalizeSets(ex).forEach(s => {
           const w = parseFloat(String(s.w ?? '0')) || 0;
-          return w > m ? w : m;
-        }, 0);
-        if (sessionMax > 0) {
-          prRecs[ex.n!] = Math.max(preSessionPRs[ex.n!] ?? 0, sessionMax);
-        }
+          if (w > 0) prRecs[ex.n!] = Math.max(prRecs[ex.n!] ?? 0, w);
+        });
       });
       const curr = prBaselineRef.current ?? {};
       const prChanged = Object.keys({ ...curr, ...prRecs }).some(
@@ -1123,33 +1132,26 @@ export default function WorkoutLogger() {
   }, [templateModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── PR detection ────────────────────────────────────────────────────────────
-  // queLiftPRs (localStorage) = permanent record of all-time maxes per exercise.
-  //   Written by persistExercises; never decreases.
-  // prBaselineRef = snapshot loaded from localStorage at session start.
-  //   Frozen during the session so live edits don't invalidate the comparison.
+  // queLiftPRs (localStorage) = all-time max per exercise, recomputed from the
+  //   full localDB on every persistExercises call. Can go UP or DOWN.
+  // prBaselineRef = last computed value, used for the inline badge icon.
   // sessionMaxRef = highest weight entered THIS session per exercise.
-  //   Persists across delete-and-re-add within the same session, so re-adding
-  //   a lower weight does not trigger a false PR.
+  //   Persists across delete-and-re-add so a re-added lower weight doesn't
+  //   clear the "PR" indicator for the current session.
+
+  // Always-current ref so persistExercises (a stale closure) sees latest localDB.
+  const localDBRef = useRef(localDB);
+  localDBRef.current = localDB;
 
   const prBaselineRef = useRef<Record<string, number> | null>(null);
   if (!prBaselineRef.current) {
     try { prBaselineRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
     catch { prBaselineRef.current = {}; }
   }
-  // Frozen snapshot of PRs before this session began — used as floor when recalculating.
-  const preSessionPRsRef = useRef<Record<string, number> | null>(null);
-  if (!preSessionPRsRef.current) {
-    try { preSessionPRsRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
-    catch { preSessionPRsRef.current = {}; }
-  }
   const sessionMaxRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     sessionMaxRef.current = {};
-    // Refresh the pre-session baseline when switching days so a PR set on day A
-    // can't be erased by a lower entry on day B in the same app session.
-    try { preSessionPRsRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
-    catch { preSessionPRsRef.current = {}; }
   }, [activeDayFocus]);
 
   const prLiftNames = useMemo((): Set<string> => {
