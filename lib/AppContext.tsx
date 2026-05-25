@@ -90,6 +90,9 @@ export interface DayRecord {
   protein?:  number;
   foods?: string;          // JSON-serialised FoodEntry[]
   foodMealOrder?: string;  // JSON-serialised string[] — ordered list of section IDs
+  /** Server-provided sync timestamp — stripped on every local edit so the server
+   *  always accepts the client's dirty writes without triggering a false conflict. */
+  _syncedAt?: string;
 }
 
 /** Keyed by "YYYY-MM-DD" */
@@ -568,9 +571,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (dateStr: string, updates: Partial<DayRecord>) => {
       dirtyDaysRef.current.add(dateStr);
       setLocalDB(prev => {
+        // Strip _syncedAt so the server always accepts this dirty write.
+        // Keeping it would let a stale timestamp (e.g. from a server-side cron
+        // step update) trick the conflict check into returning server data and
+        // deleting the user's in-progress edits.
+        const { _syncedAt: _, ...prevDay } = prev[dateStr] ?? {};
         const next = {
           ...prev,
-          [dateStr]: { ...(prev[dateStr] ?? {}), ...updates },
+          [dateStr]: { ...prevDay, ...updates },
         };
         try {
           localStorage.setItem(DB_KEY, JSON.stringify(next));
