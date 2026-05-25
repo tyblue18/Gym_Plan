@@ -38,6 +38,7 @@ export async function GET(
     include: {
       badges:      { orderBy: { earnedAt: 'desc' } },
       workoutData: { select: { settings: true } },
+      coinWallet:  { select: { balance: true } },
     },
   });
   if (!user) return NextResponse.json(null, { status: 404 });
@@ -55,5 +56,6 @@ export async function GET(
     badges:          user.badges,
     badgeCount:      user.badges.length,
     profilePhoto:    (settings['queProfilePhoto'] as string | undefined) ?? null,
+    coinBalance:     user.coinWallet?.balance ?? 0,
   });
 }

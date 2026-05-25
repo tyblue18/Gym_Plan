@@ -67,6 +67,7 @@ async function getProfile(username: string) {
     include: {
       badges:      { orderBy: { earnedAt: 'desc' } },
       workoutData: { select: { localDB: true, settings: true } },
+      coinWallet:  { select: { balance: true } },
     },
   });
   if (!user) return null;
@@ -122,7 +123,8 @@ async function getProfile(username: string) {
     username: user.username,
     status:   statusActive ? user.status : null,
     profilePhoto,
-    badgeCount:      user.badges.length,
+    badgeCount:  user.badges.length,
+    coinBalance: user.coinWallet?.balance ?? 0,
     showcaseBadges,
     remainingBadges,
     topPRs,
@@ -190,6 +192,7 @@ export default async function ProfilePage(
             <p className="pub-meta">
               {p.badgeCount} badge{p.badgeCount !== 1 ? 's' : ''}
               {p.topPRs.length > 0 && ` · ${p.topPRs.length} PRs`}
+              {p.coinBalance > 0 && ` · 🪙 ${p.coinBalance.toLocaleString()}`}
             </p>
           </div>
         </div>

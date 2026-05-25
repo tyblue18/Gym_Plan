@@ -16,6 +16,7 @@ export interface PublicProfile {
   badges:          BadgeInfo[];
   badgeCount:      number;
   profilePhoto:    string | null;
+  coinBalance?:    number;
 }
 
 export interface BadgeInfo {
@@ -477,12 +478,23 @@ export default function ProfileCard({
             )}
           </div>
 
-          {/* Badge count chip */}
-          <div className="flex-shrink-0 text-right pt-0.5">
-            <p className="font-display text-[28px] leading-none" style={{ color: 'var(--accent)' }}>
-              {localProfile.badgeCount}
-            </p>
-            <p className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">badges</p>
+          {/* Stats chip — badges + coins */}
+          <div className="flex-shrink-0 flex flex-col items-end gap-1.5 pt-0.5">
+            <div className="text-right">
+              <p className="font-display text-[28px] leading-none" style={{ color: 'var(--accent)' }}>
+                {localProfile.badgeCount}
+              </p>
+              <p className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">badges</p>
+            </div>
+            {(localProfile.coinBalance ?? 0) > 0 && (
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(255,181,71,0.12)', border: '1px solid rgba(255,181,71,0.25)' }}>
+                <span className="text-[11px] leading-none">🪙</span>
+                <span className="font-mono text-[10px] font-bold" style={{ color: '#FFB547' }}>
+                  {(localProfile.coinBalance ?? 0).toLocaleString()}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

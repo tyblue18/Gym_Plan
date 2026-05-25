@@ -15,7 +15,7 @@ export async function GET(): Promise<NextResponse> {
 
   const user = await prisma.appUser.findUnique({
     where:   { id: session.user.id },
-    include: { badges: { orderBy: { earnedAt: 'desc' } }, workoutData: { select: { settings: true } } },
+    include: { badges: { orderBy: { earnedAt: 'desc' } }, workoutData: { select: { settings: true } }, coinWallet: { select: { balance: true } } },
   });
   if (!user) return NextResponse.json(null, { status: 404 });
 
@@ -32,6 +32,7 @@ export async function GET(): Promise<NextResponse> {
     badges:          user.badges,
     badgeCount:      user.badges.length,
     profilePhoto:    (settings['queProfilePhoto'] as string | undefined) ?? null,
+    coinBalance:     user.coinWallet?.balance ?? 0,
   });
 }
 
