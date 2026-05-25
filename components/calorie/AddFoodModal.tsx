@@ -335,6 +335,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
   const [selectedProduct, setSelectedProduct] = useState<{ p: OFFProduct; barcode?: string } | null>(null);
   const [error,           setError]          = useState('');
   const [scanning,        setScanning]       = useState(false);
+  const [detected,        setDetected]       = useState(false);
   const videoRef      = useRef<HTMLVideoElement>(null);
   const controlsRef   = useRef<{ stop: () => void } | null>(null);
   const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -365,17 +366,25 @@ export function AddFoodModal({ open, onClose, onAdd }: {
 
       // ZXing handles camera open, video setup, and play() retry on canplay.
       // This is the approach that works on iOS/Android — do not replace it.
+      // Shared handler — flashes green, freezes the frame for 450 ms, then transitions
+      const onFound = (code: string, stopFn: () => void) => {
+        if (handled) return;
+        handled = true;
+        setDetected(true);
+        setTimeout(() => {
+          stopFn();
+          controlsRef.current = null;
+          setDetected(false);
+          setScanning(false);
+          void lookupBarcode(code);
+        }, 450);
+      };
+
       const controls = await reader.decodeFromConstraints(
         { video: { facingMode: 'environment' } },
         videoRef.current,
         (result, _err, ctrl) => {
-          if (result && !handled) {
-            handled = true;
-            ctrl.stop();
-            controlsRef.current = null;
-            setScanning(false);
-            void lookupBarcode(result.getText());
-          }
+          if (result) onFound(result.getText(), () => ctrl.stop());
         },
       );
       controlsRef.current = controls;
@@ -400,13 +409,9 @@ export function AddFoodModal({ open, onClose, onAdd }: {
               try {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const codes: any[] = await detector.detect(video);
-                if (codes.length > 0 && !handled) {
-                  handled = true;
+                if (codes.length > 0) {
                   bdActive = false;
-                  origStop();
-                  controlsRef.current = null;
-                  setScanning(false);
-                  void lookupBarcode(codes[0].rawValue);
+                  onFound(codes[0].rawValue, origStop);
                   return;
                 }
               } catch { /* no barcode this frame */ }
@@ -494,14 +499,24 @@ export function AddFoodModal({ open, onClose, onAdd }: {
             </div>
 
             <div className="flex-1 overflow-y-auto overscroll-contain p-4 md:p-5">
+              <AnimatePresence mode="wait">
               {selectedProduct ? (
+                <motion.div
+                  key="detail"
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                >
                 <FoodDetailSheet
                   product={selectedProduct.p}
                   barcode={selectedProduct.barcode}
                   onAdd={onAdd}
                   onBack={() => setSelectedProduct(null)}
                 />
+                </motion.div>
               ) : (
+                <motion.div key="browse" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                 <>
                   {/* Mode tabs */}
                   <div className="flex bg-[var(--bg-2)] border border-[var(--line)] rounded-sm p-1 gap-0.5 mb-4">
@@ -537,15 +552,32 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                         />
                         {!scanning && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                            <Camera size={40} className="text-[var(--ink-3)]" />
-                            <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">
-                              Point camera at barcode
-                            </p>
+                            {searching ? (
+                              <>
+                                <div className="w-6 h-6 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" />
+                                <p className="font-mono text-[9px] text-[var(--ink-2)] tracking-[1.5px] uppercase">Looking up…</p>
+                              </>
+                            ) : (
+                              <>
+                                <Camera size={40} className="text-[var(--ink-3)]" />
+                                <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">
+                                  Point camera at barcode
+                                </p>
+                              </>
+                            )}
                           </div>
                         )}
                         {scanning && (
                           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-52 h-24 border-2 border-[var(--accent)] rounded opacity-80" />
+                            <motion.div
+                              className="w-52 h-24 border-2 rounded"
+                              animate={{
+                                borderColor: detected ? '#4ade80' : 'var(--accent)',
+                                scale: detected ? 1.04 : 1,
+                                opacity: detected ? 1 : 0.8,
+                              }}
+                              transition={{ duration: 0.15 }}
+                            />
                           </div>
                         )}
                       </div>
@@ -634,7 +666,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                     <p className="font-mono text-[11px] text-[var(--warn)] mt-3 tracking-[0.3px] border border-[var(--warn)]/30 rounded px-3 py-2 bg-[var(--warn)]/10">{error}</p>
                   )}
 
-                  {searching && !searchResults.length && (
+                  {mode !== 'scan' && searching && !searchResults.length && (
                     <p className="font-mono text-[9px] text-[var(--ink-3)] mt-3 text-center tracking-[1px] uppercase animate-pulse">
                       Searching…
                     </p>
@@ -645,7 +677,9 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                     <MyFoodsTab onSelect={p => setSelectedProduct({ p })} />
                   )}
                 </>
+                </motion.div>
               )}
+              </AnimatePresence>
             </div>
           </motion.div>
         </motion.div>
