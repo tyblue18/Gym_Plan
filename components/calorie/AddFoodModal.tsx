@@ -357,70 +357,53 @@ export function AddFoodModal({ open, onClose, onAdd }: {
   const startCamera = useCallback(async () => {
     setError('');
     setScanning(true);
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setScanning(false);
-      setError('Camera not supported in this browser (requires HTTPS).');
-      return;
-    }
-
-    // ── 1. Open camera stream ────────────────────────────────────────────────
-    let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-    } catch (err) {
-      setScanning(false);
-      setError(
-        err instanceof Error && err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Allow access in your browser settings.'
-          : `Camera error (${err instanceof Error ? err.name : 'unknown'}). Try the barcode field below.`
+      const { BrowserMultiFormatReader } = await import('@zxing/browser');
+      if (!videoRef.current) { setScanning(false); return; }
+      const reader = new BrowserMultiFormatReader();
+      let handled = false;
+
+      // ZXing handles camera open, video setup, and play() retry on canplay.
+      // This is the approach that works on iOS/Android — do not replace it.
+      const controls = await reader.decodeFromConstraints(
+        { video: { facingMode: 'environment' } },
+        videoRef.current,
+        (result, _err, ctrl) => {
+          if (result && !handled) {
+            handled = true;
+            ctrl.stop();
+            controlsRef.current = null;
+            setScanning(false);
+            void lookupBarcode(result.getText());
+          }
+        },
       );
-      return;
-    }
+      controlsRef.current = controls;
 
-    if (!videoRef.current) {
-      stream.getTracks().forEach(t => t.stop());
-      setScanning(false);
-      setError('Video element missing — please close and reopen this panel.');
-      return;
-    }
-
-    const video = videoRef.current;
-    let active = true;
-
-    const stopStream = () => {
-      active = false;
-      stream.getTracks().forEach(t => t.stop());
-      if (videoRef.current) videoRef.current.srcObject = null;
-    };
-    controlsRef.current = { stop: stopStream };
-
-    // ── 2. Video setup + barcode detection ──────────────────────────────────
-    // BrowserCodeReader.attachStreamToVideo is ZXing's battle-tested mobile
-    // video setup: it sets autoplay/muted/playsinline as HTML attributes (not
-    // just DOM properties) and retries play() on the canplay event — the exact
-    // sequence that makes camera video render on iOS and Android.
-    try {
-      const { BrowserCodeReader, BrowserMultiFormatReader } = await import('@zxing/browser');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (BrowserCodeReader as any).attachStreamToVideo(stream, video, 5000);
-
-      if ('BarcodeDetector' in window) {
+      // If BarcodeDetector is available, run it alongside for better detection.
+      // First to find a barcode wins; handled flag prevents double-lookup.
+      if ('BarcodeDetector' in window && videoRef.current) {
+        const video = videoRef.current;
+        const origStop = controls.stop.bind(controls);
+        let bdActive = true;
+        controlsRef.current = {
+          stop: () => { bdActive = false; origStop(); },
+        };
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const detector = new (window as any).BarcodeDetector({
             formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
           });
           const tick = async () => {
-            if (!active) return;
+            if (!bdActive || handled) return;
             if (video.readyState >= 2) {
               try {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const codes: any[] = await detector.detect(video);
-                if (codes.length > 0) {
-                  controlsRef.current?.stop();
+                if (codes.length > 0 && !handled) {
+                  handled = true;
+                  bdActive = false;
+                  origStop();
                   controlsRef.current = null;
                   setScanning(false);
                   void lookupBarcode(codes[0].rawValue);
@@ -431,30 +414,11 @@ export function AddFoodModal({ open, onClose, onAdd }: {
             requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
-        } catch {
-          // BarcodeDetector init failed — camera still visible, use manual entry
-        }
-      } else {
-        // ZXing for detection (video already set up, pass scan controls back)
-        const reader = new BrowserMultiFormatReader();
-        const scanControls = reader.scan(
-          video,
-          (result, _err, ctrl) => {
-            if (result && active) {
-              ctrl.stop();
-              controlsRef.current = null;
-              setScanning(false);
-              void lookupBarcode(result.getText());
-            }
-          },
-          stopStream,
-        );
-        controlsRef.current = { stop: () => scanControls.stop() };
+        } catch { /* BarcodeDetector init failed — ZXing still detecting */ }
       }
     } catch {
-      stopStream();
       setScanning(false);
-      setError('Could not start camera. Try the barcode field below.');
+      setError('Camera access denied. Use the barcode field below.');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -568,11 +532,11 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                       <div className="relative rounded border border-[var(--line-2)] bg-[var(--bg-2)] overflow-hidden aspect-[4/3]">
                         <video
                           ref={videoRef}
-                          className="block w-full h-full object-cover"
-                          playsInline muted autoPlay
+                          className={['block w-full h-full object-cover', scanning ? '' : 'hidden'].join(' ')}
+                          playsInline muted
                         />
                         {!scanning && (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[var(--bg-2)]">
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
                             <Camera size={40} className="text-[var(--ink-3)]" />
                             <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">
                               Point camera at barcode
