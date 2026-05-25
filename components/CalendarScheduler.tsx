@@ -24,6 +24,7 @@ import {
   type ViewMode,
   type DayRecord,
 } from '@/lib/AppContext';
+import { pushNow, gatherSettings } from '@/lib/syncEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -288,14 +289,61 @@ function WeekCell({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BADGE HELPERS (mirrors badgeEngine thresholds, client-side only)
+// ─────────────────────────────────────────────────────────────────────────────
+const BENCH_NAMES = new Set(['Bench Press','Barbell Bench Press','Flat Bench Press','Flat Barbell Bench']);
+const SQUAT_NAMES = new Set(['Squat','Back Squat','Barbell Squat','Low Bar Squat','High Bar Squat']);
+const DEAD_NAMES  = new Set(['Deadlift','Barbell Deadlift','Conventional Deadlift','Romanian Deadlift']);
+const BADGE_WEIGHTS = [135, 225, 315, 405, 495, 540, 630];
+
+function liftBadgeIcon(exerciseName: string, prWeight: number): string | null {
+  let key: string | null = null;
+  if (BENCH_NAMES.has(exerciseName)) key = 'bench';
+  else if (SQUAT_NAMES.has(exerciseName)) key = 'squat';
+  else if (DEAD_NAMES.has(exerciseName))  key = 'deadlift';
+  if (!key) return null;
+  let highest = 0;
+  for (const w of BADGE_WEIGHTS) { if (prWeight >= w) highest = w; }
+  if (!highest) return null;
+  if (key === 'squat' && highest === 315) return '/Badges/315_squad_badge.png';
+  return `/Badges/${highest}_${key}_badge.png`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — TodaysWorkoutSummary
 // ─────────────────────────────────────────────────────────────────────────────
 
 function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecord }) {
-  const { updateDayRecord, setActiveDayFocus } = useApp();
+  const { updateDayRecord, setActiveDayFocus, localDB } = useApp();
   const arr    = parseEx(rec.exercises ?? '');
   const lifts  = arr.filter(e => e.k === 'lift' || e.k === 'text');
   const cardio = arr.filter(e => ['swim','run','bike'].includes(e.k));
+
+  // Recomputes all-time PRs from full localDB + the newly-edited exercises for
+  // this day, writes queLiftPRs to localStorage, and fires an immediate sync so
+  // badge award/revocation is triggered on the server.
+  const recomputePRs = (newExs: ParsedEntry[]) => {
+    const prRecs: Record<string, number> = {};
+    for (const [date, dayRec] of Object.entries(localDB)) {
+      if (date === dateStr) continue; // overlay from newExs below
+      parseEx(String((dayRec as { exercises?: string }).exercises ?? ''))
+        .filter(e => e.k === 'lift' && e.n)
+        .forEach(ex => {
+          normalizeSets(ex).forEach(s => {
+            const w = parseFloat(String(s.w ?? '0')) || 0;
+            if (w > 0) prRecs[ex.n!] = Math.max(prRecs[ex.n!] ?? 0, w);
+          });
+        });
+    }
+    newExs.filter(e => e.k === 'lift' && e.n).forEach(ex => {
+      normalizeSets(ex).forEach(s => {
+        const w = parseFloat(String(s.w ?? '0')) || 0;
+        if (w > 0) prRecs[ex.n!] = Math.max(prRecs[ex.n!] ?? 0, w);
+      });
+    });
+    try { localStorage.setItem('queLiftPRs', JSON.stringify(prRecs)); } catch { /* storage full */ }
+    pushNow({ settings: gatherSettings() });
+  };
 
   // Ref for the weight input so Enter on reps can advance focus
   const editWeightRef = useRef<HTMLInputElement>(null);
@@ -323,6 +371,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
       sets[editCell.setIdx] = { r: editR.trim() || '1', w: editW.trim() };
       ex.sets = sets as typeof ex.sets;
       updateDayRecord(dateStr, { exercises: JSON.stringify(exs) });
+      recomputePRs(exs);
     }
     setEditCell(null);
   };
@@ -338,6 +387,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
     sets.splice(setIdx, 1);
     ex.sets = sets as typeof ex.sets;
     updateDayRecord(dateStr, { exercises: JSON.stringify(exs) });
+    recomputePRs(exs);
     setEditCell(null);
   };
 
@@ -353,6 +403,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
     sets.push({ r: last.r, w: last.w });
     ex.sets = sets as typeof ex.sets;
     updateDayRecord(dateStr, { exercises: JSON.stringify(exs) });
+    recomputePRs(exs);
   };
 
   // ── Swipe to change day ──────────────────────────────────────────────────
@@ -381,9 +432,12 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
   }, [arr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── PR detection ─────────────────────────────────────────────────────────
+  const prRecs = useMemo((): Record<string, number> => {
+    try { return JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}') as Record<string, number>; }
+    catch { return {}; }
+  }, [lifts]); // re-reads after recomputePRs updates localStorage and triggers re-render via rec prop
+
   const prLiftNames = useMemo(() => {
-    let prRecs: Record<string, number> = {};
-    try { prRecs = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); } catch { /* noop */ }
     const prs = new Set<string>();
     lifts.forEach(ex => {
       if (ex.k !== 'lift' || !ex.n) return;
@@ -391,7 +445,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
       if (maxToday > 0 && maxToday >= (prRecs[ex.n!] ?? 0)) prs.add(ex.n!);
     });
     return prs;
-  }, [lifts]);
+  }, [lifts, prRecs]);
 
   const today    = new Date();
   const todayStr = toDateStr(today);
@@ -441,6 +495,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                       {entries.map((e) => {
                         const sets = normalizeSets(e);
                         const isPR = !!e.n && prLiftNames.has(e.n);
+                        const badgeIcon = e.n ? liftBadgeIcon(e.n, prRecs[e.n] ?? 0) : null;
                         return (
                           <div key={e.arrIdx} className="flex flex-col gap-1">
                             <div className="flex items-center gap-1.5">
@@ -453,6 +508,11 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                                 {e.n ?? e.k}
                               </button>
                               <PRLiveBadge active={isPR} size={26} />
+                              {badgeIcon && (
+                                badgeIcon.startsWith('/')
+                                  ? <img src={badgeIcon} alt="" className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+                                  : <span className="text-[14px] leading-none">{badgeIcon}</span>
+                              )}
                             </div>
                             {(e.g2 || e.g3) && (
                               <div className="flex items-center gap-1">

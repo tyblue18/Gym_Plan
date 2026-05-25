@@ -16,6 +16,7 @@ import {
   useApp, PRESETS, SECONDARY_MUSCLES,
   type ExerciseEntry, type SetData,
   type WorkoutPreset,
+  type DayRecord,
 } from '@/lib/AppContext';
 import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
 import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
@@ -804,6 +805,8 @@ export default function WorkoutLogger() {
   const persistExercises = useCallback(
     (arr: ExerciseEntry[], notesTxt = notes) => {
       const raw   = serializeEx(arr);
+      // Mark this as our own write so the external-change detector ignores it.
+      lastOwnWriteRef.current = raw;
       const runs  = arr.filter(e => e.k === 'run');
       const bikes = arr.filter(e => e.k === 'bike');
       const swims = arr.filter(e => e.k === 'swim');
@@ -862,12 +865,29 @@ export default function WorkoutLogger() {
     setExercisesRaw(loaded);
     exerciseKeysRef.current = loaded.map(() => nextKey());
     setNotesRaw(rec.notes ?? '');
+    // Seed lastOwnWriteRef so the external-change detector has a baseline.
+    lastOwnWriteRef.current = rec.exercises ?? '';
     const dow = new Date(activeDayFocus + 'T00:00:00').getDay();
     const all = getWorkoutPresets();
     const match = all.find(p => p.isRecurring && p.daysOfWeek.includes(dow));
     const hasLifts = parseEx(rec.exercises ?? '').some(e => e.k === 'lift');
     setRecurringPreset(match && !hasLifts ? match : null);
   }, [activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Detects edits made by TodaysWorkoutSummary (or any external source) and
+  // reloads exercises state so WorkoutLogger doesn't overwrite them on next save.
+  useEffect(() => {
+    if (lastOwnWriteRef.current === null) return; // not yet initialized
+    const raw = (localDB[activeDayFocus] as DayRecord | undefined)?.exercises ?? '';
+    if (raw === lastOwnWriteRef.current) return; // our own write — skip
+    // External change detected — reload and update baseline.
+    const loaded = parseEx(raw);
+    setExercisesRaw(loaded);
+    exerciseKeysRef.current = loaded.map((_, i) => exerciseKeysRef.current[i] ?? nextKey());
+    lastOwnWriteRef.current = raw;
+    try { prBaselineRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
+    catch { prBaselineRef.current = {}; }
+  }, [localDB]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lifts = useMemo<NormalizedLift[]>(() =>
     exercises
@@ -1142,6 +1162,10 @@ export default function WorkoutLogger() {
   // Always-current ref so persistExercises (a stale closure) sees latest localDB.
   const localDBRef = useRef(localDB);
   localDBRef.current = localDB;
+
+  // Tracks the last raw exercises string WorkoutLogger itself wrote to localDB.
+  // Used to distinguish our own writes from external changes (e.g. TodaysWorkoutSummary).
+  const lastOwnWriteRef = useRef<string | null>(null);
 
   const prBaselineRef = useRef<Record<string, number> | null>(null);
   if (!prBaselineRef.current) {
