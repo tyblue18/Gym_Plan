@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Plus, X, Search, Camera, ChevronRight, BookOpen, Trash2, Pencil,
+  Plus, X, Search, Camera, ChevronRight, BookOpen, Trash2,
 } from 'lucide-react';
 import type { FoodEntry } from '@/lib/AppContext';
 
@@ -365,8 +365,9 @@ export function AddFoodModal({ open, onClose, onAdd }: {
         });
         if (!videoRef.current) { stream.getTracks().forEach(t => t.stop()); setScanning(false); return; }
         videoRef.current.srcObject = stream;
-        // autoPlay attribute on the video element handles play() — no explicit call needed,
-        // and calling play() on a display:none element throws in some browsers.
+        // autoPlay alone doesn't reliably start a dynamically-assigned srcObject in all browsers.
+        // The video is always rendered as block (overlay pattern), so play() won't throw.
+        videoRef.current.play().catch(() => {});
 
         let active = true;
         controlsRef.current = {
