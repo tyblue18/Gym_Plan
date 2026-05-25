@@ -982,13 +982,13 @@ export default function WorkoutLogger() {
     };
     const next = [...exercises, entry];
     exerciseKeysRef.current = [...exerciseKeysRef.current, nextKey()];
-    setExercisesRaw(next);
+    setExercises(next);
     setPendingSetData(Array.from({ length: pendingSetsCount }, () => ({ r: '1', w: '' })));
     if (isCustomEx) { setCustomName(''); setCustomG2(''); setCustomG3(''); }
   }, [
     isCustomEx, customName, customG2, customG3, selectedEx, pendingSetData,
     currentGroup, exercises, pendingSetsCount,
-    bumpUsage, setPendingSetData,
+    bumpUsage, setPendingSetData, setExercises,
   ]);
 
   const handleWeightKeyDown = useCallback((e: React.KeyboardEvent, idx: number) => {
