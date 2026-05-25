@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Pencil, Clock, Infinity, Check } from 'lucide-react';
+import { X, Pencil, Clock, Infinity } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -28,6 +28,13 @@ export interface BadgeInfo {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+function BadgeIcon({ icon, size = 28 }: { icon: string; size?: number }) {
+  if (icon.startsWith('/')) {
+    return <img src={icon} alt="" style={{ width: size, height: size, objectFit: 'contain', display: 'block' }} />;
+  }
+  return <span style={{ fontSize: size, lineHeight: 1 }}>{icon}</span>;
+}
 
 function timeRemaining(iso: string): string {
   const diff = new Date(iso).getTime() - Date.now();
@@ -208,16 +215,22 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
             const badge = slug ? badges.find(b => b.slug === slug) : null;
             return (
               <div key={i}
-                className="flex-1 aspect-square rounded-full flex items-center justify-center"
-                style={{
+                className="flex-1 aspect-square flex items-center justify-center"
+                style={badge?.icon.startsWith('/') ? {} : {
+                  borderRadius: '50%',
                   background: 'radial-gradient(circle at 35% 35%, #14141F, #080810)',
                   boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.8)',
                 }}
               >
-                {badge
-                  ? <span className="text-[14px] leading-none">{badge.icon}</span>
-                  : <span className="text-[var(--ink-4)] text-[10px]">·</span>
-                }
+                {badge ? (
+                  badge.icon.startsWith('/') ? (
+                    <img src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-[11px] leading-none">{badge.icon}</span>
+                  )
+                ) : (
+                  <span className="text-[var(--ink-4)] text-[10px]">·</span>
+                )}
               </div>
             );
           })}
@@ -257,7 +270,7 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
                         {idx + 1}
                       </span>
                     )}
-                    <span className="text-[28px] leading-none mb-1">{badge.icon}</span>
+                    <BadgeIcon icon={badge.icon} size={36} />
                     <p className="font-mono text-[8px] font-bold text-[var(--ink-0)] leading-tight">{badge.label}</p>
                     <p className="font-mono text-[7px] text-[var(--ink-3)] capitalize mt-0.5">{badge.category}</p>
                   </button>
@@ -328,8 +341,9 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
               onClick={isOwn ? onEdit : undefined}
               disabled={!isOwn}
               whileTap={isOwn ? { scale: 0.92 } : undefined}
-              className="aspect-square rounded-full flex items-center justify-center relative"
-              style={{
+              className="aspect-square flex items-center justify-center relative"
+              style={badge?.icon.startsWith('/') ? {} : {
+                borderRadius: '50%',
                 background: 'radial-gradient(circle at 35% 30%, #181828, #06060E)',
                 boxShadow: badge
                   ? `inset 0 2px 6px rgba(0,0,0,0.9), inset 0 -1px 2px rgba(255,255,255,0.03), 0 0 12px ${glowColors[badge.category] ?? 'rgba(255,255,255,0.2)'}, 0 1px 0 rgba(255,255,255,0.04)`
@@ -337,14 +351,18 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
               }}
             >
               {badge ? (
-                <motion.span
-                  className="text-[24px] sm:text-[28px] leading-none select-none"
+                <motion.div
+                  className="absolute inset-0 flex items-center justify-center select-none"
                   initial={{ scale: 0.6, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 20 }}
                 >
-                  {badge.icon}
-                </motion.span>
+                  {badge.icon.startsWith('/') ? (
+                    <img src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-[22px] leading-none">{badge.icon}</span>
+                  )}
+                </motion.div>
               ) : (
                 <span className="text-[16px] leading-none select-none" style={{ color: 'rgba(255,255,255,0.08)' }}>
                   {isOwn ? '+' : '·'}
@@ -496,7 +514,22 @@ export default function ProfileCard({
           </p>
           <div className="flex flex-wrap gap-1.5">
             {localProfile.badges.slice(0, 12).map(b => (
-              <span key={b.id} title={b.label} className="text-[20px] leading-none">{b.icon}</span>
+              <div
+                key={b.id}
+                title={b.label}
+                className="w-9 h-9 flex items-center justify-center"
+                style={b.icon.startsWith('/') ? {} : {
+                  borderRadius: '50%',
+                  background: 'radial-gradient(circle at 35% 30%, #181828, #06060E)',
+                  boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.9), 0 0 10px rgba(79,195,247,0.2)',
+                }}
+              >
+                {b.icon.startsWith('/') ? (
+                  <img src={b.icon} alt={b.label} className="w-full h-full object-contain" />
+                ) : (
+                  <span className="text-[16px] leading-none">{b.icon}</span>
+                )}
+              </div>
             ))}
             {localProfile.badgeCount > 12 && (
               <span className="font-mono text-[9px] text-[var(--ink-3)] self-center">+{localProfile.badgeCount - 12} more</span>

@@ -16,40 +16,46 @@ export async function GET(): Promise<NextResponse> {
 
   const me = { id: session.user.id };
 
+  const userSelect = {
+    id: true, name: true, username: true,
+    status: true, statusExpiresAt: true,
+    badges: { select: { id: true } },
+    workoutData: { select: { settings: true } },
+  } as const;
+
   const [sent, received] = await Promise.all([
     prisma.friendship.findMany({
       where:   { requesterId: me.id },
-      include: {
-        receiver: {
-          select: { id: true, name: true, username: true, badges: { select: { id: true } } },
-        },
-      },
+      include: { receiver: { select: userSelect } },
     }),
     prisma.friendship.findMany({
       where:   { receiverId: me.id },
-      include: {
-        requester: {
-          select: { id: true, name: true, username: true, badges: { select: { id: true } } },
-        },
-      },
+      include: { requester: { select: userSelect } },
     }),
   ]);
 
+  const now = new Date();
+
+  function extractFriendFields(u: {
+    id: string; name: string | null; username: string | null;
+    status: string | null; statusExpiresAt: Date | null;
+    badges: { id: string }[];
+    workoutData: { settings: unknown } | null;
+  }, friendshipId: string) {
+    const settings = (u.workoutData?.settings ?? {}) as Record<string, unknown>;
+    const photo    = (typeof settings['queProfilePhoto'] === 'string' ? settings['queProfilePhoto'] : null);
+    const status   = u.status && (!u.statusExpiresAt || u.statusExpiresAt > now) ? u.status : null;
+    return {
+      id: u.id, friendshipId,
+      name: u.name, username: u.username,
+      badgeCount: u.badges.length,
+      photo, status,
+    };
+  }
+
   const friends = [
-    ...sent.filter(f => f.status === 'accepted').map(f => ({
-      id:           f.receiver.id,
-      friendshipId: f.id,
-      name:         f.receiver.name,
-      username:     f.receiver.username,
-      badgeCount:   f.receiver.badges.length,
-    })),
-    ...received.filter(f => f.status === 'accepted').map(f => ({
-      id:           f.requester.id,
-      friendshipId: f.id,
-      name:         f.requester.name,
-      username:     f.requester.username,
-      badgeCount:   f.requester.badges.length,
-    })),
+    ...sent.filter(f => f.status === 'accepted').map(f => extractFriendFields(f.receiver, f.id)),
+    ...received.filter(f => f.status === 'accepted').map(f => extractFriendFields(f.requester, f.id)),
   ];
 
   const incoming = received.filter(f => f.status === 'pending').map(f => ({

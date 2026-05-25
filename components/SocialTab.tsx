@@ -13,6 +13,8 @@ interface FriendData {
   name:         string | null;
   username:     string | null;
   badgeCount:   number;
+  photo:        string | null;
+  status:       string | null;
 }
 
 interface PendingData {
@@ -84,10 +86,14 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
         <div className="p-5 space-y-5">
           {/* Opponent */}
           <div className="flex items-center gap-3 rounded border border-[var(--line)] bg-[var(--bg-2)] px-4 py-3">
-            <div className="w-9 h-9 rounded-full bg-[var(--bg-3)] border border-[var(--line-2)] flex items-center justify-center flex-shrink-0">
-              <span className="font-display text-[14px] text-[var(--ink-2)]">
-                {(friend.name ?? friend.username ?? '?')[0].toUpperCase()}
-              </span>
+            <div className="w-9 h-9 rounded-full bg-[var(--bg-3)] border border-[var(--line-2)] flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {friend.photo ? (
+                <img src={friend.photo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="font-display text-[14px] text-[var(--ink-2)]">
+                  {(friend.name ?? friend.username ?? '?')[0].toUpperCase()}
+                </span>
+              )}
             </div>
             <div>
               <p className="font-mono text-[12px] font-bold text-[var(--ink-0)]">{friend.name ?? friend.username}</p>
@@ -263,7 +269,11 @@ export default function SocialTab() {
   const [inChallenge,   setInChallenge]   = useState<ChallengeData[]>([]);
   const [sentChallenge, setSentChallenge] = useState<ChallengeData[]>([]);
   const [resolved,      setResolved]      = useState<ChallengeData[]>([]);
-  const [balance,       setBalance]       = useState(0);
+  const [balance,       setBalance]       = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    try { return (JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null') as { total?: number } | null)?.total ?? 0; }
+    catch { return 0; }
+  });
   const [addQuery,      setAddQuery]      = useState('');
   const [addStatus,     setAddStatus]     = useState<{ ok: boolean; msg: string } | null>(null);
   const [loading,       setLoading]       = useState(true);
@@ -273,15 +283,14 @@ export default function SocialTab() {
   const [resolving,     setResolving]     = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [userRes, friendRes, walletRes, challengeRes] = await Promise.all([
+    const [userRes, friendRes, challengeRes] = await Promise.all([
       fetch('/api/user'),
       fetch('/api/friends'),
-      fetch('/api/wallet'),
       fetch('/api/challenges'),
     ]);
 
     if (userRes.ok)      setOwnProfile(await userRes.json());
-    if (walletRes.ok)    setBalance((await walletRes.json()).balance ?? 0);
+    try { setBalance((JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null') as { total?: number } | null)?.total ?? 0); } catch { /* ignore */ }
     if (friendRes.ok) {
       const d = await friendRes.json();
       setFriends(d.friends   ?? []);
@@ -553,16 +562,29 @@ export default function SocialTab() {
             {friends.map(friend => (
               <div key={friend.friendshipId} className="flex items-center gap-3 px-5 py-3.5">
                 <button type="button" onClick={() => setViewFriendId(friend.id)}
-                  className="w-9 h-9 rounded-full bg-[var(--bg-3)] border border-[var(--line-2)] flex items-center justify-center flex-shrink-0">
-                  <span className="font-display text-[14px] text-[var(--ink-2)]">
-                    {(friend.name ?? friend.username ?? '?')[0].toUpperCase()}
-                  </span>
+                  className="w-10 h-10 rounded-full bg-[var(--bg-3)] border border-[var(--line-2)] flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {friend.photo ? (
+                    <img src={friend.photo} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="font-display text-[15px] text-[var(--ink-2)]">
+                      {(friend.name ?? friend.username ?? '?')[0].toUpperCase()}
+                    </span>
+                  )}
                 </button>
                 <button type="button" onClick={() => setViewFriendId(friend.id)} className="flex-1 min-w-0 text-left">
                   <p className="font-mono text-[12px] font-bold text-[var(--ink-0)] truncate">{friend.name ?? friend.username ?? 'Unknown'}</p>
-                  <p className="font-mono text-[9px] text-[var(--ink-3)]">
-                    {friend.username ? `@${friend.username} · ` : ''}{friend.badgeCount} badge{friend.badgeCount !== 1 ? 's' : ''}
-                  </p>
+                  {friend.status ? (
+                    <p className="font-mono text-[9px] text-[var(--accent)] truncate">{friend.status}</p>
+                  ) : (
+                    <p className="font-mono text-[9px] text-[var(--ink-3)]">
+                      {friend.username ? `@${friend.username} · ` : ''}{friend.badgeCount} badge{friend.badgeCount !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                  {friend.status && friend.username && (
+                    <p className="font-mono text-[8px] text-[var(--ink-3)]">
+                      @{friend.username} · {friend.badgeCount} badge{friend.badgeCount !== 1 ? 's' : ''}
+                    </p>
+                  )}
                 </button>
                 <button type="button" onClick={() => setChallenging(friend)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-sm border font-mono text-[9px] font-bold tracking-[0.5px] uppercase transition-all"

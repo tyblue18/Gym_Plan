@@ -7,7 +7,7 @@ import Lottie from 'lottie-react';
 import coinAnim      from '@/public/Calorie_Coin_animation.json';
 import celebrateAnim from '@/public/Celebrate_animation.json';
 import { useApp } from '@/lib/AppContext';
-import type { FoodEntry } from '@/lib/AppContext';
+import type { FoodEntry, UserProfile } from '@/lib/AppContext';
 
 // ── Calorie Coin system ───────────────────────────────────────────────────────
 
@@ -29,10 +29,52 @@ function hitGoal(calsEaten: string | undefined, budget: number | undefined): boo
   return eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= GOAL_TOLERANCE;
 }
 
+// Compute the base calorie budget from profile (no cardio — used as fallback
+// when the user hasn't clicked "Log Today" in the Metrics tab that day).
+function computeBaseBudget(p: UserProfile): number {
+  const kg  = (parseFloat(p.weight) || 180) / 2.20462;
+  const cm  = (parseFloat(p.height) || 70)  * 2.54;
+  const age = parseFloat(p.age) || 29;
+  const def = parseFloat(p.deficit) || 500;
+  const mul = parseFloat(p.activityLevel) || 1.55;
+  const bmr = Math.round(
+    p.sex === 'male'
+      ? 10 * kg + 6.25 * cm - 5 * age + 5
+      : 10 * kg + 6.25 * cm - 5 * age - 161
+  );
+  return Math.max(0, Math.round(bmr * mul) - def);
+}
+
+// Walk backwards from dateStr counting consecutive on-budget days (inclusive).
+function streakEndingAt(
+  db: Record<string, { budget?: unknown; calsEaten?: unknown }>,
+  dateStr: string,
+  fallback: number,
+): number {
+  let count = 0;
+  const d = new Date(dateStr + 'T00:00:00');
+  for (let i = 0; i < 366; i++) {
+    const ds  = [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-');
+    const rec = db[ds];
+    if (!rec) break;
+    const b = (parseFloat(String(rec.budget  ?? '0')) || 0) || fallback;
+    const e =  parseFloat(String(rec.calsEaten ?? '0')) || 0;
+    if (!e || !b || Math.abs(e - b) > GOAL_TOLERANCE) break;
+    count++;
+    d.setDate(d.getDate() - 1);
+  }
+  return count;
+}
+
+// Week 1 → 1 coin/day, week 2 → 2 coins/day, etc.
+function coinsForStreak(streak: number): number {
+  return Math.floor(streak / 7) + 1;
+}
+
 // ── Coin award modal ──────────────────────────────────────────────────────────
 
-function CoinAwardModal({ open, onClose, total, dateLabel }: {
-  open: boolean; onClose: () => void; total: number; dateLabel: string;
+function CoinAwardModal({ open, onClose, total, dateLabel, earned = 1 }: {
+  open: boolean; onClose: () => void; total: number; dateLabel: string; earned?: number;
 }) {
   return (
     <AnimatePresence>
@@ -57,13 +99,18 @@ function CoinAwardModal({ open, onClose, total, dateLabel }: {
 
             <div className="px-6 pb-7 pt-4 text-center space-y-2">
               <p className="font-mono text-[10px] font-bold tracking-[2px] uppercase" style={{ color: '#FFB547' }}>
-                Calorie Coin Earned
+                Calorie Coin{earned > 1 ? 's' : ''} Earned
               </p>
-              <h3 className="font-display text-[26px] tracking-[2px] uppercase text-[var(--ink-0)]">
-                Goal Hit!
+              <h3 className="font-display text-[32px] tracking-[2px] uppercase text-[var(--ink-0)]">
+                +{earned} 🪙
               </h3>
+              {earned > 1 && (
+                <p className="font-mono text-[10px] font-bold tracking-[0.5px]" style={{ color: '#FFB547' }}>
+                  Week {earned} streak bonus ×{earned}
+                </p>
+              )}
               <p className="font-mono text-[11px] text-[var(--ink-2)] tracking-[0.5px]">
-                You stayed within 100 kcal of your goal on {dateLabel}.
+                Within 100 kcal of your goal on {dateLabel}.
               </p>
 
               {/* Coin stack display */}
@@ -1253,7 +1300,7 @@ export default function CalorieTracker() {
   const [showModal,    setShowModal]    = useState(false);
   const [targetMeal,   setTargetMeal]   = useState<string>('breakfast');
   const [coinData,      setCoinData]     = useState<CoinData>(() => loadCoins());
-  const [pendingCoin,   setPendingCoin]  = useState<{ date: string; label: string } | null>(null);
+  const [pendingCoin,   setPendingCoin]  = useState<{ date: string; label: string; amount: number } | null>(null);
   const [macroGoals,    setMacroGoals]   = useState<MacroGoals | null>(() => loadMacroGoals());
   const [showMacroModal, setShowMacroModal] = useState(false);
 
@@ -1285,44 +1332,68 @@ export default function CalorieTracker() {
     fat:     +(foods.reduce((s, f) => s + f.fat,     0)).toFixed(1),
   }), [foods]);
 
-  const budget        = parseFloat(String(todayRec.budget ?? '0')) || 0;
+  // Use the saved budget (from Log Today) when available; fall back to the
+  // computed base budget so coins and goal indicators work even if the user
+  // never opens the Metrics tab.
+  const baseBudget    = useMemo(() => computeBaseBudget(profile), [profile]);
+  const savedBudget   = parseFloat(String(todayRec.budget ?? '0')) || 0;
+  const budget        = savedBudget || baseBudget;
   const proteinTarget = Math.round(parseFloat(profile.weight) * 0.8) || 0;
 
-  // Whether today's intake is currently within goal (real-time)
-  const todayGoalHit = hitGoal(todayRec.calsEaten, todayRec.budget);
+  // Whether today's intake is currently within goal (real-time, uses live totals)
+  const todayGoalHit = budget > 0 && totals.kcal > 0 && Math.abs(totals.kcal - budget) <= GOAL_TOLERANCE;
 
-  // On mount: scan past days for unawarded coins (only days before today)
+  // On mount: scan past days for unawarded coins (only days before today).
+  // Uses baseBudget as fallback for days where "Log Today" was never clicked.
   useEffect(() => {
     const coins = loadCoins();
     const awarded = new Set(coins.awardedDates);
 
-    // Check every day in localDB that is before today
     const pendingDates = Object.keys(localDB)
       .filter(ds => ds < todayStr && !awarded.has(ds))
       .sort()
       .reverse(); // newest first
 
     for (const ds of pendingDates) {
-      const rec = localDB[ds];
-      if (hitGoal(rec.calsEaten, rec.budget)) {
-        // Award the coin for this day
-        const newTotal = coins.total + 1;
-        const newData  = { total: newTotal, awardedDates: [...coins.awardedDates, ds] };
+      const rec       = localDB[ds];
+      const dayBudget = (parseFloat(String(rec.budget ?? '0')) || 0) || baseBudget;
+      if (hitGoal(rec.calsEaten, dayBudget)) {
+        const dayStreak = streakEndingAt(localDB, ds, baseBudget);
+        const earned    = coinsForStreak(dayStreak || 1);
+        const newTotal  = coins.total + earned;
+        const newData   = { total: newTotal, awardedDates: [...coins.awardedDates, ds] };
         saveCoins(newData);
         setCoinData(newData);
 
-        // Format a friendly date label
-        const d = new Date(ds + 'T00:00:00');
+        const d    = new Date(ds + 'T00:00:00');
         const diff = Math.round((new Date(todayStr + 'T00:00:00').getTime() - d.getTime()) / 86400000);
         const label = diff === 1 ? 'yesterday'
           : diff === 2 ? 'two days ago'
           : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
-        setPendingCoin({ date: ds, label });
+        setPendingCoin({ date: ds, label, amount: earned });
         return; // show one coin at a time
       }
     }
   }, [todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Award today's coin (with streak multiplier) in real-time when goal is first hit.
+  const todayCoinAwardedRef = useRef(false);
+  useEffect(() => {
+    if (!todayGoalHit) { todayCoinAwardedRef.current = false; return; }
+    if (todayCoinAwardedRef.current) return;
+    todayCoinAwardedRef.current = true;
+    const coins = loadCoins();
+    if (coins.awardedDates.includes(todayStr)) return;
+    const todayStreak = streakEndingAt(localDB, todayStr, baseBudget);
+    const earned      = coinsForStreak(todayStreak || 1);
+    const newTotal    = coins.total + earned;
+    const newData     = { total: newTotal, awardedDates: [...coins.awardedDates, todayStr] };
+    saveCoins(newData);
+    setCoinData(newData);
+    navigator.vibrate?.([40, 20, 80]);
+    setPendingCoin({ date: todayStr, label: 'today', amount: earned });
+  }, [todayGoalHit, todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const collectCoin = useCallback(() => {
     setPendingCoin(null);
@@ -1354,8 +1425,11 @@ export default function CalorieTracker() {
       ...(newOrder && { foodMealOrder: JSON.stringify(newOrder) }),
       ...(kcal > 0    && { calsEaten: String(kcal) }),
       ...(protein > 0 && { protein }),
+      // Persist the effective budget so the coin system works even if the
+      // user never clicks "Log Today" in the Metrics tab.
+      ...(budget > 0  && { budget }),
     });
-  }, [todayStr, updateDayRecord]);
+  }, [todayStr, updateDayRecord, budget]);
 
   const [editingFood, setEditingFood] = useState<FoodEntry | null>(null);
 
@@ -1725,6 +1799,7 @@ export default function CalorieTracker() {
         onClose={collectCoin}
         total={coinData.total}
         dateLabel={pendingCoin?.label ?? ''}
+        earned={pendingCoin?.amount ?? 1}
       />
 
       {/* Macro all-hit confetti — pointer-events-none so it never blocks taps */}

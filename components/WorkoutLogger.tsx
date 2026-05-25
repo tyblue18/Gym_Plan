@@ -20,6 +20,29 @@ import {
 import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
 import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
 import { queueSync } from '@/lib/syncEngine';
+import Lottie from 'lottie-react';
+import celebrateAnim from '@/public/Celebrate_animation.json';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BADGE HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+const BENCH_NAMES = new Set(['Bench Press','Barbell Bench Press','Flat Bench Press','Flat Barbell Bench']);
+const SQUAT_NAMES = new Set(['Squat','Back Squat','Barbell Squat','Low Bar Squat','High Bar Squat']);
+const DEAD_NAMES  = new Set(['Deadlift','Barbell Deadlift','Conventional Deadlift','Romanian Deadlift']);
+const BADGE_WEIGHTS = [135, 225, 315, 405, 495, 540, 630];
+
+function liftBadgeIcon(exerciseName: string, prWeight: number): string | null {
+  let key: string | null = null;
+  if (BENCH_NAMES.has(exerciseName)) key = 'bench';
+  else if (SQUAT_NAMES.has(exerciseName)) key = 'squat';
+  else if (DEAD_NAMES.has(exerciseName))  key = 'deadlift';
+  if (!key) return null;
+  let highest = 0;
+  for (const w of BADGE_WEIGHTS) { if (prWeight >= w) highest = w; }
+  if (!highest) return null;
+  if (key === 'squat' && highest === 315) return '/Badges/315_squad_badge.png';
+  return `/Badges/${highest}_${key}_badge.png`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -201,9 +224,9 @@ function SetBadge({ sets, onSave }: {
 // Swipe right     → reveals DELETE; release past 120px deletes the entry
 // ─────────────────────────────────────────────────────────────────────────────
 function ReorderableExerciseItem({
-  entry, numIdx, isPR, onDelete, onUpdateName, onUpdateSets, onViewHistory,
+  entry, numIdx, isPR, earnedBadgeIcon: badgeIcon, onDelete, onUpdateName, onUpdateSets, onViewHistory,
 }: {
-  entry: NormalizedLift; numIdx: number; isPR?: boolean;
+  entry: NormalizedLift; numIdx: number; isPR?: boolean; earnedBadgeIcon?: string | null;
   onDelete: (idx: number) => void;
   onUpdateName: (idx: number, name: string) => void;
   onUpdateSets: (idx: number, sets: Array<{ r: string; w: string }>) => void;
@@ -300,11 +323,16 @@ function ReorderableExerciseItem({
           ) : (
             <div className="flex items-start gap-1.5 min-w-0">
               <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                <span
-                  onClick={startNameEdit}
-                  className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors truncate"
-                >
-                  {entry.n ?? entry.k}
+                <span className="flex items-center gap-1.5">
+                  <span
+                    onClick={startNameEdit}
+                    className="text-[14px] text-[var(--ink-0)] font-semibold cursor-text hover:text-[var(--accent)] transition-colors truncate"
+                  >
+                    {entry.n ?? entry.k}
+                  </span>
+                  {badgeIcon && (
+                    <img src={badgeIcon} alt="badge" className="w-5 h-5 object-contain flex-shrink-0" />
+                  )}
                 </span>
                 {(entry.g2 || entry.g3) && (
                   <div className="flex items-center gap-1">
@@ -759,6 +787,7 @@ export default function WorkoutLogger() {
   const [dupWarning, setDupWarning] = useState(false);
   const [activeSection, setActiveSection] = useState<'lifting' | 'cardio'>('lifting');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [earnedBadges, setEarnedBadges] = useState<Array<{ slug: string; label: string; icon: string; category: string }>>([]);
 
   // Stable keys for Reorder (parallel to exercises array, never derived)
   const exerciseKeysRef = useRef<string[]>([]);
@@ -1135,6 +1164,20 @@ export default function WorkoutLogger() {
     if (newPRs.length > 0) navigator.vibrate?.([30, 20, 60, 20, 30]);
     prevPRRef.current = new Set(prLiftNames);
   }, [prLiftNames]);
+
+  // Listen for badges awarded by the sync engine
+  useEffect(() => {
+    function onBadgeEarned(e: Event) {
+      const badges = (e as CustomEvent<Array<{ slug: string; label: string; icon: string; category: string }>>) .detail;
+      if (badges?.length) {
+        setEarnedBadges(prev => [...prev, ...badges]);
+        // Satisfying haptic: two strong pulses
+        navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+      }
+    }
+    window.addEventListener('que-badge-earned', onBadgeEarned);
+    return () => window.removeEventListener('que-badge-earned', onBadgeEarned);
+  }, []);
 
   const loadRecurringWorkout = useCallback((preset: WorkoutPreset) => {
     const newEntries = parseEx(preset.exercises);
@@ -1619,18 +1662,22 @@ export default function WorkoutLogger() {
                   onReorder={handleLiftReorder}
                   className="flex flex-col gap-2"
                 >
-                  {lifts.map((entry, numIdx) => (
-                    <ReorderableExerciseItem
-                      key={entry._key}
-                      entry={entry}
-                      numIdx={numIdx}
-                      isPR={!!entry.n && prLiftNames.has(entry.n)}
-                      onDelete={deleteEntry}
-                      onUpdateName={updateExerciseName}
-                      onUpdateSets={updateExerciseSets}
-                      onViewHistory={entry.n ? () => setHistoryEx(entry.n!) : undefined}
-                    />
-                  ))}
+                  {lifts.map((entry, numIdx) => {
+                    const pr = entry.n ? (prBaselineRef.current?.[entry.n] ?? 0) : 0;
+                    return (
+                      <ReorderableExerciseItem
+                        key={entry._key}
+                        entry={entry}
+                        numIdx={numIdx}
+                        isPR={!!entry.n && prLiftNames.has(entry.n)}
+                        earnedBadgeIcon={entry.n ? liftBadgeIcon(entry.n, pr) : null}
+                        onDelete={deleteEntry}
+                        onUpdateName={updateExerciseName}
+                        onUpdateSets={updateExerciseSets}
+                        onViewHistory={entry.n ? () => setHistoryEx(entry.n!) : undefined}
+                      />
+                    );
+                  })}
                 </Reorder.Group>
               </>
             )}
@@ -1734,6 +1781,62 @@ export default function WorkoutLogger() {
         open={historyEx !== null}
         onClose={() => setHistoryEx(null)}
       />
+
+      {/* Badge earned modal — centered, celebrate animation, haptic */}
+      <AnimatePresence>
+        {earnedBadges.length > 0 && (
+          <motion.div
+            className="fixed inset-0 z-[400] flex items-center justify-center px-6 pointer-events-none"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          >
+            {/* Confetti burst behind card */}
+            <Lottie
+              animationData={celebrateAnim}
+              loop={false}
+              autoplay
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            />
+
+            {/* Card */}
+            <motion.div
+              className="relative w-full max-w-[320px] rounded-2xl overflow-hidden pointer-events-auto"
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+              style={{ boxShadow: '0 0 0 1px rgba(79,195,247,0.5), 0 0 60px rgba(79,195,247,0.2), 0 24px 60px rgba(0,0,0,0.7)' }}
+            >
+              <div className="h-1.5" style={{ background: 'linear-gradient(90deg, #1a6fa8, #4fc3f7, #1a6fa8)' }} />
+              <div className="bg-[var(--bg-1)] px-5 py-5">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="font-mono text-[9px] font-bold tracking-[3px] uppercase" style={{ color: '#4fc3f7' }}>
+                    Badge{earnedBadges.length > 1 ? 's' : ''} Unlocked
+                  </p>
+                  <button type="button" onClick={() => setEarnedBadges([])}
+                    className="w-6 h-6 flex items-center justify-center rounded text-[var(--ink-3)] hover:text-[var(--ink-0)]">
+                    <X size={14} />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-4">
+                  {earnedBadges.map(b => (
+                    <div key={b.slug} className="flex items-center gap-4">
+                      {b.icon.startsWith('/') ? (
+                        <img src={b.icon} alt={b.label} className="w-14 h-14 object-contain flex-shrink-0" />
+                      ) : (
+                        <span className="text-[44px] leading-none flex-shrink-0">{b.icon}</span>
+                      )}
+                      <div>
+                        <p className="font-display text-[18px] tracking-[1px] uppercase text-[var(--ink-0)]">{b.label}</p>
+                        <p className="font-mono text-[9px] text-[var(--ink-3)] capitalize tracking-[1px] mt-0.5">{b.category} badge</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Undo delete snackbar */}
       <AnimatePresence>

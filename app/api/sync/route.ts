@@ -154,11 +154,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // Award any newly earned badges — fire-and-forget, never blocks the sync response
-  checkAndAwardBadges(userId, {
-    localDB:  (body.localDB  ?? {}) as Record<string, unknown>,
-    settings: mergedSettings,
-  }).catch(() => { /* non-critical */ });
+  // Award any newly earned badges and include them in the response
+  let newBadges: import('@/lib/badgeEngine').AwardedBadge[] = [];
+  try {
+    newBadges = await checkAndAwardBadges(userId, {
+      localDB:  (body.localDB  ?? {}) as Record<string, unknown>,
+      settings: mergedSettings,
+    });
+  } catch { /* non-critical — badge failure never blocks sync */ }
 
-  return NextResponse.json({ ok: true, ...(conflicts.length > 0 && { conflicts }) });
+  return NextResponse.json({
+    ok: true,
+    ...(conflicts.length > 0  && { conflicts }),
+    ...(newBadges.length > 0  && { newBadges }),
+  });
 }

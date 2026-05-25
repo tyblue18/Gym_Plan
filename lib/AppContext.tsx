@@ -509,6 +509,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('que-conflict', handler);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // After a successful push, stamp _syncedAt on those dates so subsequent pushes
+  // in the same session don't trigger false server-wins-conflict.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { dates, syncedAt } = (e as CustomEvent<{ dates: string[]; syncedAt: string }>).detail;
+      if (!Array.isArray(dates) || dates.length === 0) return;
+      setLocalDB(prev => {
+        const next = { ...prev };
+        for (const date of dates) {
+          if (next[date]) next[date] = { ...next[date], _syncedAt: syncedAt } as DayRecord;
+        }
+        try { localStorage.setItem(DB_KEY, JSON.stringify(next)); } catch { /* noop */ }
+        return next;
+      });
+    };
+    window.addEventListener('que-sync-ack', handler);
+    return () => window.removeEventListener('que-sync-ack', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Tracks which dates were written since the last sync — only those are pushed.
   const dirtyDaysRef    = useRef<Set<string>>(new Set());
   const syncSkipCountRef = useRef(2); // skip first 2 fires (mount + cloud-pull merge)

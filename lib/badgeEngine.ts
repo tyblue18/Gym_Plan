@@ -84,32 +84,46 @@ const SQUAT = ['Squat', 'Back Squat', 'Barbell Squat', 'Low Bar Squat', 'High Ba
 const DEAD  = ['Deadlift', 'Barbell Deadlift', 'Conventional Deadlift', 'Romanian Deadlift'];
 const OHP   = ['Overhead Press', 'OHP', 'Military Press', 'Barbell OHP', 'Standing OHP', 'Barbell Overhead Press'];
 
+/** Best PR across a set of exercise name variants. */
+function bestPR(liftPRs: Record<string, number>, exercises: string[]): number {
+  return exercises.reduce((max, ex) => Math.max(max, liftPRs[ex] ?? 0), 0);
+}
+
 const BADGE_DEFS: BadgeDef[] = [
   // ── Bench Press ──────────────────────────────────────────────────────────────
-  lb('bench_135', 'One Plate Bench',   '🏋️', BENCH, 135),
-  lb('bench_185', '185 Bench Club',    '🏋️', BENCH, 185),
-  lb('bench_225', 'Two Plate Bench',   '🥈', BENCH, 225),
-  lb('bench_275', '275 Bench Club',    '🏋️', BENCH, 275),
-  lb('bench_315', 'Three Plate Bench', '🥇', BENCH, 315),
-  lb('bench_365', '365 Bench Club',    '💪', BENCH, 365),
-  lb('bench_405', 'Four Plate Bench',  '👑', BENCH, 405),
+  lb('bench_135', '135 Bench',         '/Badges/135_bench_badge.png',  BENCH, 135),
+  lb('bench_225', '225 Bench',         '/Badges/225_bench_badge.png',  BENCH, 225),
+  lb('bench_315', '315 Bench',         '/Badges/315_bench_badge.png',  BENCH, 315),
+  lb('bench_405', '405 Bench',         '/Badges/405_bench_badge.png',  BENCH, 405),
+  lb('bench_495', '495 Bench',         '/Badges/495_bench_badge.png',  BENCH, 495),
+  lb('bench_540', '540 Bench',         '/Badges/540_bench_badge.png',  BENCH, 540),
+  lb('bench_630', '630 Bench',         '/Badges/630_bench_badge.png',  BENCH, 630),
 
   // ── Squat ─────────────────────────────────────────────────────────────────────
-  lb('squat_135', 'One Plate Squat',   '🏋️', SQUAT, 135),
-  lb('squat_225', 'Two Plate Squat',   '🥈', SQUAT, 225),
-  lb('squat_315', 'Three Plate Squat', '🥇', SQUAT, 315),
-  lb('squat_405', 'Four Plate Squat',  '💪', SQUAT, 405),
-  lb('squat_495', 'Five Plate Squat',  '🔥', SQUAT, 495),
-  lb('squat_585', 'Six Plate Squat',   '👑', SQUAT, 585),
+  lb('squat_135', '135 Squat',         '/Badges/135_squat_badge.png',  SQUAT, 135),
+  lb('squat_225', '225 Squat',         '/Badges/225_squat_badge.png',  SQUAT, 225),
+  lb('squat_315', '315 Squat',         '/Badges/315_squad_badge.png',  SQUAT, 315),
+  lb('squat_405', '405 Squat',         '/Badges/405_squat_badge.png',  SQUAT, 405),
+  lb('squat_495', '495 Squat',         '/Badges/495_squat_badge.png',  SQUAT, 495),
+  lb('squat_540', '540 Squat',         '/Badges/540_squat_badge.png',  SQUAT, 540),
+  lb('squat_630', '630 Squat',         '/Badges/630_squat_badge.png',  SQUAT, 630),
 
   // ── Deadlift ──────────────────────────────────────────────────────────────────
-  lb('dead_135', 'One Plate Deadlift',  '🏋️', DEAD, 135),
-  lb('dead_225', 'Two Plate Deadlift',  '🥈', DEAD, 225),
-  lb('dead_315', 'Three Plate Deadlift','🥇', DEAD, 315),
-  lb('dead_405', 'Four Plate Deadlift', '💪', DEAD, 405),
-  lb('dead_495', 'Five Plate Deadlift', '🔥', DEAD, 495),
-  lb('dead_585', 'Six Plate Deadlift',  '🔥', DEAD, 585),
-  lb('dead_675', 'Seven Plate Deadlift','👑', DEAD, 675),
+  lb('dead_135', '135 Deadlift',       '/Badges/135_deadlift_badge.png', DEAD, 135),
+  lb('dead_225', '225 Deadlift',       '/Badges/225_deadlift_badge.png', DEAD, 225),
+  lb('dead_315', '315 Deadlift',       '/Badges/315_deadlift_badge.png', DEAD, 315),
+  lb('dead_405', '405 Deadlift',       '/Badges/405_deadlift_badge.png', DEAD, 405),
+  lb('dead_495', '495 Deadlift',       '/Badges/495_deadlift_badge.png', DEAD, 495),
+  lb('dead_540', '540 Deadlift',       '/Badges/540_deadlift_badge.png', DEAD, 540),
+  lb('dead_630', '630 Deadlift',       '/Badges/630_deadlift_badge.png', DEAD, 630),
+
+  // ── 1000 lb Club ─────────────────────────────────────────────────────────────
+  {
+    slug: 'pound_club_1000', label: '1000 lb Club', icon: '/Badges/1000_pound_club_badge.png',
+    category: 'lift',
+    check: ({ liftPRs }) =>
+      bestPR(liftPRs, BENCH) + bestPR(liftPRs, SQUAT) + bestPR(liftPRs, DEAD) >= 1000,
+  },
 
   // ── Overhead Press ────────────────────────────────────────────────────────────
   lb('ohp_95',  '95 OHP Club',        '🏋️', OHP, 95),
@@ -147,15 +161,23 @@ const BADGE_DEFS: BadgeDef[] = [
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
+export interface AwardedBadge {
+  slug:     string;
+  label:    string;
+  icon:     string;
+  category: string;
+}
+
 /**
  * Checks all badge thresholds for a user and awards any newly earned badges.
  * Safe to call on every sync — skips badges the user already holds.
+ * Returns the list of newly awarded badges (empty array if none).
  * Throws only if Prisma is unavailable; callers should catch.
  */
 export async function checkAndAwardBadges(
   userId:      string,
   workoutData: { localDB?: unknown; settings?: unknown },
-): Promise<void> {
+): Promise<AwardedBadge[]> {
   const localDB  = (workoutData.localDB  ?? {}) as Record<string, DayRecord>;
   const settings = (workoutData.settings ?? {}) as Record<string, unknown>;
 
@@ -173,7 +195,7 @@ export async function checkAndAwardBadges(
   const earned = new Set(existing.map(b => b.slug));
 
   const toAward = BADGE_DEFS.filter(def => !earned.has(def.slug) && def.check(data));
-  if (toAward.length === 0) return;
+  if (toAward.length === 0) return [];
 
   await prisma.badge.createMany({
     data: toAward.map(def => ({
@@ -185,6 +207,13 @@ export async function checkAndAwardBadges(
     })),
     skipDuplicates: true, // race-condition safety
   });
+
+  return toAward.map(def => ({
+    slug:     def.slug,
+    label:    def.label,
+    icon:     def.icon,
+    category: def.category,
+  }));
 }
 
 /** Returns all badges for a user, newest first. */

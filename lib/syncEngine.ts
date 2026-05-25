@@ -159,7 +159,10 @@ async function _push(payload: SyncPayload): Promise<void> {
     });
 
     if (res.ok) {
-      const json = await res.json() as { conflicts?: Array<{ date: string; data: unknown }> };
+      const json = await res.json() as {
+        conflicts?: Array<{ date: string; data: unknown }>;
+        newBadges?: Array<{ slug: string; label: string; icon: string; category: string }>;
+      };
       if (json.conflicts?.length) {
         // Server won these days — write them to localStorage and notify AppContext
         try {
@@ -169,6 +172,16 @@ async function _push(payload: SyncPayload): Promise<void> {
           localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(db));
           window.dispatchEvent(new CustomEvent('que-conflict', { detail: json.conflicts }));
         } catch { /* storage full — skip */ }
+      }
+      if (json.newBadges?.length) {
+        window.dispatchEvent(new CustomEvent('que-badge-earned', { detail: json.newBadges }));
+      }
+      // Notify AppContext to stamp _syncedAt on the pushed dates so subsequent
+      // pushes in the same session don't trigger false conflicts.
+      if (payload.localDB && Object.keys(payload.localDB).length > 0) {
+        window.dispatchEvent(new CustomEvent('que-sync-ack', {
+          detail: { dates: Object.keys(payload.localDB), syncedAt: new Date().toISOString() },
+        }));
       }
       dispatch('ok');
     } else {
