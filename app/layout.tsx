@@ -29,10 +29,13 @@ const jetBrainsMono = JetBrains_Mono({
   variable: '--font-mono',
 });
 
+const BASE_URL = process.env.NEXTAUTH_URL ?? 'http://localhost:3000';
+
 export const metadata: Metadata = {
-  title: 'Que / Athlete OS',
+  metadataBase: new URL(BASE_URL),
+  title: 'Que — Athlete OS',
   description:
-    'Training log and calorie tracker — calendar, lifting, cardio & daily calorie budgeting.',
+    'Personal training log and calorie tracker. Log workouts, hit macros, track your cut or bulk, and compete with friends.',
   manifest: '/manifest.json',
   icons: {
     icon:  '/Que_logo.png',
@@ -42,6 +45,18 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'Que',
+  },
+  openGraph: {
+    type:        'website',
+    url:         BASE_URL,
+    siteName:    'Que',
+    title:       'Que — Athlete OS',
+    description: 'Personal training log and calorie tracker. Log workouts, hit macros, track your cut or bulk, and compete with friends.',
+  },
+  twitter: {
+    card:        'summary_large_image',
+    title:       'Que — Athlete OS',
+    description: 'Personal training log and calorie tracker. Log workouts, hit macros, track your cut or bulk, and compete with friends.',
   },
 };
 
