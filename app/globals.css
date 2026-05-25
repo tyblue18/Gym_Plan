@@ -506,6 +506,39 @@ html, body { height: 100%; background: var(--bg-0); color: var(--ink-0); }
 .que-btn-primary:active { transform: translateY(0); }
 .que-btn-primary:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 
+/* ── Onboarding notifications step ───────────────────────────────────────── */
+
+.ob-notif-icon-wrap {
+  width: 52px; height: 52px;
+  background: var(--accent-12); border: 1px solid var(--accent-24);
+  border-radius: var(--r-xl);
+  display: flex; align-items: center; justify-content: center;
+}
+.ob-notif-preview {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 12px 14px;
+}
+.ob-notif-preview-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+.ob-notif-preview-title {
+  font-size: 12px; font-weight: 700; color: var(--ink-0); margin: 0 0 2px;
+}
+.ob-notif-preview-body {
+  font-size: 11px; color: var(--ink-2); margin: 0; line-height: 1.5;
+}
+.ob-notif-success {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px; border-radius: var(--r-lg);
+  background: var(--positive-12); border: 1px solid rgba(109,255,153,0.25);
+  font-size: 13px; font-weight: 700; color: var(--positive);
+}
+.ob-notif-denied {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px; border-radius: var(--r-lg);
+  background: var(--danger-12); border: 1px solid rgba(255,77,94,0.2);
+  font-size: 12px; color: var(--ink-1); margin-bottom: 8px;
+}
+
 .que-btn-ghost {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 10px 16px; border: 1px solid var(--line-2); border-radius: var(--r-sm);
