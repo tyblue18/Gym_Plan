@@ -2,7 +2,7 @@
   "name": "Que — Training & Calorie Log",
   "short_name": "Que",
   "description": "Personal training log and calorie tracker — lifting, cardio, and daily calorie budgeting.",
-  "start_url": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

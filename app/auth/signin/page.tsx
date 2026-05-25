@@ -83,7 +83,7 @@ export default function SignInPage() {
 
   async function handleSignIn(provider: 'github' | 'google') {
     setLoading(provider);
-    await signIn(provider, { callbackUrl: '/' });
+    await signIn(provider, { callbackUrl: '/app' });
   }
 
   return (
