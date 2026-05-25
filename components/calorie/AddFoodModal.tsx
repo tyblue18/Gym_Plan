@@ -365,7 +365,8 @@ export function AddFoodModal({ open, onClose, onAdd }: {
         });
         if (!videoRef.current) { stream.getTracks().forEach(t => t.stop()); setScanning(false); return; }
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        // autoPlay attribute on the video element handles play() — no explicit call needed,
+        // and calling play() on a display:none element throws in some browsers.
 
         let active = true;
         controlsRef.current = {
@@ -535,11 +536,11 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                       <div className="relative rounded border border-[var(--line-2)] bg-[var(--bg-2)] overflow-hidden aspect-[4/3]">
                         <video
                           ref={videoRef}
-                          className={['block w-full h-full object-cover', scanning ? '' : 'hidden'].join(' ')}
-                          playsInline muted
+                          className="block w-full h-full object-cover"
+                          playsInline muted autoPlay
                         />
                         {!scanning && (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[var(--bg-2)]">
                             <Camera size={40} className="text-[var(--ink-3)]" />
                             <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">
                               Point camera at barcode
