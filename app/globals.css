@@ -754,6 +754,56 @@ html, body { height: 100%; background: var(--bg-0); color: var(--ink-0); }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 .scrollbar-none { scrollbar-width: none; }
 
+/* ── Sync nudge banner ───────────────────────────────────────────────────── */
+
+.sync-nudge {
+  position: absolute;
+  bottom: calc(56px + 8px); /* above tab bar */
+  left: 8px; right: 8px;
+  z-index: 40;
+  background: var(--bg-2);
+  border: 1px solid var(--accent-24);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  animation: nudge-in 0.25s ease;
+}
+@keyframes nudge-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.sync-nudge-icon { color: var(--accent); flex-shrink: 0; }
+.sync-nudge-text {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-1);
+  margin: 0;
+}
+.sync-nudge-text strong { color: var(--ink-0); }
+.sync-nudge-cta {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 4px 10px;
+  background: var(--accent-12);
+  border: 1px solid var(--accent-24);
+  border-radius: var(--r-sm);
+}
+.sync-nudge-close {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none;
+  color: var(--ink-2); cursor: pointer; flex-shrink: 0;
+  border-radius: var(--r-sm);
+}
+.sync-nudge-close:hover { color: var(--ink-1); }
+
 /* ── Landing page ────────────────────────────────────────────────────────────
 ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -897,6 +947,13 @@ html, body { height: 100%; background: var(--bg-0); color: var(--ink-0); }
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .lp-btn-ghost:hover { color: var(--ink-0); border-color: var(--line-3); background: var(--bg-2); }
+
+.lp-hero-no-account {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: -8px 0 0;
+  line-height: 1.5;
+}
 
 /* Stats row */
 .lp-stats {
@@ -1079,3 +1136,160 @@ html, body { height: 100%; background: var(--bg-0); color: var(--ink-0); }
   padding: 10px 12px;
 }
 .ios-guide-note strong { color: var(--ink-1); }
+
+/* ── Public profile page ─────────────────────────────────────────────────────
+═══════════════════════════════════════════════════════════════════════════ */
+
+.pub-shell {
+  min-height: 100dvh;
+  background: var(--bg-0);
+  color: var(--ink-0);
+  font-family: var(--font-sans);
+}
+
+/* Nav */
+.pub-nav {
+  position: sticky; top: 0; z-index: 50;
+  border-bottom: 1px solid var(--line);
+  background: rgba(7,8,10,0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0 20px; height: 52px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.pub-nav-brand {
+  display: flex; align-items: center; gap: 8px; text-decoration: none;
+}
+.pub-nav-logo { border-radius: 5px; }
+.pub-nav-name {
+  font-family: var(--font-display);
+  font-size: 20px; color: var(--ink-0); letter-spacing: 0.02em;
+}
+.pub-nav-cta {
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  text-decoration: none; padding: 6px 14px;
+  border: 1px solid var(--accent-24); border-radius: var(--r-md);
+}
+.pub-nav-cta:hover { background: var(--accent-12); }
+
+/* Main content */
+.pub-main {
+  max-width: 600px; margin: 0 auto;
+  padding: 24px 16px 48px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+/* Profile card */
+.pub-profile-card {
+  display: flex; align-items: center; gap: 16px;
+  background: var(--bg-1); border: 1px solid var(--line);
+  border-radius: var(--r-xl); padding: 20px;
+}
+.pub-avatar-wrap { flex-shrink: 0; }
+.pub-avatar-img {
+  width: 72px; height: 72px;
+  border-radius: 50%; object-fit: cover;
+  border: 2px solid var(--line-2);
+}
+.pub-avatar-placeholder {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--bg-3); border: 2px solid var(--line-2);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--ink-2);
+}
+.pub-profile-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pub-display-name {
+  font-size: 20px; font-weight: 700; color: var(--ink-0);
+  margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pub-username { font-size: 13px; color: var(--ink-2); margin: 0; }
+.pub-status {
+  font-size: 13px; color: var(--accent); margin: 2px 0 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pub-meta { font-size: 12px; color: var(--ink-2); margin: 4px 0 0; }
+
+/* Sections */
+.pub-section {
+  background: var(--bg-1); border: 1px solid var(--line);
+  border-radius: var(--r-xl); padding: 18px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.pub-section-header {
+  display: flex; align-items: center; gap: 7px; color: var(--ink-1);
+}
+.pub-section-title {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-1); margin: 0;
+}
+.pub-section-sub {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-2); margin: 0;
+}
+
+/* Badges */
+.pub-badge-grid {
+  display: flex; flex-wrap: wrap; gap: 10px;
+}
+.pub-badge-grid-lg { gap: 14px; }
+.pub-badge-item {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  min-width: 56px;
+}
+.pub-badge-img {
+  width: 44px; height: 44px; object-fit: contain; border-radius: 8px;
+}
+.pub-badge-img-lg { width: 60px; height: 60px; border-radius: 10px; }
+.pub-badge-emoji { font-size: 32px; line-height: 1; }
+.pub-badge-emoji-lg { font-size: 44px; }
+.pub-badge-label {
+  font-size: 10px; color: var(--ink-2); text-align: center;
+  max-width: 64px; line-height: 1.3;
+}
+
+/* Lift PRs */
+.pub-pr-list { display: flex; flex-direction: column; gap: 2px; }
+.pub-pr-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--line);
+}
+.pub-pr-row:last-child { border-bottom: none; }
+.pub-pr-name  { font-size: 14px; color: var(--ink-0); }
+.pub-pr-weight {
+  font-size: 14px; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Workouts */
+.pub-workout-list { display: flex; flex-direction: column; gap: 16px; }
+.pub-workout-day  { display: flex; flex-direction: column; gap: 6px; }
+.pub-workout-date {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-2); margin: 0;
+}
+.pub-exercise-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pub-exercise-row {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+}
+.pub-exercise-row-cardio { align-items: center; }
+.pub-exercise-cardio-icon { color: var(--accent); display: flex; align-items: center; }
+.pub-exercise-name {
+  font-size: 14px; color: var(--ink-0); font-weight: 500; white-space: nowrap;
+}
+.pub-exercise-detail { font-size: 13px; color: var(--ink-1); }
+
+/* Footer CTA */
+.pub-footer-cta {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 24px; text-align: center;
+  background: var(--bg-1); border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+}
+.pub-footer-text { font-size: 14px; color: var(--ink-1); margin: 0; }
+.pub-footer-btn {
+  display: inline-flex; align-items: center;
+  padding: 10px 24px; background: var(--accent);
+  color: var(--accent-ink); font-size: 13px; font-weight: 700;
+  border-radius: var(--r-md); text-decoration: none;
+}
+.pub-footer-btn:hover { opacity: 0.88; }

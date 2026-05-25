@@ -10,6 +10,7 @@ import CalorieTracker    from '@/components/CalorieTracker';
 import SocialTab         from '@/components/SocialTab';
 import { Onboarding, needsOnboarding } from '@/components/Onboarding';
 import { MorningWeightPrompt } from '@/components/MorningWeightPrompt';
+import { SyncNudge } from '@/components/SyncNudge';
 import { useApp } from '@/lib/AppContext';
 
 type Tab = 'calendar' | 'calories' | 'metrics' | 'protocol' | 'social';
@@ -69,6 +70,7 @@ export default function WorkoutPage() {
         ))}
       </nav>
 
+      <SyncNudge />
       {showOnboarding && (
         <Onboarding onComplete={() => setOnboarding(false)} />
       )}

@@ -86,9 +86,12 @@ export default function LandingPage() {
           <div className="lp-hero-actions">
             <InstallCTA className="lp-btn-primary" />
             <Link href="/app" className="lp-btn-ghost">
-              Open app
+              Try without account
             </Link>
           </div>
+          <p className="lp-hero-no-account">
+            No sign-up needed — your data saves locally. Sign in later to sync across devices.
+          </p>
 
           <div className="lp-stats">
             {STATS.map(({ value, label }) => (
