@@ -357,38 +357,70 @@ export function AddFoodModal({ open, onClose, onAdd }: {
   const startCamera = useCallback(async () => {
     setError('');
     setScanning(true);
+
+    // ── 1. Open camera stream ────────────────────────────────────────────────
+    let stream: MediaStream;
     try {
-      if ('BarcodeDetector' in window) {
-        // Native API — Chrome 83+, Edge, iOS 17+. Much faster and more reliable than ZXing.
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+    } catch (err) {
+      setScanning(false);
+      setError(
+        err instanceof Error && err.name === 'NotAllowedError'
+          ? 'Camera permission denied. Allow access in your browser settings.'
+          : 'Camera unavailable. Try the barcode field below.'
+      );
+      return;
+    }
+
+    if (!videoRef.current) {
+      stream.getTracks().forEach(t => t.stop());
+      setScanning(false);
+      return;
+    }
+
+    const video = videoRef.current;
+    let active = true;
+    controlsRef.current = {
+      stop: () => {
+        active = false;
+        stream.getTracks().forEach(t => t.stop());
+        if (videoRef.current) videoRef.current.srcObject = null;
+      },
+    };
+
+    // ── 2. Attach stream and play ────────────────────────────────────────────
+    // Mirrors ZXing's internal approach: try play(), if browser isn't ready yet
+    // wait for the canplay event then retry — plain play().catch(noop) silently
+    // fails on some browsers and leaves a black frame instead of video.
+    video.srcObject = stream;
+    await new Promise<void>(resolve => {
+      video.play()
+        .then(() => resolve())
+        .catch(() => {
+          const onCanPlay = () => {
+            video.removeEventListener('canplay', onCanPlay);
+            video.play().catch(() => {}).finally(() => resolve());
+          };
+          video.addEventListener('canplay', onCanPlay);
+          setTimeout(() => { video.removeEventListener('canplay', onCanPlay); resolve(); }, 5000);
         });
-        if (!videoRef.current) { stream.getTracks().forEach(t => t.stop()); setScanning(false); return; }
-        videoRef.current.srcObject = stream;
-        // autoPlay alone doesn't reliably start a dynamically-assigned srcObject in all browsers.
-        // The video is always rendered as block (overlay pattern), so play() won't throw.
-        videoRef.current.play().catch(() => {});
+    });
 
-        let active = true;
-        controlsRef.current = {
-          stop: () => {
-            active = false;
-            stream.getTracks().forEach(t => t.stop());
-            if (videoRef.current) videoRef.current.srcObject = null;
-          },
-        };
-
+    // ── 3. Barcode detection (failures here never hide the camera) ───────────
+    if ('BarcodeDetector' in window) {
+      try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const detector = new (window as any).BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar', 'qr_code'],
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
         });
-
         const tick = async () => {
           if (!active) return;
-          if (videoRef.current && videoRef.current.readyState >= 2) {
+          if (video.readyState >= 2) {
             try {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const codes: any[] = await detector.detect(videoRef.current);
+              const codes: any[] = await detector.detect(video);
               if (codes.length > 0) {
                 controlsRef.current?.stop();
                 controlsRef.current = null;
@@ -396,20 +428,23 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                 void lookupBarcode(codes[0].rawValue);
                 return;
               }
-            } catch { /* no barcode on this frame — continue */ }
+            } catch { /* no barcode this frame */ }
           }
           requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
-
-      } else {
-        // ZXing fallback — Firefox and older Safari
+      } catch {
+        // BarcodeDetector constructor failed — camera still visible, no auto-detection
+      }
+    } else {
+      // ZXing fallback — Firefox and older Safari
+      // Pass the existing stream so ZXing doesn't open a second camera connection.
+      try {
         const { BrowserMultiFormatReader } = await import('@zxing/browser');
-        if (!videoRef.current) { setScanning(false); return; }
         const reader = new BrowserMultiFormatReader();
-        const controls = await reader.decodeFromConstraints(
-          { video: { facingMode: 'environment' } },
-          videoRef.current,
+        const controls = await reader.decodeFromStream(
+          stream,
+          video,
           (result, _err, ctrl) => {
             if (result) {
               ctrl.stop();
@@ -420,10 +455,9 @@ export function AddFoodModal({ open, onClose, onAdd }: {
           },
         );
         controlsRef.current = controls;
+      } catch {
+        // ZXing also failed — camera still visible, use manual barcode entry
       }
-    } catch {
-      setScanning(false);
-      setError('Camera access denied. Use the barcode field below.');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
