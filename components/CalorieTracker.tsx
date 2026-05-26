@@ -582,16 +582,39 @@ export default function CalorieTracker() {
     }
   }, [todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Award today's coin in real-time when goal is first hit.
+  // Award today's coin in real-time when goal is first hit; revoke if goal is no longer met.
   const todayCoinAwardedRef = useRef(false);
+  const todayCoinEarnedRef  = useRef(0);
   useEffect(() => {
-    if (!todayGoalHit) { todayCoinAwardedRef.current = false; return; }
+    if (!todayGoalHit) {
+      // Revoke only if we awarded during this session (earned > 0 means we touched it)
+      if (todayCoinAwardedRef.current && todayCoinEarnedRef.current > 0) {
+        const coins = loadCoins();
+        if (coins.awardedDates.includes(todayStr)) {
+          const newData = {
+            total: Math.max(0, coins.total - todayCoinEarnedRef.current),
+            awardedDates: coins.awardedDates.filter(d => d !== todayStr),
+          };
+          saveCoins(newData);
+          setCoinData(newData);
+        }
+      }
+      todayCoinAwardedRef.current = false;
+      todayCoinEarnedRef.current  = 0;
+      return;
+    }
     if (todayCoinAwardedRef.current) return;
-    todayCoinAwardedRef.current = true;
     const coins = loadCoins();
-    if (coins.awardedDates.includes(todayStr)) return;
+    if (coins.awardedDates.includes(todayStr)) {
+      // Already awarded in a prior session — mark ref so we don't double-award,
+      // but leave earned=0 so a subsequent miss doesn't revoke that prior award.
+      todayCoinAwardedRef.current = true;
+      return;
+    }
+    todayCoinAwardedRef.current = true;
     const todayStreak = streakEndingAt(localDB, todayStr, baseBudget);
     const earned      = coinsForStreak(todayStreak || 1);
+    todayCoinEarnedRef.current = earned;
     const newTotal    = coins.total + earned;
     const newData     = { total: newTotal, awardedDates: [...coins.awardedDates, todayStr] };
     saveCoins(newData);
