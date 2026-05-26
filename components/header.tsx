@@ -502,11 +502,7 @@ export function AuthHeader() {
             alt=""
             width={32}
             height={32}
-            style={{
-              objectFit: 'contain',
-              filter: 'invert(1)',
-              mixBlendMode: 'screen',
-            }}
+            className="auth-logo-img"
             priority
           />
           QUE

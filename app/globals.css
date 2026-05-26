@@ -814,6 +814,17 @@ html, body { height: 100%; background: var(--bg-0); color: var(--ink-0); }
   animation: logoFloat 5s ease-in-out infinite;
   will-change: transform;
 }
+[data-theme="light"] .si-logo-img { filter: none; }
+
+.auth-logo-img {
+  object-fit: contain;
+  filter: invert(1);
+  mix-blend-mode: screen;
+}
+[data-theme="light"] .auth-logo-img {
+  filter: none;
+  mix-blend-mode: normal;
+}
 @keyframes logoFloat {
   0%, 100% { transform: translateY(0px); }
   50%       { transform: translateY(-10px); }
