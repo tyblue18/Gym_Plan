@@ -9,7 +9,8 @@
  * Adding a new badge: add one entry to BADGE_DEFS — no schema changes needed.
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma }        from '@/lib/prisma';
+import { BADGE_CATALOG } from '@/lib/badgeCatalog';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -214,7 +215,7 @@ const BADGE_DEFS: BadgeDef[] = [
 
   // ── First Meal (first time logging calories) ──────────────────────────────────
   {
-    slug: 'first_meal', label: 'First Meal', icon: '/Badges/First_mean.png', category: 'nutrition',
+    slug: 'first_meal', label: 'First Meal', icon: '/Badges/First_meal.png', category: 'nutrition',
     check: ({ localDB }) => Object.values(localDB).some(d =>
       (parseFloat(String(d.calsEaten ?? '0')) || 0) > 0
     ),
@@ -445,8 +446,14 @@ export async function checkAndAwardBadges(
 
 /** Returns all badges for a user, newest first. */
 export async function getUserBadges(userId: string) {
-  return prisma.badge.findMany({
+  const rows = await prisma.badge.findMany({
     where:   { userId },
     orderBy: { earnedAt: 'desc' },
   });
+  // Catalog is the canonical source of truth for icon paths.
+  // Override any stale paths stored in the DB at award time.
+  return rows.map(b => ({
+    ...b,
+    icon: BADGE_CATALOG.find(c => c.slug === b.slug)?.icon ?? b.icon,
+  }));
 }

@@ -9,6 +9,7 @@ import type { UserProfile } from '@/lib/AppContext';
 // ── constants ─────────────────────────────────────────────────────────────────
 
 const COIN_KEY       = 'queCalorieCoins';
+const PROMPT_KEY     = 'queWeightPromptDate'; // set to today's date-string on dismiss
 const GOAL_TOLERANCE = 100;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -44,10 +45,8 @@ export function MorningWeightPrompt() {
   const [weight, setWeight] = useState('');
   const dismissedAtRef          = useRef(0);
   const inputRef                = useRef<HTMLInputElement>(null);
-  // Always-fresh refs so callbacks never read stale closure values
   const getLastKnownWeightRef   = useRef(getLastKnownWeight);
   getLastKnownWeightRef.current = getLastKnownWeight;
-  const weightLoggedRef         = useRef(false);
 
   // Yesterday's date string
   const yesterdayStr = useMemo(() => {
@@ -60,42 +59,35 @@ export function MorningWeightPrompt() {
     ].join('-');
   }, [today]);
 
-  // One-time cleanup: remove old blocking flag from previous code versions.
-  useEffect(() => { localStorage.removeItem('queLastRecapDate'); }, []);
+  // Blocked for today only if the user already dismissed the prompt today.
+  // Weight presence is NOT a blocker — the prompt is the UI for logging weight,
+  // so it should show regardless of whether weight came in via cloud sync.
+  const dismissedToday = () => localStorage.getItem(PROMPT_KEY) === todayStr;
 
-  // Keep ref in sync so timer/visibility callbacks always see the latest value.
-  const weightLoggedToday = !!localDB[todayStr]?.weight && parseFloat(String(localDB[todayStr].weight)) > 0;
-  weightLoggedRef.current = weightLoggedToday;
-
-  // Auto-close if weight appears after mount (e.g., cloud sync delivers it).
   useEffect(() => {
-    if (weightLoggedToday) setOpen(false);
-  }, [weightLoggedToday]);
+    // Clean up old keys from previous code versions so they don't interfere.
+    localStorage.removeItem('queLastRecapDate');
 
-  // Show prompt after a short delay on mount.
-  // Delay lets mobile fully render and cloud sync run before we decide whether
-  // weight is already present. The ref check inside the timeout is always fresh.
-  useEffect(() => {
+    // Show after a short delay so the app shell settles before the modal appears.
     const timer = setTimeout(() => {
-      const cooldown = dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000;
-      if (weightLoggedRef.current || cooldown) return;
+      if (dismissedToday()) return;
+      if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
       const last = getLastKnownWeightRef.current(todayStr);
       if (last) setWeight(last);
       setOpen(true);
-    }, 800);
+    }, 500);
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-show on foreground resume (PWA brought back from background).
+  // Re-show when PWA comes back to foreground (e.g., app switcher → reopen).
   useEffect(() => {
     const onForeground = () => {
       if (document.visibilityState !== 'visible') return;
-      const cooldown = dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000;
-      if (!weightLoggedRef.current && !cooldown) {
-        const last = getLastKnownWeightRef.current(todayStr);
-        if (last) setWeight(last);
-        setOpen(true);
-      }
+      if (dismissedToday()) return;
+      if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
+      const last = getLastKnownWeightRef.current(todayStr);
+      if (last) setWeight(last);
+      setOpen(true);
     };
     document.addEventListener('visibilitychange', onForeground);
     return () => document.removeEventListener('visibilitychange', onForeground);
@@ -104,14 +96,11 @@ export function MorningWeightPrompt() {
   const dismiss = (saveWeight: boolean) => {
     const didEnter = saveWeight && weight && parseFloat(weight) > 0;
     if (didEnter) {
-      // Save to today's day record (weight history / chart)
       updateDayRecord(todayStr, { weight });
-      // Update profile weight so BMR, budget, and all calorie calculations
-      // use the fresh number immediately everywhere in the app
       persistProfile({ weight });
-      // hasWeightToday() will now return true — no separate flag needed
     }
-    // Always set cooldown so it doesn't re-flash on quick foreground/background switches
+    // Mark as dismissed for today so the prompt doesn't reappear until tomorrow.
+    localStorage.setItem(PROMPT_KEY, todayStr);
     dismissedAtRef.current = Date.now();
     setOpen(false);
   };
