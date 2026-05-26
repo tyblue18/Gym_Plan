@@ -441,8 +441,8 @@ function DailyLogCard({
 // ── Main Calorie Tracker ──────────────────────────────────────────────────────
 
 export default function CalorieTracker() {
-  const { localDB, updateDayRecord, todayStr, today, profile, persistProfile, getLastKnownWeight } = useApp();
-  const todayRec = localDB[todayStr] ?? {};
+  const { localDB, updateDayRecord, todayStr, activeDayFocus, today, profile, persistProfile, getLastKnownWeight } = useApp();
+  const activeRec = localDB[activeDayFocus] ?? {};
   const [showModal,    setShowModal]    = useState(false);
   const [targetMeal,   setTargetMeal]   = useState<string>('breakfast');
   const [coinData,      setCoinData]     = useState<CoinData>(() => loadCoins());
@@ -454,14 +454,14 @@ export default function CalorieTracker() {
   const [celebrateVisible, setCelebrateVisible] = useState(false);
 
   const foods = useMemo((): FoodEntry[] => {
-    try { return JSON.parse(String(todayRec.foods ?? '[]')); }
+    try { return JSON.parse(String(activeRec.foods ?? '[]')); }
     catch { return []; }
-  }, [todayRec.foods]);
+  }, [activeRec.foods]);
 
   const mealOrder = useMemo((): string[] => {
-    try { return JSON.parse(String(todayRec.foodMealOrder ?? 'null')) ?? DEFAULT_ORDER; }
+    try { return JSON.parse(String(activeRec.foodMealOrder ?? 'null')) ?? DEFAULT_ORDER; }
     catch { return DEFAULT_ORDER; }
-  }, [todayRec.foodMealOrder]);
+  }, [activeRec.foodMealOrder]);
 
   const foodsByMeal = useMemo(() => {
     const map: Record<string, FoodEntry[]> = {};
@@ -483,15 +483,15 @@ export default function CalorieTracker() {
 
   const baseBudget = useMemo(() => computeBaseBudget(profile), [profile]);
 
-  // Build cardio from today's record so eat-back is live (no "Log Today" click required)
+  // Build cardio from the active day's record so eat-back is live
   const todayCardio = useMemo((): CardioFields => ({
-    steps:    String(todayRec.steps    ?? '0'),
-    runDist:  String(todayRec.runDist  ?? '0'),
-    runTime:  String(todayRec.runTime  ?? '0'),
-    bikeDist: String(todayRec.bikeDist ?? '0'),
-    bikeTime: String(todayRec.bikeTime ?? '0'),
-    swimTime: String(todayRec.swimTime ?? '0'),
-  }), [todayRec.steps, todayRec.runDist, todayRec.runTime, todayRec.bikeDist, todayRec.bikeTime, todayRec.swimTime]);
+    steps:    String(activeRec.steps    ?? '0'),
+    runDist:  String(activeRec.runDist  ?? '0'),
+    runTime:  String(activeRec.runTime  ?? '0'),
+    bikeDist: String(activeRec.bikeDist ?? '0'),
+    bikeTime: String(activeRec.bikeTime ?? '0'),
+    swimTime: String(activeRec.swimTime ?? '0'),
+  }), [activeRec.steps, activeRec.runDist, activeRec.runTime, activeRec.bikeDist, activeRec.bikeTime, activeRec.swimTime]);
 
   const liveMetrics = useBudgetMetrics(profile, todayCardio);
   const budget      = liveMetrics.budget || baseBudget;
@@ -499,17 +499,17 @@ export default function CalorieTracker() {
 
   const todayGoalHit = budget > 0 && totals.kcal > 0 && Math.abs(totals.kcal - budget) <= GOAL_TOLERANCE;
 
-  // Sync todayWeight from localDB on load / date change
+  // Sync weight from the active day's record on load / date change
   useEffect(() => {
-    const w = String(todayRec.weight ?? getLastKnownWeight(todayStr) ?? '');
+    const w = String(activeRec.weight ?? getLastKnownWeight(activeDayFocus) ?? '');
     setTodayWeight(w);
-  }, [todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleWeightChange = useCallback((val: string) => {
     setTodayWeight(val);
-    updateDayRecord(todayStr, { weight: val });
+    updateDayRecord(activeDayFocus, { weight: val });
     if (val && parseFloat(val) > 0) persistProfile({ weight: val });
-  }, [todayStr, updateDayRecord, persistProfile]);
+  }, [activeDayFocus, updateDayRecord, persistProfile]);
 
   const undereatingWarning = useMemo(() => {
     const days = Object.keys(localDB).sort().reverse();
@@ -526,7 +526,7 @@ export default function CalorieTracker() {
   }, [localDB]);
 
   const handleLogToday = useCallback(() => {
-    updateDayRecord(todayStr, {
+    updateDayRecord(activeDayFocus, {
       burn:   liveMetrics.activityBurn,
       budget: liveMetrics.budget || baseBudget,
       ...(todayWeight && parseFloat(todayWeight) > 0 && { weight: todayWeight }),
@@ -547,10 +547,12 @@ export default function CalorieTracker() {
     } else {
       setProjVisible(true);
     }
-  }, [todayStr, liveMetrics, baseBudget, todayWeight, totals.kcal, updateDayRecord]);
+  }, [activeDayFocus, liveMetrics, baseBudget, todayWeight, totals.kcal, updateDayRecord]);
 
   // On mount: scan past days for unawarded coins (only days before today).
+  // Skip coin logic entirely when browsing a day other than today.
   useEffect(() => {
+    if (activeDayFocus !== todayStr) return;
     const coins = loadCoins();
     const awarded = new Set(coins.awardedDates);
 
@@ -583,9 +585,11 @@ export default function CalorieTracker() {
   }, [todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Award today's coin in real-time when goal is first hit; revoke if goal is no longer met.
+  // Skip when browsing a day other than today — coins only apply to the current day.
   const todayCoinAwardedRef = useRef(false);
   const todayCoinEarnedRef  = useRef(0);
   useEffect(() => {
+    if (activeDayFocus !== todayStr) return;
     if (!todayGoalHit) {
       // Revoke only if we awarded during this session (earned > 0 means we touched it)
       if (todayCoinAwardedRef.current && todayCoinEarnedRef.current > 0) {
@@ -648,14 +652,14 @@ export default function CalorieTracker() {
   const persistFoods = useCallback((updated: FoodEntry[], newOrder?: string[]) => {
     const kcal    = updated.reduce((s, f) => s + f.kcal, 0);
     const protein = +(updated.reduce((s, f) => s + f.protein, 0)).toFixed(1);
-    updateDayRecord(todayStr, {
+    updateDayRecord(activeDayFocus, {
       foods: JSON.stringify(updated),
       ...(newOrder && { foodMealOrder: JSON.stringify(newOrder) }),
       ...(kcal > 0    && { calsEaten: String(kcal) }),
       ...(protein > 0 && { protein }),
       ...(budget > 0  && { budget }),
     });
-  }, [todayStr, updateDayRecord, budget]);
+  }, [activeDayFocus, updateDayRecord, budget]);
 
   const [editingFood, setEditingFood] = useState<FoodEntry | null>(null);
 
@@ -707,9 +711,9 @@ export default function CalorieTracker() {
     const snackId = `snack-${Date.now()}`;
     const idx = mealOrder.indexOf(afterId);
     const newOrder = [...mealOrder.slice(0, idx + 1), snackId, ...mealOrder.slice(idx + 1)];
-    updateDayRecord(todayStr, { foodMealOrder: JSON.stringify(newOrder) });
+    updateDayRecord(activeDayFocus, { foodMealOrder: JSON.stringify(newOrder) });
     setTargetMeal(snackId); setShowModal(true);
-  }, [mealOrder, todayStr, updateDayRecord]);
+  }, [mealOrder, activeDayFocus, updateDayRecord]);
 
   const moveSnack = useCallback((snackId: string, dir: 'up' | 'down') => {
     const idx = mealOrder.indexOf(snackId);
@@ -718,8 +722,8 @@ export default function CalorieTracker() {
     if (swapIdx < 0 || swapIdx >= mealOrder.length) return;
     const newOrder = [...mealOrder];
     [newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]];
-    updateDayRecord(todayStr, { foodMealOrder: JSON.stringify(newOrder) });
-  }, [mealOrder, todayStr, updateDayRecord]);
+    updateDayRecord(activeDayFocus, { foodMealOrder: JSON.stringify(newOrder) });
+  }, [mealOrder, activeDayFocus, updateDayRecord]);
 
   const removeSnack = useCallback((snackId: string) => {
     const newOrder  = mealOrder.filter(id => id !== snackId);
@@ -727,8 +731,8 @@ export default function CalorieTracker() {
     persistFoods(remaining, newOrder);
   }, [mealOrder, foods, persistFoods]);
 
-  const d       = today;
-  const dateTag = `${d.getMonth() + 1}/${d.getDate()}`;
+  const activeDate = new Date(activeDayFocus + 'T00:00:00');
+  const dateTag    = `${activeDate.getMonth() + 1}/${activeDate.getDate()}`;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-5 pb-28 lg:py-8">
@@ -767,7 +771,7 @@ export default function CalorieTracker() {
                 animate={isPerfect ? { boxShadow: ['0 0 4px rgba(255,181,71,0.4)', '0 0 12px rgba(255,181,71,1)', '0 0 4px rgba(255,181,71,0.4)'] } : {}}
                 transition={isPerfect ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } : {}}
               />
-              TODAY'S INTAKE
+              {activeDayFocus === todayStr ? "TODAY'S INTAKE" : fmtDateLong(activeDayFocus)}
             </h2>
             {/* Coin stack badge */}
             {coinData.total > 0 && (
@@ -1028,7 +1032,7 @@ export default function CalorieTracker() {
       </p>
 
       <DailyLogCard
-        todayLabel={fmtDateLong(todayStr)}
+        todayLabel={fmtDateLong(activeDayFocus)}
         todayWeight={todayWeight}
         todayCals={totals.kcal > 0 ? String(Math.round(totals.kcal)) : ''}
         todayProtein={totals.protein > 0 ? String(Math.round(totals.protein)) : ''}

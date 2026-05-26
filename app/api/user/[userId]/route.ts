@@ -6,7 +6,8 @@
 import { getServerSession } from 'next-auth/next';
 import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
-import { prisma }           from '@/lib/prisma';
+import { prisma }              from '@/lib/prisma';
+import { normalizeBadgeIcons } from '@/lib/badgeEngine';
 
 export async function GET(
   _req: Request,
@@ -53,7 +54,7 @@ export async function GET(
     status:          statusActive ? user.status : null,
     statusExpiresAt: statusActive ? user.statusExpiresAt?.toISOString() ?? null : null,
     showcaseBadges:  (user.showcaseBadges as string[] | null) ?? [],
-    badges:          user.badges,
+    badges:          normalizeBadgeIcons(user.badges),
     badgeCount:      user.badges.length,
     profilePhoto:    (settings['queProfilePhoto'] as string | undefined) ?? null,
     coinBalance:     user.coinWallet?.balance ?? 0,

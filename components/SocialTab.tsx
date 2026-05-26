@@ -304,6 +304,12 @@ export default function SocialTab() {
 
     if (userRes.ok) {
       const data = await userRes.json() as PublicProfile;
+      // Supplement profilePhoto from localStorage if the DB hasn't received the
+      // sync yet (e.g. photo was set while offline or before first successful push).
+      if (!data.profilePhoto) {
+        const localPhoto = localStorage.getItem('queProfilePhoto');
+        if (localPhoto) data.profilePhoto = localPhoto;
+      }
       // Client coin ledger may be ahead of the DB (coins are awarded locally
       // on each calorie goal hit; the DB only syncs via the one-time migration).
       // Show whichever balance is higher so the card matches the header counter.
@@ -331,6 +337,13 @@ export default function SocialTab() {
     }
     setLoading(false);
   }, []);
+
+  // Re-fetch when user updates their profile photo while Social tab is mounted.
+  useEffect(() => {
+    const onPhoto = () => void refresh();
+    window.addEventListener('queProfilePhotoChanged', onPhoto);
+    return () => window.removeEventListener('queProfilePhotoChanged', onPhoto);
+  }, [refresh]);
 
   // Refresh badge collection whenever the sync engine reports a revocation.
   useEffect(() => {

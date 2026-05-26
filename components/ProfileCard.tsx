@@ -469,8 +469,7 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
                     onMouseLeave={() => setHoveredCatalogSlug(null)}
                   >
                     <div
-                      className="w-10 h-10 flex items-center justify-center mb-1"
-                      style={earned ? {} : { filter: 'grayscale(100%)', opacity: 0.28 }}
+                      className={['w-10 h-10 flex items-center justify-center mb-1', earned ? '' : 'badge-unearned'].join(' ')}
                     >
                       <BadgeIcon icon={entry.icon} size={36} />
                     </div>
@@ -560,9 +559,8 @@ function BadgeDetailModal({ badge, onClose }: {
         <div className="px-5 pt-5 pb-6 flex flex-col items-center gap-5">
           {/* Badge icon */}
           <div
-            className="w-28 h-28 flex items-center justify-center rounded-full"
+            className="badge-slot w-28 h-28 flex items-center justify-center rounded-full"
             style={{
-              background: `radial-gradient(circle at 35% 30%, #181828, #06060E)`,
               boxShadow: `inset 0 2px 8px rgba(0,0,0,0.9), 0 0 32px ${glowColor[badge.category] ?? 'rgba(255,255,255,0.1)'}`,
             }}
           >
@@ -626,20 +624,13 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
 
   return (
     <div className="mt-4">
-      <div
-        className="relative rounded-xl overflow-hidden px-4 py-5"
-        style={{
-          background: 'linear-gradient(160deg, #0C0C1C 0%, #070710 100%)',
-          boxShadow: 'inset 0 0 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)',
-        }}
-      >
+      <div className="badge-case relative rounded-xl overflow-hidden px-4 py-5">
         {/* Red trim */}
         <div className="absolute top-0 left-0 right-0 h-2 rounded-t-xl"
           style={{ background: 'linear-gradient(90deg, #CC1100, #EE2200, #CC1100)' }} />
 
         {/* Label */}
-        <p className="font-mono text-[8px] font-bold tracking-[2.5px] uppercase text-center mb-4 mt-1"
-          style={{ color: 'rgba(255,255,255,0.25)' }}>
+        <p className="badge-case-label font-mono text-[8px] font-bold tracking-[2.5px] uppercase text-center mb-4 mt-1">
           Gym Badges
         </p>
 
@@ -654,10 +645,9 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
               whileTap={{ scale: 0.92 }}
               onMouseEnter={() => badge && setHoveredIdx(i)}
               onMouseLeave={() => setHoveredIdx(null)}
-              className="aspect-square flex items-center justify-center relative"
+              className="badge-slot aspect-square flex items-center justify-center relative"
               style={{
                 borderRadius: '50%',
-                background: 'radial-gradient(circle at 35% 30%, #181828, #06060E)',
                 boxShadow: badge
                   ? `inset 0 2px 6px rgba(0,0,0,0.9), inset 0 -1px 2px rgba(255,255,255,0.03), 0 0 12px ${glowColors[badge.category] ?? 'rgba(255,255,255,0.2)'}, 0 1px 0 rgba(255,255,255,0.04)`
                   : 'inset 0 2px 8px rgba(0,0,0,0.95), inset 0 -1px 2px rgba(255,255,255,0.02), 0 1px 0 rgba(255,255,255,0.02)',
@@ -678,7 +668,7 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
                   )}
                 </motion.div>
               ) : (
-                <span className="text-[16px] leading-none select-none" style={{ color: 'rgba(255,255,255,0.08)' }}>
+                <span className="badge-slot-empty text-[16px] leading-none select-none">
                   {isOwn ? '+' : '·'}
                 </span>
               )}
@@ -696,19 +686,19 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
             >
-              <p className="font-mono text-[9px] font-bold text-center leading-tight" style={{ color: 'rgba(255,255,255,0.75)' }}>
+              <p className="badge-case-text font-mono text-[9px] font-bold text-center leading-tight">
                 {hoveredBadge.label}
               </p>
-              <p className="font-mono text-[8px] text-center" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              <p className="badge-case-subtext font-mono text-[8px] text-center">
                 {isOwn ? 'Assigned' : 'Tap for details ·'} {fmtBadgeDate(hoveredBadge.earnedAt)}
               </p>
             </motion.div>
           ) : isOwn ? (
-            <p className="font-mono text-[7px] text-center tracking-[1px] uppercase" style={{ color: 'rgba(255,255,255,0.18)' }}>
+            <p className="badge-case-hint font-mono text-[7px] text-center tracking-[1px] uppercase">
               Tap to edit · hover to inspect
             </p>
           ) : (
-            <p className="font-mono text-[7px] text-center tracking-[1px] uppercase" style={{ color: 'rgba(255,255,255,0.18)' }}>
+            <p className="badge-case-hint font-mono text-[7px] text-center tracking-[1px] uppercase">
               Tap a badge to learn more
             </p>
           )}

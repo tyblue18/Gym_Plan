@@ -245,9 +245,9 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
   prFlags?: PRFlags;
 }) {
   const spotlight = useSpotlightBorder({ color: '79,195,247', size: 280, opacity: 0.55 });
-  const { updateDayRecord, getDayRecord, localDB, todayStr } = useApp();
+  const { updateDayRecord, getDayRecord, localDB, activeDayFocus } = useApp();
 
-  const calsEaten  = parseNum(String(localDB[todayStr]?.calsEaten ?? 0));
+  const calsEaten  = parseNum(String(localDB[activeDayFocus]?.calsEaten ?? 0));
   const remaining  = m.budget - calsEaten;
   const eatPct     = m.budget > 0 ? Math.min(1, calsEaten / m.budget) : 0;
   const isOver     = remaining < 0;
@@ -257,21 +257,21 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
   const [f2, setF2] = useState('');
 
   const openCardioModal = useCallback((kind: 'run' | 'bike' | 'swim') => {
-    const rec = getDayRecord(todayStr);
+    const rec = getDayRecord(activeDayFocus);
     const cfg = CARDIO_QUICK_CFG[kind];
     setF1(String((rec as Record<string, unknown>)[cfg.f1key] || ''));
     setF2(cfg.f2key ? String((rec as Record<string, unknown>)[cfg.f2key] || '') : '');
     setCardioModal(kind);
-  }, [getDayRecord, todayStr]);
+  }, [getDayRecord, activeDayFocus]);
 
   const submitCardio = useCallback(() => {
     if (!cardioModal) return;
     const cfg = CARDIO_QUICK_CFG[cardioModal];
     const updates: Partial<Record<string, number>> = { [cfg.f1key]: parseFloat(f1) || 0 };
     if (cfg.f2key) updates[cfg.f2key] = parseFloat(f2) || 0;
-    updateDayRecord(todayStr, updates as Parameters<typeof updateDayRecord>[1]);
+    updateDayRecord(activeDayFocus, updates as Parameters<typeof updateDayRecord>[1]);
     setCardioModal(null);
-  }, [cardioModal, f1, f2, todayStr, updateDayRecord]);
+  }, [cardioModal, f1, f2, activeDayFocus, updateDayRecord]);
 
   const clearCardio = useCallback((kind: 'run' | 'bike' | 'swim') => {
     const clears: Partial<Record<string, number>> = kind === 'run'
@@ -279,10 +279,10 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
       : kind === 'bike'
       ? { bikeDist: 0, bikeTime: 0 }
       : { swimTime: 0 };
-    updateDayRecord(todayStr, clears as Parameters<typeof updateDayRecord>[1]);
-  }, [todayStr, updateDayRecord]);
+    updateDayRecord(activeDayFocus, clears as Parameters<typeof updateDayRecord>[1]);
+  }, [activeDayFocus, updateDayRecord]);
 
-  const todayRec = localDB[todayStr] ?? {};
+  const todayRec = localDB[activeDayFocus] ?? {};
   const runDist  = parseNum(String(todayRec.runDist  ?? 0));
   const bikeDist = parseNum(String(todayRec.bikeDist ?? 0));
   const swimMin  = parseNum(String(todayRec.swimTime ?? 0));
@@ -1164,17 +1164,17 @@ export default function MetricsDashboard() {
       bikeTime: String(rec.bikeTime ?? 0),
       swimTime: String(rec.swimTime ?? 0),
     });
-    const todayRec = localDB[todayStr] ?? {};
-    setTodayWeightRaw(String(todayRec.weight ?? getLastKnownWeight(todayStr) ?? ''));
-    setTodayCalsRaw(String(todayRec.calsEaten ?? ''));
-    setTodayProteinRaw(todayRec.protein ? String(todayRec.protein) : '');
-  }, [isLoaded, activeDayFocus, todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
+    const activeRec = localDB[activeDayFocus] ?? {};
+    setTodayWeightRaw(String(activeRec.weight ?? getLastKnownWeight(activeDayFocus) ?? ''));
+    setTodayCalsRaw(String(activeRec.calsEaten ?? ''));
+    setTodayProteinRaw(activeRec.protein ? String(activeRec.protein) : '');
+  }, [isLoaded, activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isLoaded) return;
-    const fromDB = localDB[todayStr]?.calsEaten;
+    const fromDB = localDB[activeDayFocus]?.calsEaten;
     if (fromDB !== undefined) setTodayCalsRaw(String(fromDB));
-  }, [isLoaded, localDB, todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoaded, localDB, activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const m = useBudgetMetrics(profile, cardio);
 
@@ -1189,19 +1189,19 @@ export default function MetricsDashboard() {
 
   const handleWeightChange = useCallback((val: string) => {
     setTodayWeightRaw(val);
-    updateDayRecord(todayStr, { weight: val });
-  }, [todayStr, updateDayRecord]);
+    updateDayRecord(activeDayFocus, { weight: val });
+  }, [activeDayFocus, updateDayRecord]);
 
   const handleCalsChange = useCallback((val: string) => {
     setTodayCalsRaw(val);
-    updateDayRecord(todayStr, { calsEaten: val, budget: m.budget });
-  }, [todayStr, m.budget, updateDayRecord]);
+    updateDayRecord(activeDayFocus, { calsEaten: val, budget: m.budget });
+  }, [activeDayFocus, m.budget, updateDayRecord]);
 
   const handleProteinChange = useCallback((val: string) => {
     setTodayProteinRaw(val);
     const n = parseNum(val);
-    if (n > 0) updateDayRecord(todayStr, { protein: n });
-  }, [todayStr, updateDayRecord]);
+    if (n > 0) updateDayRecord(activeDayFocus, { protein: n });
+  }, [activeDayFocus, updateDayRecord]);
 
   const undereatingWarning = useMemo(() => {
     const days = Object.keys(localDB).sort().reverse();
@@ -1219,7 +1219,7 @@ export default function MetricsDashboard() {
 
   const handleLogToday = useCallback(() => {
     const cals = parseNum(todayCals);
-    updateDayRecord(todayStr, {
+    updateDayRecord(activeDayFocus, {
       burn:   m.activityBurn,
       budget: m.budget,
       weight: todayWeight || undefined,
@@ -1243,12 +1243,12 @@ export default function MetricsDashboard() {
     } else {
       setProjVisible(true);
     }
-  }, [todayStr, m.activityBurn, m.budget, todayWeight, todayCals, updateDayRecord]);
+  }, [activeDayFocus, m.activityBurn, m.budget, todayWeight, todayCals, updateDayRecord]);
 
   const prFlags = useMemo((): PRFlags => {
-    const today = (localDB[todayStr] ?? {}) as DayRecord;
+    const today = (localDB[activeDayFocus] ?? {}) as DayRecord;
     const others = Object.entries(localDB)
-      .filter(([ds]) => ds !== todayStr)
+      .filter(([ds]) => ds !== activeDayFocus)
       .map(([, r]) => r as DayRecord);
 
     const n = (v: string | number | undefined) => parseNum(String(v ?? 0));
@@ -1305,7 +1305,7 @@ export default function MetricsDashboard() {
     } catch { /* skip */ }
 
     return { prRun, prBike, prSwim, prLift };
-  }, [localDB, todayStr]);
+  }, [localDB, activeDayFocus]);
 
   const { calDays, avgNet, streak, workoutStreak, weighStreak } = useMemo(() => {
     const days = Object.keys(localDB)

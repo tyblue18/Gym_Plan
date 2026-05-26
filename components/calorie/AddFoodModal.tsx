@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Plus, X, Search, Camera, ChevronRight, BookOpen, Trash2,
+  Plus, X, Search, Camera, ChevronRight, BookOpen, Trash2, ScanLine, Pencil,
 } from 'lucide-react';
 import type { FoodEntry } from '@/lib/AppContext';
 
@@ -19,6 +19,7 @@ export interface CustomFood {
   fat:         number;
   servingDesc: string;
   createdAt:   number;
+  barcode?:    string;   // set when saved from a barcode scan
 }
 
 const MY_FOODS_KEY = 'queMyFoods';
@@ -181,44 +182,9 @@ function FoodDetailSheet({ product, barcode, onAdd, onBack }: {
 
 const EMPTY_FORM = { name: '', type: 'ingredient' as 'ingredient'|'meal', servingDesc: '1 serving', kcal: '', protein: '', carbs: '', fat: '' };
 
-function MyFoodsTab({ onSelect }: { onSelect: (p: OFFProduct) => void }) {
-  const [myFoods,   setMyFoods]   = useState<CustomFood[]>(() => loadMyFoods());
-  const [creating,  setCreating]  = useState(false);
-  const [form,      setForm]      = useState(EMPTY_FORM);
-  const [formError, setFormError] = useState('');
-
-  const set = (k: keyof typeof EMPTY_FORM, v: string) => setForm(f => ({ ...f, [k]: v }));
-
-  const save = () => {
-    if (!form.name.trim())           { setFormError('Name is required.'); return; }
-    if (!form.kcal || +form.kcal <= 0) { setFormError('Calories must be > 0.'); return; }
-    const food: CustomFood = {
-      id:          `${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-      name:        form.name.trim(),
-      type:        form.type,
-      servingDesc: form.servingDesc.trim() || '1 serving',
-      kcal:        +form.kcal,
-      protein:     +form.protein || 0,
-      carbs:       +form.carbs   || 0,
-      fat:         +form.fat     || 0,
-      createdAt:   Date.now(),
-    };
-    const updated = [...myFoods, food];
-    saveMyFoods(updated);
-    setMyFoods(updated);
-    setCreating(false);
-    setForm(EMPTY_FORM);
-    setFormError('');
-  };
-
-  const remove = (id: string) => {
-    const updated = myFoods.filter(f => f.id !== id);
-    saveMyFoods(updated);
-    setMyFoods(updated);
-  };
-
-  // serving_quantity must be 100 so perServing's formula (g/100)*servings = 1*servings
-  const toOFF = (f: CustomFood): OFFProduct => ({
+// serving_quantity must be 100 so perServing's formula (g/100)*servings = 1*servings
+function customToOFF(f: CustomFood): OFFProduct {
+  return {
     product_name:     f.name,
     serving_size:     f.servingDesc,
     serving_quantity: 100,
@@ -228,19 +194,96 @@ function MyFoodsTab({ onSelect }: { onSelect: (p: OFFProduct) => void }) {
       carbohydrates_100g:  f.carbs,
       fat_100g:            f.fat,
     },
-  });
+  };
+}
 
-  if (creating) return (
+function MyFoodsTab({ onSelect }: { onSelect: (p: OFFProduct) => void }) {
+  const [myFoods,    setMyFoods]    = useState<CustomFood[]>(() => loadMyFoods());
+  const [editingId,  setEditingId]  = useState<string | null>(null);   // null = create mode
+  const [showForm,   setShowForm]   = useState(false);
+  const [form,       setForm]       = useState(EMPTY_FORM);
+  const [formError,  setFormError]  = useState('');
+  const [filter,     setFilter]     = useState('');
+
+  const set = (k: keyof typeof EMPTY_FORM, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFormError('');
+    setShowForm(true);
+  };
+
+  const openEdit = (f: CustomFood) => {
+    setEditingId(f.id);
+    setForm({
+      name:        f.name,
+      type:        f.type,
+      servingDesc: f.servingDesc,
+      kcal:        String(f.kcal),
+      protein:     String(f.protein),
+      carbs:       String(f.carbs),
+      fat:         String(f.fat),
+    });
+    setFormError('');
+    setShowForm(true);
+  };
+
+  const closeForm = () => { setShowForm(false); setFormError(''); };
+
+  const save = () => {
+    if (!form.name.trim())              { setFormError('Name is required.'); return; }
+    if (!form.kcal || +form.kcal <= 0) { setFormError('Calories must be > 0.'); return; }
+
+    let updated: CustomFood[];
+    if (editingId) {
+      updated = myFoods.map(f => f.id !== editingId ? f : {
+        ...f,
+        name:        form.name.trim(),
+        type:        form.type,
+        servingDesc: form.servingDesc.trim() || '1 serving',
+        kcal:        +form.kcal,
+        protein:     +form.protein || 0,
+        carbs:       +form.carbs   || 0,
+        fat:         +form.fat     || 0,
+      });
+    } else {
+      const food: CustomFood = {
+        id:          `${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+        name:        form.name.trim(),
+        type:        form.type,
+        servingDesc: form.servingDesc.trim() || '1 serving',
+        kcal:        +form.kcal,
+        protein:     +form.protein || 0,
+        carbs:       +form.carbs   || 0,
+        fat:         +form.fat     || 0,
+        createdAt:   Date.now(),
+      };
+      updated = [...myFoods, food];
+    }
+    saveMyFoods(updated);
+    setMyFoods(updated);
+    closeForm();
+  };
+
+  const remove = (id: string) => {
+    const updated = myFoods.filter(f => f.id !== id);
+    saveMyFoods(updated);
+    setMyFoods(updated);
+  };
+
+  if (showForm) return (
     <div className="space-y-3 pb-8">
       <div className="flex items-center gap-2 mb-1">
-        <button type="button" onClick={() => { setCreating(false); setFormError(''); }}
+        <button type="button" onClick={closeForm}
           className="text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <p className="font-mono text-[11px] font-bold tracking-[1.5px] uppercase text-[var(--ink-1)]">New Food</p>
+        <p className="font-mono text-[11px] font-bold tracking-[1.5px] uppercase text-[var(--ink-1)]">
+          {editingId ? 'Edit Food' : 'New Food'}
+        </p>
       </div>
 
-      {/* Type toggle */}
       <div className="flex bg-[var(--bg-2)] border border-[var(--line)] rounded-sm p-1 gap-0.5">
         {([['ingredient','Ingredient', IngredientIcon], ['meal','Meal / Recipe', MealIcon]] as const).map(([val, label, Icon]) => (
           <button key={val} type="button"
@@ -274,19 +317,71 @@ function MyFoodsTab({ onSelect }: { onSelect: (p: OFFProduct) => void }) {
       </div>
 
       {formError && <p className="font-mono text-[9px] text-[var(--danger)] tracking-[0.5px]">{formError}</p>}
+      <button type="button" onClick={save} className="que-btn-primary w-full py-3">
+        {editingId ? 'Update Food' : 'Save Food'}
+      </button>
+    </div>
+  );
 
-      <button type="button" onClick={save} className="que-btn-primary w-full py-3">Save Food</button>
+  const q = filter.toLowerCase().trim();
+  const filtered = myFoods.filter(f => !q || f.name.toLowerCase().includes(q));
+  const meals       = filtered.filter(f => f.type === 'meal').sort((a, b) => a.name.localeCompare(b.name));
+  const ingredients = filtered.filter(f => f.type === 'ingredient').sort((a, b) => a.name.localeCompare(b.name));
+
+  const FoodRow = ({ f }: { f: CustomFood }) => (
+    <div className="flex items-center gap-2 px-3 py-2.5">
+      <span className={['flex-shrink-0 w-7 h-7 rounded-sm flex items-center justify-center',
+        f.type === 'meal' ? 'bg-[var(--positive)]/15 text-[var(--positive)]' : 'bg-[var(--accent)]/15 text-[var(--accent)]'].join(' ')}>
+        {f.type === 'meal' ? <MealIcon size={14} /> : <IngredientIcon size={14} />}
+      </span>
+      <button type="button" onClick={() => onSelect(customToOFF(f))} className="flex-1 min-w-0 text-left">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="font-mono text-[11px] font-semibold text-[var(--ink-0)] truncate">{f.name}</p>
+          {f.barcode && (
+            <span className="flex-shrink-0 text-[var(--ink-3)]" title="Saved from barcode scan">
+              <ScanLine size={10} />
+            </span>
+          )}
+        </div>
+        <p className="font-mono text-[9px] text-[var(--ink-3)]">
+          {f.servingDesc} · <span className="text-[var(--accent)]">{f.kcal} kcal</span>
+          {f.protein > 0 && <span className="text-[var(--ink-2)]"> · {f.protein}g protein</span>}
+        </p>
+      </button>
+      <button type="button" onClick={() => openEdit(f)}
+        className="text-[var(--ink-3)] hover:text-[var(--accent)] transition-colors flex-shrink-0 p-1.5">
+        <Pencil size={12} />
+      </button>
+      <button type="button" onClick={() => remove(f.id)}
+        className="text-[var(--ink-3)] hover:text-[var(--danger)] transition-colors flex-shrink-0 p-1.5">
+        <Trash2 size={12} />
+      </button>
+    </div>
+  );
+
+  const SectionHeader = ({ label, count }: { label: string; count: number }) => (
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-3)] border-b border-[var(--line)]">
+      <p className="font-mono text-[8px] font-bold tracking-[2px] uppercase text-[var(--ink-3)]">{label}</p>
+      <span className="font-mono text-[8px] text-[var(--ink-3)] opacity-60">{count}</span>
     </div>
   );
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px]">
-          {myFoods.length === 0 ? 'No saved foods yet' : `${myFoods.length} saved`}
-        </p>
-        <button type="button" onClick={() => { setCreating(true); setFormError(''); setForm(EMPTY_FORM); }}
-          className="flex items-center gap-1.5 font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)]/40 rounded-sm px-2.5 py-1 hover:bg-[var(--accent)]/10 transition-all">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)] pointer-events-none" />
+          <input
+            type="text"
+            className="que-input pl-7 text-[11px]"
+            placeholder="Filter saved foods…"
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+          />
+        </div>
+        <button type="button" onClick={openCreate}
+          className="flex items-center gap-1.5 font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)]/40 rounded-sm px-2.5 py-2 hover:bg-[var(--accent)]/10 transition-all flex-shrink-0">
           <Plus size={10} /> New
         </button>
       </div>
@@ -294,26 +389,24 @@ function MyFoodsTab({ onSelect }: { onSelect: (p: OFFProduct) => void }) {
       {myFoods.length === 0 ? (
         <div className="text-center py-8 border border-dashed border-[var(--line-2)] rounded">
           <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">Save ingredients &amp; meals</p>
-          <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[0.5px]">Tap New to create a custom food</p>
+          <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[0.5px]">Tap New · barcodes save automatically</p>
         </div>
+      ) : filtered.length === 0 ? (
+        <p className="font-mono text-[9px] text-[var(--ink-3)] text-center py-6 tracking-[0.5px]">No matches for "{filter}"</p>
       ) : (
-        <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] divide-y divide-[var(--line)]">
-          {myFoods.sort((a, b) => b.createdAt - a.createdAt).map(f => (
-            <div key={f.id} className="flex items-center gap-3 px-3 py-2.5">
-              <span className={['flex-shrink-0 w-7 h-7 rounded-sm flex items-center justify-center',
-                f.type === 'meal' ? 'bg-[var(--positive)]/15 text-[var(--positive)]' : 'bg-[var(--accent)]/15 text-[var(--accent)]'].join(' ')}>
-                {f.type === 'meal' ? <MealIcon size={14} /> : <IngredientIcon size={14} />}
-              </span>
-              <button type="button" onClick={() => onSelect(toOFF(f))} className="flex-1 min-w-0 text-left">
-                <p className="font-mono text-[11px] font-semibold text-[var(--ink-0)] truncate">{f.name}</p>
-                <p className="font-mono text-[9px] text-[var(--ink-3)]">{f.servingDesc} · {f.kcal} kcal</p>
-              </button>
-              <button type="button" onClick={() => remove(f.id)}
-                className="text-[var(--ink-3)] hover:text-[var(--danger)] transition-colors flex-shrink-0 p-1">
-                <Trash2 size={13} />
-              </button>
-            </div>
-          ))}
+        <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] overflow-hidden divide-y divide-[var(--line)]">
+          {meals.length > 0 && (
+            <>
+              <SectionHeader label="Meals & Recipes" count={meals.length} />
+              {meals.map(f => <FoodRow key={f.id} f={f} />)}
+            </>
+          )}
+          {ingredients.length > 0 && (
+            <>
+              <SectionHeader label="Ingredients" count={ingredients.length} />
+              {ingredients.map(f => <FoodRow key={f.id} f={f} />)}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -519,7 +612,28 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                 <FoodDetailSheet
                   product={selectedProduct.p}
                   barcode={selectedProduct.barcode}
-                  onAdd={onAdd}
+                  onAdd={(food, barcode) => {
+                    if (barcode) {
+                      const existing = loadMyFoods();
+                      if (!existing.some(f => f.barcode === barcode)) {
+                        const p = selectedProduct.p;
+                        const newFood: CustomFood = {
+                          id: `${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+                          name: p.product_name,
+                          type: 'ingredient',
+                          kcal: p.nutriments['energy-kcal_100g'] ?? 0,
+                          protein: p.nutriments.proteins_100g ?? 0,
+                          carbs: p.nutriments.carbohydrates_100g ?? 0,
+                          fat: p.nutriments.fat_100g ?? 0,
+                          servingDesc: p.serving_size ?? '100g',
+                          createdAt: Date.now(),
+                          barcode,
+                        };
+                        saveMyFoods([...existing, newFood]);
+                      }
+                    }
+                    onAdd(food, barcode);
+                  }}
                   onBack={() => setSelectedProduct(null)}
                 />
                 </motion.div>

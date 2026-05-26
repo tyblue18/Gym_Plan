@@ -444,16 +444,19 @@ export async function checkAndAwardBadges(
   };
 }
 
-/** Returns all badges for a user, newest first. */
+/** Overrides stale icon paths stored in the DB with the canonical catalog value. */
+export function normalizeBadgeIcons<T extends { slug: string; icon: string }>(badges: T[]): T[] {
+  return badges.map(b => ({
+    ...b,
+    icon: BADGE_CATALOG.find(c => c.slug === b.slug)?.icon ?? b.icon,
+  }));
+}
+
+/** Returns all badges for a user, newest first, with canonical icon paths. */
 export async function getUserBadges(userId: string) {
   const rows = await prisma.badge.findMany({
     where:   { userId },
     orderBy: { earnedAt: 'desc' },
   });
-  // Catalog is the canonical source of truth for icon paths.
-  // Override any stale paths stored in the DB at award time.
-  return rows.map(b => ({
-    ...b,
-    icon: BADGE_CATALOG.find(c => c.slug === b.slug)?.icon ?? b.icon,
-  }));
+  return normalizeBadgeIcons(rows);
 }
