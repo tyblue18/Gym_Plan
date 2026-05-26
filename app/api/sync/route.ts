@@ -185,6 +185,24 @@ export async function POST(req: Request): Promise<NextResponse> {
     const badgeResult = await checkAndAwardBadges(userId, mergedSettings);
     earnedBadges  = badgeResult.awarded;
     revokedBadges = badgeResult.revoked;
+
+    if (revokedBadges.length > 0) {
+      const revokedSlugs = new Set(revokedBadges.map(b => b.slug));
+      const user = await prisma.appUser.findUnique({
+        where:  { id: userId },
+        select: { showcaseBadges: true },
+      });
+      if (user) {
+        const current = (user.showcaseBadges as string[] | null) ?? [];
+        const cleaned = current.filter(s => !revokedSlugs.has(s));
+        if (cleaned.length !== current.length) {
+          await prisma.appUser.update({
+            where: { id: userId },
+            data:  { showcaseBadges: cleaned },
+          });
+        }
+      }
+    }
   } catch { /* non-critical — don't fail the sync */ }
 
   after(async () => {

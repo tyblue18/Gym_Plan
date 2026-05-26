@@ -111,6 +111,11 @@ const STREAK_BADGES = [
   { slug: 'seer',    label: 'Seer',    icon: '/Badges/seer_badge.png',    threshold: 50 },
 ] as const;
 
+const CAL_EAT_BADGES = [
+  { slug: 'eat_5000',  icon: '/Badges/5000_calories_eaten.png',       threshold: 5000  },
+  { slug: 'eat_10000', icon: '/Badges/10000_calories_eaten_badge.jpg', threshold: 10000 },
+] as const;
+
 function liftBadgeIcon(exerciseName: string, prWeight: number): string | null {
   let key: string | null = null;
   if (BENCH_NAMES.has(exerciseName)) key = 'bench';
@@ -1549,23 +1554,39 @@ export default function WorkoutLogger() {
     prevBurnRef.current = todayBurn;
   }, [todayBurn]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 5,000 Calories Eaten badge ────────────────────────────────────────────────
+  // ── Calorie eating badges (5k / 10k) ─────────────────────────────────────────
   const todayCalsEaten = useMemo(
     () => parseFloat(String(localDB[activeDayFocus]?.calsEaten ?? '0')) || 0,
     [localDB, activeDayFocus],
   );
 
+  const historicalMaxCalsEaten = useMemo(() => {
+    let max = 0;
+    for (const [date, rec] of Object.entries(localDB)) {
+      if (date === activeDayFocus) continue;
+      const c = parseFloat(String(rec.calsEaten ?? '0')) || 0;
+      if (c > max) max = c;
+    }
+    return max;
+  }, [localDB, activeDayFocus]);
+
   const prevCalsEatenRef = useRef<number | null>(null);
   useEffect(() => {
     if (prevCalsEatenRef.current === null) { prevCalsEatenRef.current = todayCalsEaten; return; }
-    if (todayCalsEaten >= 5000 && prevCalsEatenRef.current < 5000) {
-      if (!optimisticallyShownRef.current.has('eat_5000')) {
-        optimisticallyShownRef.current.add('eat_5000');
-        setEarnedBadges(prev => [...prev, {
-          slug: 'eat_5000', label: '5,000 Calories Eaten', icon: '/Badges/5000_calories_eaten.png', category: 'nutrition' as const,
-        }]);
-        navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
-        pushNow({ settings: gatherSettings() });
+    for (const def of CAL_EAT_BADGES) {
+      if (todayCalsEaten >= def.threshold && prevCalsEatenRef.current < def.threshold) {
+        if (!optimisticallyShownRef.current.has(def.slug)) {
+          optimisticallyShownRef.current.add(def.slug);
+          const maxEver = Math.max(todayCalsEaten, historicalMaxCalsEaten);
+          setEarnedBadges(prev => [...prev, {
+            slug:     def.slug,
+            label:    `${def.threshold.toLocaleString()} Cal Day · ${Math.round(maxEver).toLocaleString()} kcal`,
+            icon:     def.icon,
+            category: 'nutrition' as const,
+          }]);
+          navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+          pushNow({ settings: gatherSettings() });
+        }
       }
     }
     prevCalsEatenRef.current = todayCalsEaten;

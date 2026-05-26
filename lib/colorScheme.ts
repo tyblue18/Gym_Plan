@@ -1,5 +1,8 @@
-export const ACCENT_KEY = 'queAccentColor';
-export const BG_KEY     = 'queBgPreset';
+export const ACCENT_KEY    = 'queAccentColor';
+export const BG_KEY        = 'queBgPreset';
+export const LIGHT_BG_KEY  = 'queLightBgPreset';
+export const THEME_KEY     = 'queTheme';
+export type  Theme         = 'dark' | 'light';
 
 export interface AccentSwatch { label: string; hex: string; }
 export interface BgPreset     { label: string; bg0: string; bg1: string; bg2: string; bg3: string; }
@@ -22,6 +25,13 @@ export const BG_PRESETS: BgPreset[] = [
   { label: 'Navy',     bg0: '#05060F', bg1: '#090B19', bg2: '#101323', bg3: '#181C2F' },
 ];
 
+export const LIGHT_BG_PRESETS: BgPreset[] = [
+  { label: 'Frost',  bg0: '#F4F5F7', bg1: '#FFFFFF', bg2: '#ECEEF2', bg3: '#E0E2E8' },
+  { label: 'Paper',  bg0: '#F5F1EB', bg1: '#FDFAF7', bg2: '#EDE8E1', bg3: '#E0D9CF' },
+  { label: 'Slate',  bg0: '#EFF2F7', bg1: '#FFFFFF', bg2: '#E4EAF3', bg3: '#D5DDE9' },
+  { label: 'Stone',  bg0: '#F4F3F0', bg1: '#FAFAF8', bg2: '#EBEBEA', bg3: '#DDDCDB' },
+];
+
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.replace('#', ''), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -33,9 +43,20 @@ function shiftHex(hex: string, amount: number): string {
   return `#${[c(r + amount), c(g + amount), c(b + amount)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
+export function applyTheme(theme: Theme) {
+  if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#F4F5F7');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#07080A');
+  }
+}
+
 export function applyAccent(hex: string) {
   const [r, g, b] = hexToRgb(hex);
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const lum     = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
   const d = document.documentElement;
   d.style.setProperty('--accent',      hex);
   d.style.setProperty('--accent-hi',   shiftHex(hex, 40));
@@ -44,15 +65,19 @@ export function applyAccent(hex: string) {
   d.style.setProperty('--accent-12',   `rgba(${r},${g},${b},0.12)`);
   d.style.setProperty('--accent-24',   `rgba(${r},${g},${b},0.24)`);
   d.style.setProperty('--accent-40',   `rgba(${r},${g},${b},0.40)`);
-  d.style.setProperty('--accent-glow', `0 0 24px rgba(${r},${g},${b},0.35)`);
+  d.style.setProperty('--accent-glow', isLight
+    ? `0 0 14px rgba(${r},${g},${b},0.22)`
+    : `0 0 24px rgba(${r},${g},${b},0.35)`);
 }
 
 export function applyBg(preset: BgPreset) {
   const [r, g, b] = hexToRgb(preset.bg1);
+  const isLight   = document.documentElement.getAttribute('data-theme') === 'light';
+  const alpha     = isLight ? 0.92 : 0.86;
   const d = document.documentElement;
   d.style.setProperty('--bg-0',     preset.bg0);
   d.style.setProperty('--bg-1',     preset.bg1);
   d.style.setProperty('--bg-2',     preset.bg2);
   d.style.setProperty('--bg-3',     preset.bg3);
-  d.style.setProperty('--bg-glass', `rgba(${r},${g},${b},0.86)`);
+  d.style.setProperty('--bg-glass', `rgba(${r},${g},${b},${alpha})`);
 }

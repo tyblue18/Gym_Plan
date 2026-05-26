@@ -75,7 +75,12 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${anton.variable} ${spaceGrotesk.variable} ${jetBrainsMono.variable}`}
+      suppressHydrationWarning
     >
+      {/* Blocking script: sets data-theme before first paint to prevent flash */}
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{if(localStorage.getItem('queTheme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})()` }} />
+      </head>
       <body className="font-sans antialiased">
         <AuthProvider>
           <AppProvider>

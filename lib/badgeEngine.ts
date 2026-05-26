@@ -313,11 +313,17 @@ const BADGE_DEFS: BadgeDef[] = [
     check: ({ localDB }) => maxCombinedStreak(localDB) >= 50,
   },
 
-  // ── Big eating day ────────────────────────────────────────────────────────────
+  // ── Big eating days ───────────────────────────────────────────────────────────
   {
     slug: 'eat_5000', label: '5,000 Calories Eaten', icon: '/Badges/5000_calories_eaten.png', category: 'nutrition',
     check: ({ localDB }) => Object.values(localDB).some(d =>
       (parseFloat(String(d.calsEaten ?? '0')) || 0) >= 5000
+    ),
+  },
+  {
+    slug: 'eat_10000', label: '10,000 Calories Eaten', icon: '/Badges/10000_calories_eaten_badge.jpg', category: 'nutrition',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      (parseFloat(String(d.calsEaten ?? '0')) || 0) >= 10000
     ),
   },
 

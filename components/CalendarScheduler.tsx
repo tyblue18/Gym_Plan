@@ -649,14 +649,21 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                 </span>
               </div>
             )}
-            {(parseFloat(String(rec.calsEaten ?? '0')) || 0) >= 5000 && (
+            {(parseFloat(String(rec.calsEaten ?? '0')) || 0) >= 10000 ? (
+              <div className="flex items-center gap-1.5">
+                <AutoCropImage src="/Badges/10000_calories_eaten_badge.jpg" alt="10000 Cal Day" className="w-5 h-5 object-contain" />
+                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
+                  {Math.round(parseFloat(String(rec.calsEaten ?? '0'))).toLocaleString()} kcal
+                </span>
+              </div>
+            ) : (parseFloat(String(rec.calsEaten ?? '0')) || 0) >= 5000 ? (
               <div className="flex items-center gap-1.5">
                 <AutoCropImage src="/Badges/5000_calories_eaten.png" alt="5000 Cal Day" className="w-5 h-5 object-contain" />
                 <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
-                  {Math.round(parseFloat(String(rec.calsEaten ?? '0')))} kcal
+                  {Math.round(parseFloat(String(rec.calsEaten ?? '0'))).toLocaleString()} kcal
                 </span>
               </div>
-            )}
+            ) : null}
             <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px]">
               {isToday ? 'Swipe ← → to browse days' : '← → to browse'}
             </p>

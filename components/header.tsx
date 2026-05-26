@@ -9,10 +9,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import Image from 'next/image';
 import {
-  applyAccent, applyBg,
-  ACCENT_KEY, BG_KEY,
-  ACCENT_SWATCHES, BG_PRESETS,
-  type BgPreset,
+  applyAccent, applyBg, applyTheme,
+  ACCENT_KEY, BG_KEY, LIGHT_BG_KEY, THEME_KEY,
+  ACCENT_SWATCHES, BG_PRESETS, LIGHT_BG_PRESETS,
+  type BgPreset, type Theme,
 } from '@/lib/colorScheme';
 import { pushNow }         from '@/lib/syncEngine';
 import { PushPermission }  from '@/components/PushPermission';
@@ -97,6 +97,7 @@ function UserPill({ image, name, email }: UserPillProps) {
   const [view, setView]               = useState<'menu' | 'scheme' | 'start'>('menu');
   const [accentHex, setAccentHex]     = useState('#4FC3F7');
   const [bgLabel, setBgLabel]         = useState('Charcoal');
+  const [theme, setTheme]             = useState<Theme>('dark');
   const [plan,      setPlan]          = useState<PlanData | null>(null);
   const [username,  setUsername]      = useState<string | null>(null);
   const [copied,    setCopied]        = useState(false);
@@ -114,7 +115,11 @@ function UserPill({ image, name, email }: UserPillProps) {
 
     const storedAccent = localStorage.getItem(ACCENT_KEY);
     if (storedAccent) setAccentHex(storedAccent);
-    const storedBg = localStorage.getItem(BG_KEY);
+    const storedTheme = (localStorage.getItem(THEME_KEY) ?? 'dark') as Theme;
+    setTheme(storedTheme);
+    const storedBg = localStorage.getItem(
+      storedTheme === 'light' ? LIGHT_BG_KEY : BG_KEY
+    );
     if (storedBg) setBgLabel(storedBg);
 
     return () => {
@@ -177,8 +182,26 @@ function UserPill({ image, name, email }: UserPillProps) {
   const handleBgChange = useCallback((preset: BgPreset) => {
     setBgLabel(preset.label);
     applyBg(preset);
-    localStorage.setItem(BG_KEY, preset.label);
+    localStorage.setItem(
+      document.documentElement.getAttribute('data-theme') === 'light' ? LIGHT_BG_KEY : BG_KEY,
+      preset.label,
+    );
   }, []);
+
+  const handleThemeChange = useCallback((newTheme: Theme) => {
+    setTheme(newTheme);
+    applyTheme(newTheme);
+    localStorage.setItem(THEME_KEY, newTheme);
+    // Restore the saved bg preset for this theme, or default to first option
+    const bgKey   = newTheme === 'light' ? LIGHT_BG_KEY : BG_KEY;
+    const presets = newTheme === 'light' ? LIGHT_BG_PRESETS : BG_PRESETS;
+    const stored  = localStorage.getItem(bgKey);
+    const preset  = presets.find(p => p.label === stored) ?? presets[0];
+    applyBg(preset);
+    setBgLabel(preset.label);
+    // Re-apply accent so glow opacity recalculates for new theme
+    applyAccent(accentHex);
+  }, [accentHex]);
 
   const handleSavePlanStart = useCallback(() => {
     const current = loadPlanData();
@@ -388,6 +411,38 @@ function UserPill({ image, name, email }: UserPillProps) {
 
               <div className="auth-dropdown-divider" />
 
+              {/* Light / dark toggle */}
+              <div className="flex items-center justify-between px-[10px] py-2">
+                <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] m-0">Mode</p>
+                <button
+                  type="button"
+                  onClick={() => handleThemeChange(theme === 'dark' ? 'light' : 'dark')}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-[var(--line-2)] bg-[var(--bg-3)] font-mono text-[10px] font-semibold text-[var(--ink-1)] hover:border-[var(--accent)] hover:text-[var(--ink-0)] transition-all"
+                >
+                  {theme === 'dark' ? (
+                    <>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="5"/>
+                        <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                        <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                      </svg>
+                      Light
+                    </>
+                  ) : (
+                    <>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                      </svg>
+                      Dark
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="auth-dropdown-divider" />
+
               <p className="auth-scheme-label">Accent</p>
               <div className="auth-swatch-grid">
                 {ACCENT_SWATCHES.map(s => (
@@ -413,7 +468,7 @@ function UserPill({ image, name, email }: UserPillProps) {
 
               <p className="auth-scheme-label">Background</p>
               <div className="auth-bg-grid">
-                {BG_PRESETS.map(p => (
+                {(theme === 'light' ? LIGHT_BG_PRESETS : BG_PRESETS).map(p => (
                   <button
                     key={p.label}
                     type="button"
