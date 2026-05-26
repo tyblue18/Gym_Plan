@@ -1,28 +1,39 @@
 /**
  * middleware.ts
  *
- * Auth guard — runs on the Edge runtime before every matched request.
- * withAuth checks for a valid NextAuth JWT; absent → redirect to sign-in.
+ * Routing rules — runs on the Edge runtime before every matched request.
+ *
+ * /              → public landing page; authenticated users are redirected to /app
+ * /app/*         → protected; unauthenticated users are sent to /auth/signin
+ * /profile/*     → public read-only profiles; no auth required
  *
  * ⚠️  PWA CRITICAL — the following must NEVER be intercepted:
  *   sw.js          Service worker must be reachable by the browser at all times.
- *                  If the SW registration fetch is redirected to the sign-in
- *                  page it will register the HTML as the worker script and
- *                  break caching entirely.
- *   manifest.json  Browser fetches this without cookies — redirect breaks
- *                  PWA install prompts and the "Add to Home Screen" flow.
+ *   manifest.json  Browser fetches this without cookies.
  *   Que_logo.png   Icons referenced by the manifest must load unauthenticated.
- *
- * Protected:  /   /index.html  (all app pages)
- * Excluded:   see negative-lookahead in matcher below
  */
-import { withAuth } from 'next-auth/middleware';
+import { getToken } from 'next-auth/jwt';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-export default withAuth({
-  pages: {
-    signIn: '/auth/signin',
-  },
-});
+export default async function middleware(req: NextRequest) {
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const { pathname } = req.nextUrl;
+
+  // Authenticated users hitting the landing page → skip it, go straight to the app
+  if (pathname === '/' && token) {
+    return NextResponse.redirect(new URL('/app', req.url));
+  }
+
+  // /app routes are protected — send unauthenticated users to sign-in
+  if (pathname.startsWith('/app') && !token) {
+    const signInUrl = new URL('/auth/signin', req.url);
+    signInUrl.searchParams.set('callbackUrl', pathname);
+    return NextResponse.redirect(signInUrl);
+  }
+
+  return NextResponse.next();
+}
 
 export const config = {
   matcher: [
