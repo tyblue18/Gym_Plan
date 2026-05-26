@@ -2387,9 +2387,7 @@ export default function WorkoutLogger() {
                   {earnedBadges.map((b, i) => (
                     <div key={`${b.slug}-${i}`} className="flex items-center gap-4">
                       {b.icon.startsWith('/') ? (
-                        b.category === 'cardio'
-                          ? <AutoCropImage src={b.icon} alt={b.label} className="w-14 h-14 object-contain flex-shrink-0" />
-                          : <img src={b.icon} alt={b.label} className="w-14 h-14 object-contain flex-shrink-0" />
+                        <AutoCropImage src={b.icon} alt={b.label} className="w-14 h-14 object-contain flex-shrink-0" />
                       ) : (
                         <span className="text-[44px] leading-none flex-shrink-0">{b.icon}</span>
                       )}

@@ -8,7 +8,6 @@ import type { UserProfile } from '@/lib/AppContext';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
-const DB_KEY         = 'ironmanCoreDB_v2';
 const COIN_KEY       = 'queCalorieCoins';
 const GOAL_TOLERANCE = 100;
 
@@ -43,11 +42,12 @@ export function MorningWeightPrompt() {
 
   const [open,   setOpen]   = useState(false);
   const [weight, setWeight] = useState('');
-  const dismissedAtRef         = useRef(0);
-  const inputRef               = useRef<HTMLInputElement>(null);
-  // Always-fresh ref so the visibilitychange callback never reads a stale closure value
-  const getLastKnownWeightRef  = useRef(getLastKnownWeight);
+  const dismissedAtRef          = useRef(0);
+  const inputRef                = useRef<HTMLInputElement>(null);
+  // Always-fresh refs so callbacks never read stale closure values
+  const getLastKnownWeightRef   = useRef(getLastKnownWeight);
   getLastKnownWeightRef.current = getLastKnownWeight;
+  const weightLoggedRef         = useRef(false);
 
   // Yesterday's date string
   const yesterdayStr = useMemo(() => {
@@ -60,47 +60,42 @@ export function MorningWeightPrompt() {
     ].join('-');
   }, [today]);
 
-  // One-time cleanup: remove the old queLastRecapDate flag that used to block
-  // the prompt on devices that dismissed without logging weight.
+  // One-time cleanup: remove old blocking flag from previous code versions.
   useEffect(() => { localStorage.removeItem('queLastRecapDate'); }, []);
 
-  // This component only mounts once isLoaded=true and onboarding is done
-  // (gated in WorkoutPage), so we can fire immediately on mount with no guard.
-  // Source of truth: today's weight in localStorage DB — no separate flag needed.
+  // Keep ref in sync so timer/visibility callbacks always see the latest value.
+  const weightLoggedToday = !!localDB[todayStr]?.weight && parseFloat(String(localDB[todayStr].weight)) > 0;
+  weightLoggedRef.current = weightLoggedToday;
+
+  // Auto-close if weight appears after mount (e.g., cloud sync delivers it).
   useEffect(() => {
-    const nowStr = () => {
-      const d = new Date();
-      return [
-        d.getFullYear(),
-        String(d.getMonth() + 1).padStart(2, '0'),
-        String(d.getDate()).padStart(2, '0'),
-      ].join('-');
-    };
+    if (weightLoggedToday) setOpen(false);
+  }, [weightLoggedToday]);
 
-    const hasWeightToday = () => {
-      try {
-        const db = JSON.parse(localStorage.getItem(DB_KEY) ?? '{}') as Record<string, { weight?: unknown }>;
-        const w = db[nowStr()]?.weight;
-        return !!w && parseFloat(String(w)) > 0;
-      } catch { return false; }
-    };
-
-    const blocked = () =>
-      hasWeightToday() ||
-      (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000);
-
-    const show = () => {
-      const last = getLastKnownWeightRef.current(nowStr());
+  // Show prompt after a short delay on mount.
+  // Delay lets mobile fully render and cloud sync run before we decide whether
+  // weight is already present. The ref check inside the timeout is always fresh.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const cooldown = dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000;
+      if (weightLoggedRef.current || cooldown) return;
+      const last = getLastKnownWeightRef.current(todayStr);
       if (last) setWeight(last);
       setOpen(true);
-    };
+    }, 800);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    if (!blocked()) show();
-
-    // On foreground resume (PWA brought back from background)
+  // Re-show on foreground resume (PWA brought back from background).
+  useEffect(() => {
     const onForeground = () => {
       if (document.visibilityState !== 'visible') return;
-      if (!blocked()) show();
+      const cooldown = dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000;
+      if (!weightLoggedRef.current && !cooldown) {
+        const last = getLastKnownWeightRef.current(todayStr);
+        if (last) setWeight(last);
+        setOpen(true);
+      }
     };
     document.addEventListener('visibilitychange', onForeground);
     return () => document.removeEventListener('visibilitychange', onForeground);

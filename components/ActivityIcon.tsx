@@ -12,11 +12,6 @@ type Kind = 'run' | 'bike' | 'swim';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const DATA: Record<Kind, any> = { run: runData, bike: bikeData, swim: swimData };
 
-// Inactive: inverted (white base) + near-transparent gray
-// Active:   inverted (white base) — bright and clearly visible on dark bg
-const FILTER_INACTIVE = 'invert(1) grayscale(1) opacity(0.18)';
-const FILTER_ACTIVE   = 'invert(1)';
-
 export function ActivityIcon({
   kind,
   active = false,
@@ -40,6 +35,7 @@ export function ActivityIcon({
 
   return (
     <span
+      className={active ? 'activity-icon-active' : 'activity-icon-inactive'}
       style={{
         display:        'inline-flex',
         alignItems:     'center',
@@ -47,8 +43,6 @@ export function ActivityIcon({
         width:          size,
         height:         size,
         flexShrink:     0,
-        filter:     active ? FILTER_ACTIVE : FILTER_INACTIVE,
-        transition: 'filter 350ms ease',
       }}
     >
       <Lottie

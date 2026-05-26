@@ -615,7 +615,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
             )}
             {millionGroupsCrossedToday.length > 0 && (
               <div className="flex items-center gap-1.5">
-                <img src="/Badges/Million_pounds_lifted.png" alt="Million Lbs" className="w-5 h-5 object-contain" />
+                <AutoCropImage src="/Badges/Million_pounds_lifted.png" alt="Million Lbs" className="w-5 h-5 object-contain" />
                 <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
                   1M — {millionGroupsCrossedToday.join(', ')}
                 </span>
@@ -623,7 +623,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
             )}
             {workoutStreakOnDate >= 14 && (
               <div className="flex items-center gap-1.5">
-                <img
+                <AutoCropImage
                   src={workoutStreakOnDate >= 50 ? '/Badges/seer_badge.png' : workoutStreakOnDate >= 30 ? '/Badges/master_badge.png' : '/Badges/scholar_badge.png'}
                   alt="Streak"
                   className="w-5 h-5 object-contain"
@@ -635,7 +635,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
             )}
             {combinedStreakOnDate >= 50 && (
               <div className="flex items-center gap-1.5">
-                <img src="/Badges/stoic_badge.png" alt="Stoic" className="w-5 h-5 object-contain" />
+                <AutoCropImage src="/Badges/stoic_badge.png" alt="Stoic" className="w-5 h-5 object-contain" />
                 <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
                   Stoic
                 </span>

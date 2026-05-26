@@ -22,6 +22,7 @@ export function AutoCropImage({
 
   useEffect(() => {
     const img = new Image();
+    img.onerror = () => setDataUrl(src);
     img.onload = () => {
       const W = img.naturalWidth, H = img.naturalHeight;
       const tmp = document.createElement('canvas');
