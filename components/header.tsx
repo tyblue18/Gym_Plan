@@ -247,6 +247,12 @@ function UserPill({ image, name, email }: UserPillProps) {
 
           {view === 'menu' ? (
             <>
+              <div className="px-3 py-2">
+                <PushPermission />
+              </div>
+
+              <div className="auth-dropdown-divider" />
+
               <button type="button" role="menuitem" className="auth-dropdown-item"
                 onClick={() => fileInputRef.current?.click()}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -321,12 +327,6 @@ function UserPill({ image, name, email }: UserPillProps) {
                   {copied ? 'Link copied!' : 'Share profile'}
                 </button>
               )}
-
-              <div className="auth-dropdown-divider" />
-
-              <div className="px-3 py-2">
-                <PushPermission />
-              </div>
 
               <div className="auth-dropdown-divider" />
 

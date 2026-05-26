@@ -42,8 +42,11 @@ export function MorningWeightPrompt() {
 
   const [open,   setOpen]   = useState(false);
   const [weight, setWeight] = useState('');
-  const dismissedAtRef      = useRef(0);
-  const inputRef            = useRef<HTMLInputElement>(null);
+  const dismissedAtRef         = useRef(0);
+  const inputRef               = useRef<HTMLInputElement>(null);
+  // Always-fresh ref so the visibilitychange callback never reads a stale closure value
+  const getLastKnownWeightRef  = useRef(getLastKnownWeight);
+  getLastKnownWeightRef.current = getLastKnownWeight;
 
   // Yesterday's date string
   const yesterdayStr = useMemo(() => {
@@ -57,29 +60,39 @@ export function MorningWeightPrompt() {
   }, [today]);
 
   // Re-check on every app foreground (visibilitychange) so the prompt reappears
-  // on mobile PWA re-opens when today's weight is still missing.
-  // A 5-minute cooldown prevents it from re-showing on quick app-switches.
+  // on mobile PWA re-opens. A 5-minute cooldown prevents re-showing on quick switches.
+  //
+  // IMPORTANT: todayStr must NOT be captured from the outer scope — if the PWA
+  // stays in background overnight, the closure would hold yesterday's date and
+  // suppress the prompt even though it's a new day. We compute it fresh each time.
   useEffect(() => {
     if (!isLoaded) return;
     const maybeShow = () => {
       if (document.visibilityState !== 'visible') return;
-      if (localStorage.getItem(RECAP_KEY) === todayStr) return;
+      const d = new Date();
+      const nowStr = [
+        d.getFullYear(),
+        String(d.getMonth() + 1).padStart(2, '0'),
+        String(d.getDate()).padStart(2, '0'),
+      ].join('-');
+      if (localStorage.getItem(RECAP_KEY) === nowStr) return;
       if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
-      const last = getLastKnownWeight(todayStr);
+      const last = getLastKnownWeightRef.current(nowStr);
       if (last) setWeight(last);
       setOpen(true);
     };
     maybeShow();
     document.addEventListener('visibilitychange', maybeShow);
     return () => document.removeEventListener('visibilitychange', maybeShow);
-  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoaded]);
 
   const dismiss = (saveWeight: boolean) => {
     const didEnter = saveWeight && weight && parseFloat(weight) > 0;
     if (didEnter) {
       updateDayRecord(todayStr, { weight });
-      localStorage.setItem(RECAP_KEY, todayStr);
     }
+    // Always mark today as seen so the prompt doesn't re-fire on PWA reopen
+    localStorage.setItem(RECAP_KEY, todayStr);
     dismissedAtRef.current = Date.now();
     setOpen(false);
   };
@@ -145,11 +158,10 @@ export function MorningWeightPrompt() {
           transition={{ duration: 0.22 }}
         >
           <motion.div
-            className="w-full md:max-w-[400px] rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
+            className="w-full md:max-w-[400px] rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-y-auto max-h-[88dvh]"
             initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.7)' }}
-            onAnimationComplete={() => inputRef.current?.focus()}
           >
             {/* Header */}
             <div

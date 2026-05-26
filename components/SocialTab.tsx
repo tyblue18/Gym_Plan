@@ -302,7 +302,20 @@ export default function SocialTab() {
       fetch('/api/challenges'),
     ]);
 
-    if (userRes.ok)      setOwnProfile(await userRes.json());
+    if (userRes.ok) {
+      const data = await userRes.json() as PublicProfile;
+      // Client coin ledger may be ahead of the DB (coins are awarded locally
+      // on each calorie goal hit; the DB only syncs via the one-time migration).
+      // Show whichever balance is higher so the card matches the header counter.
+      try {
+        const localCoins = JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null') as { total?: number } | null;
+        const localTotal = localCoins?.total ?? 0;
+        const dbTotal    = data.coinBalance ?? 0;
+        setOwnProfile({ ...data, coinBalance: Math.max(dbTotal, localTotal) });
+      } catch {
+        setOwnProfile(data);
+      }
+    }
     try { setBalance((JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null') as { total?: number } | null)?.total ?? 0); } catch { /* ignore */ }
     if (friendRes.ok) {
       const d = await friendRes.json();

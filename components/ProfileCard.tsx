@@ -518,6 +518,88 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
   );
 }
 
+// ── Badge detail modal (shown when a visitor clicks a showcase badge) ──────────
+
+function BadgeDetailModal({ badge, onClose }: {
+  badge:   BadgeInfo;
+  onClose: () => void;
+}) {
+  const catalogEntry = BADGE_CATALOG.find(e => e.slug === badge.slug);
+
+  const glowColor: Record<string, string> = {
+    lift:      'rgba(79,195,247,0.18)',
+    cardio:    'rgba(109,255,153,0.18)',
+    nutrition: 'rgba(255,181,71,0.18)',
+  };
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[500] flex items-end md:items-center justify-center backdrop-blur-sm px-0 md:px-3"
+      style={{ background: 'rgba(7,8,10,0.88)' }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        className="w-full md:max-w-[340px] rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
+        initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+        style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[var(--line)]">
+          <h3 className="font-display text-[16px] tracking-[2px] uppercase text-[var(--ink-0)] leading-tight">
+            {badge.label}
+          </h3>
+          <button
+            onClick={onClose}
+            className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="px-5 pt-5 pb-6 flex flex-col items-center gap-5">
+          {/* Badge icon */}
+          <div
+            className="w-28 h-28 flex items-center justify-center rounded-full"
+            style={{
+              background: `radial-gradient(circle at 35% 30%, #181828, #06060E)`,
+              boxShadow: `inset 0 2px 8px rgba(0,0,0,0.9), 0 0 32px ${glowColor[badge.category] ?? 'rgba(255,255,255,0.1)'}`,
+            }}
+          >
+            <BadgeIcon icon={badge.icon} size={80} />
+          </div>
+
+          {/* Earned */}
+          <div className="text-center">
+            <p className="font-mono text-[8px] font-bold tracking-[2px] uppercase mb-1"
+              style={{ color: 'rgba(109,255,153,0.6)' }}>
+              Earned
+            </p>
+            <p className="font-mono text-[14px] font-bold text-[var(--ink-0)]">
+              {fmtBadgeDate(badge.earnedAt)}
+            </p>
+          </div>
+
+          {/* How to earn */}
+          {catalogEntry && (
+            <div
+              className="w-full rounded-xl px-4 py-3 text-center"
+              style={{ background: 'var(--bg-3)', border: '1px solid var(--line)' }}
+            >
+              <p className="font-mono text-[8px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mb-1.5">
+                How to earn
+              </p>
+              <p className="font-mono text-[11px] text-[var(--ink-1)] leading-relaxed">
+                {catalogEntry.howToGet}
+              </p>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── Badge case ─────────────────────────────────────────────────────────────────
 
 function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
@@ -526,7 +608,8 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
   isOwn:     boolean;
   onEdit?:   () => void;
 }) {
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [hoveredIdx,    setHoveredIdx]    = useState<number | null>(null);
+  const [selectedBadge, setSelectedBadge] = useState<BadgeInfo | null>(null);
 
   const slots = Array.from({ length: 8 }, (_, i) => {
     const slug = showcase[i] ?? null;
@@ -566,9 +649,9 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
             <motion.button
               key={i}
               type="button"
-              onClick={isOwn ? onEdit : undefined}
-              disabled={!isOwn}
-              whileTap={isOwn ? { scale: 0.92 } : undefined}
+              onClick={isOwn ? onEdit : (badge ? () => setSelectedBadge(badge) : undefined)}
+              disabled={isOwn ? false : !badge}
+              whileTap={{ scale: 0.92 }}
               onMouseEnter={() => badge && setHoveredIdx(i)}
               onMouseLeave={() => setHoveredIdx(null)}
               className="aspect-square flex items-center justify-center relative"
@@ -578,6 +661,7 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
                 boxShadow: badge
                   ? `inset 0 2px 6px rgba(0,0,0,0.9), inset 0 -1px 2px rgba(255,255,255,0.03), 0 0 12px ${glowColors[badge.category] ?? 'rgba(255,255,255,0.2)'}, 0 1px 0 rgba(255,255,255,0.04)`
                   : 'inset 0 2px 8px rgba(0,0,0,0.95), inset 0 -1px 2px rgba(255,255,255,0.02), 0 1px 0 rgba(255,255,255,0.02)',
+                cursor: badge || isOwn ? 'pointer' : 'default',
               }}
             >
               {badge ? (
@@ -616,16 +700,30 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
                 {hoveredBadge.label}
               </p>
               <p className="font-mono text-[8px] text-center" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                Assigned {fmtBadgeDate(hoveredBadge.earnedAt)}
+                {isOwn ? 'Assigned' : 'Tap for details ·'} {fmtBadgeDate(hoveredBadge.earnedAt)}
               </p>
             </motion.div>
           ) : isOwn ? (
             <p className="font-mono text-[7px] text-center tracking-[1px] uppercase" style={{ color: 'rgba(255,255,255,0.18)' }}>
               Tap to edit · hover to inspect
             </p>
-          ) : null}
+          ) : (
+            <p className="font-mono text-[7px] text-center tracking-[1px] uppercase" style={{ color: 'rgba(255,255,255,0.18)' }}>
+              Tap a badge to learn more
+            </p>
+          )}
         </div>
       </div>
+
+      {/* Badge detail modal */}
+      <AnimatePresence>
+        {selectedBadge && (
+          <BadgeDetailModal
+            badge={selectedBadge}
+            onClose={() => setSelectedBadge(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

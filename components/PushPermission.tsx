@@ -24,7 +24,23 @@ export function PushPermission() {
     setStatus(Notification.permission as typeof status);
   }, []);
 
-  if (status === 'unsupported' || status === 'granted') return null;
+  if (status === 'unsupported') {
+    return (
+      <span className="flex items-center gap-1.5 font-mono text-[9px] text-[var(--ink-3)] opacity-60 px-0.5">
+        <BellOff size={10} />
+        Install as app for notifications
+      </span>
+    );
+  }
+
+  if (status === 'granted') {
+    return (
+      <span className="flex items-center gap-1.5 font-mono text-[9px] font-bold px-0.5" style={{ color: 'var(--positive)' }}>
+        <Bell size={10} />
+        Notifications on
+      </span>
+    );
+  }
 
   async function enable() {
     setLoading(true);

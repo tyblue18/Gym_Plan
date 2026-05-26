@@ -11,10 +11,14 @@ let vapidSet = false;
 
 function ensureVapid() {
   if (vapidSet) return;
-  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
+  // NEXT_PUBLIC_VAPID_PUBLIC_KEY is the env var defined in Vercel — the old
+  // VAPID_PUBLIC_KEY alias was only present in .env.local, causing production
+  // to silently skip VAPID setup and drop every outgoing push.
+  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
+  if (!pub || !process.env.VAPID_PRIVATE_KEY) return;
   webPush.setVapidDetails(
     'mailto:tanishqsomania21@gmail.com',
-    process.env.VAPID_PUBLIC_KEY,
+    pub,
     process.env.VAPID_PRIVATE_KEY,
   );
   vapidSet = true;

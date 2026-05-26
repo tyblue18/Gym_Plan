@@ -212,6 +212,14 @@ const BADGE_DEFS: BadgeDef[] = [
     ),
   },
 
+  // ── First Meal (first time logging calories) ──────────────────────────────────
+  {
+    slug: 'first_meal', label: 'First Meal', icon: '/Badges/First_mean.png', category: 'nutrition',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      (parseFloat(String(d.calsEaten ?? '0')) || 0) > 0
+    ),
+  },
+
   // ── Locked In (diet completion) ───────────────────────────────────────────────
   {
     slug: 'locked_in', label: 'Locked In', icon: '/Badges/Locked_in.png', category: 'nutrition',
