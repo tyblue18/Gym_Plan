@@ -8,7 +8,7 @@ import type { UserProfile } from '@/lib/AppContext';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
-const RECAP_KEY      = 'queLastRecapDate';
+const DB_KEY         = 'ironmanCoreDB_v2';
 const COIN_KEY       = 'queCalorieCoins';
 const GOAL_TOLERANCE = 100;
 
@@ -60,9 +60,13 @@ export function MorningWeightPrompt() {
     ].join('-');
   }, [today]);
 
+  // One-time cleanup: remove the old queLastRecapDate flag that used to block
+  // the prompt on devices that dismissed without logging weight.
+  useEffect(() => { localStorage.removeItem('queLastRecapDate'); }, []);
+
   // This component only mounts once isLoaded=true and onboarding is done
   // (gated in WorkoutPage), so we can fire immediately on mount with no guard.
-  // We read localStorage directly — no React state needed for the blocked() check.
+  // Source of truth: today's weight in localStorage DB — no separate flag needed.
   useEffect(() => {
     const nowStr = () => {
       const d = new Date();
@@ -73,8 +77,16 @@ export function MorningWeightPrompt() {
       ].join('-');
     };
 
+    const hasWeightToday = () => {
+      try {
+        const db = JSON.parse(localStorage.getItem(DB_KEY) ?? '{}') as Record<string, { weight?: unknown }>;
+        const w = db[nowStr()]?.weight;
+        return !!w && parseFloat(String(w)) > 0;
+      } catch { return false; }
+    };
+
     const blocked = () =>
-      localStorage.getItem(RECAP_KEY) === nowStr() ||
+      hasWeightToday() ||
       (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000);
 
     const show = () => {
@@ -102,8 +114,7 @@ export function MorningWeightPrompt() {
       // Update profile weight so BMR, budget, and all calorie calculations
       // use the fresh number immediately everywhere in the app
       persistProfile({ weight });
-      // Only permanently block today's prompt once weight is actually logged
-      localStorage.setItem(RECAP_KEY, todayStr);
+      // hasWeightToday() will now return true — no separate flag needed
     }
     // Always set cooldown so it doesn't re-flash on quick foreground/background switches
     dismissedAtRef.current = Date.now();
