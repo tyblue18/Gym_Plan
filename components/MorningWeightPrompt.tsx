@@ -42,7 +42,7 @@ export function MorningWeightPrompt() {
 
   const [open,   setOpen]   = useState(false);
   const [weight, setWeight] = useState('');
-  const shownRef            = useRef(false);
+  const dismissedAtRef      = useRef(0);
   const inputRef            = useRef<HTMLInputElement>(null);
 
   // Yesterday's date string
@@ -56,25 +56,31 @@ export function MorningWeightPrompt() {
     ].join('-');
   }, [today]);
 
-  // Show once per calendar day (not per session)
+  // Re-check on every app foreground (visibilitychange) so the prompt reappears
+  // on mobile PWA re-opens when today's weight is still missing.
+  // A 5-minute cooldown prevents it from re-showing on quick app-switches.
   useEffect(() => {
-    if (!isLoaded || shownRef.current) return;
-    const lastShown = localStorage.getItem(RECAP_KEY);
-    if (lastShown === todayStr) return;
-    shownRef.current = true;
-    const last = getLastKnownWeight(todayStr);
-    if (last) setWeight(last);
-    setOpen(true);
+    if (!isLoaded) return;
+    const maybeShow = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (localStorage.getItem(RECAP_KEY) === todayStr) return;
+      if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
+      const last = getLastKnownWeight(todayStr);
+      if (last) setWeight(last);
+      setOpen(true);
+    };
+    maybeShow();
+    document.addEventListener('visibilitychange', maybeShow);
+    return () => document.removeEventListener('visibilitychange', maybeShow);
   }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dismiss = (saveWeight: boolean) => {
     const didEnter = saveWeight && weight && parseFloat(weight) > 0;
     if (didEnter) {
       updateDayRecord(todayStr, { weight });
-      // Only mark today as done once a weight is actually entered.
-      // Skipping leaves RECAP_KEY unset so the prompt reappears on next open.
       localStorage.setItem(RECAP_KEY, todayStr);
     }
+    dismissedAtRef.current = Date.now();
     setOpen(false);
   };
 

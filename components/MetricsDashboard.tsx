@@ -1068,7 +1068,7 @@ function WeightProjectionCard({ m, weightLbs, hidden }: {
 // SUB-COMPONENT — TrendsCard
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TrendKey = 'weight' | 'burn' | 'budget';
+type TrendKey = 'weight' | 'burn' | 'budget' | 'runDist' | 'bikeDist' | 'swimTime';
 
 function TrendsCard() {
   const { localDB } = useApp();
@@ -1076,9 +1076,12 @@ function TrendsCard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const chartConfig: Record<TrendKey, { label: string; color: string; unit: string }> = {
-    weight: { label: 'WEIGHT', color: '#4FC3F7', unit: ' lbs' },
-    burn:   { label: 'BURN',   color: '#FFB547', unit: ' kcal' },
-    budget: { label: 'BUDGET', color: '#6DFF99', unit: ' kcal' },
+    weight:   { label: 'WEIGHT', color: '#4FC3F7', unit: ' lbs'  },
+    burn:     { label: 'BURN',   color: '#FFB547', unit: ' kcal' },
+    budget:   { label: 'BUDGET', color: '#6DFF99', unit: ' kcal' },
+    runDist:  { label: 'RUN',    color: '#F87171', unit: ' mi'   },
+    bikeDist: { label: 'BIKE',   color: '#A78BFA', unit: ' mi'   },
+    swimTime: { label: 'SWIM',   color: '#34D399', unit: ' min'  },
   };
 
   useEffect(() => {
@@ -1103,8 +1106,11 @@ function TrendsCard() {
     });
     const values = keys.map(ds => {
       const rec = localDB[ds];
-      if (activeTab === 'weight') return parseFloat(rec?.weight ?? '0') || 0;
-      if (activeTab === 'burn')   return Number(rec?.burn)   || 0;
+      if (activeTab === 'weight')   return parseFloat(String(rec?.weight   ?? '0')) || 0;
+      if (activeTab === 'burn')     return Number(rec?.burn)                        || 0;
+      if (activeTab === 'runDist')  return parseFloat(String(rec?.runDist  ?? '0')) || 0;
+      if (activeTab === 'bikeDist') return parseFloat(String(rec?.bikeDist ?? '0')) || 0;
+      if (activeTab === 'swimTime') return parseFloat(String(rec?.swimTime ?? '0')) || 0;
       return Number(rec?.budget) || 0;
     });
     const { color, unit } = chartConfig[activeTab];

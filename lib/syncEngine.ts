@@ -33,6 +33,7 @@ const SETTINGS_KEYS = [
   'queExerciseUsage',      // exercise frequency (for sorting)
   'queLastStreak',         // calorie streak
   'queLiftPRs',            // all-time lift maxes — read by badge engine server-side
+  'queMillionGroups',      // muscle groups that have crossed 1,000,000 lbs lifetime volume
   'queMacroGoals',         // macro targets — sync across devices
   'queCalorieCoins',       // coin balance — used for battle wagering later
   'queProfilePhoto',       // profile photo URL (Vercel Blob) or base64 fallback

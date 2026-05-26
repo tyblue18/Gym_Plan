@@ -1,9 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { AnimatePresence, motion }           from 'framer-motion';
-import { Users, UserPlus, X, Check, Swords } from 'lucide-react';
-import ProfileCard, { type PublicProfile }   from '@/components/ProfileCard';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { AnimatePresence, motion }                   from 'framer-motion';
+import { Users, UserPlus, X, Check, Swords }         from 'lucide-react';
+import Lottie                                        from 'lottie-react';
+import ProfileCard, { type PublicProfile }           from '@/components/ProfileCard';
+import anim1 from '@/public/loading1_animation.json';
+import anim2 from '@/public/loading2_animation.json';
+import anim3 from '@/public/loading3_animation.json';
+
+const LOADING_ANIMS = [anim1, anim2, anim3];
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -277,6 +283,13 @@ export default function SocialTab() {
   const [addQuery,      setAddQuery]      = useState('');
   const [addStatus,     setAddStatus]     = useState<{ ok: boolean; msg: string } | null>(null);
   const [loading,       setLoading]       = useState(true);
+  const loadingAnim = useRef((() => {
+    try {
+      const idx = parseInt(localStorage.getItem('queSocialAnimIdx') ?? '0', 10) % LOADING_ANIMS.length;
+      localStorage.setItem('queSocialAnimIdx', String((idx + 1) % LOADING_ANIMS.length));
+      return LOADING_ANIMS[idx];
+    } catch { return LOADING_ANIMS[0]; }
+  })());
   const [viewFriendId,  setViewFriendId]  = useState<string | null>(null);
   const [challenging,   setChallenging]   = useState<FriendData | null>(null);
   const [responding,    setResponding]    = useState<string | null>(null);
@@ -326,18 +339,18 @@ export default function SocialTab() {
       try {
         const stored = JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null');
         const total  = (stored?.total ?? 0) as number;
-        // If user has no coins, mark done without a network call
         if (total === 0) { localStorage.setItem('queCoinsMigrated', '1'); return; }
         const res = await fetch('/api/wallet', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ balance: total }),
         });
-        // Only mark migrated on success — network failures will retry next visit
         if (res.ok) localStorage.setItem('queCoinsMigrated', '1');
       } catch { /* retry next visit */ }
     };
-    void importCoins().then(() => refresh());
+    // Run coin migration and data fetch in parallel — migration doesn't affect fetch results
+    void importCoins();
+    void refresh();
   }, [refresh]);
 
   const sendRequest = async () => {
@@ -390,14 +403,6 @@ export default function SocialTab() {
   const totalNotifs = incoming.length + inChallenge.length;
   const hasUsername = !!ownProfile?.username;
 
-  if (loading) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-10 flex items-center justify-center">
-        <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[2px] uppercase animate-pulse">Loading…</p>
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-2xl mx-auto px-4 py-5 pb-28 lg:py-8">
 
@@ -420,7 +425,31 @@ export default function SocialTab() {
       </div>
 
       {/* Username setup */}
-      {!hasUsername && <UsernameSetup onSaved={refresh} />}
+      {!loading && !hasUsername && <UsernameSetup onSaved={refresh} />}
+
+      {/* ── Loading animation ── */}
+      <AnimatePresence>
+        {loading && (
+          <motion.div
+            className="flex items-center justify-center py-8"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4, ease: 'easeInOut' }}
+          >
+            <Lottie animationData={loadingAnim.current} loop autoplay className="w-44 h-44" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Content — fades up as loader fades out (overlapping crossfade) ── */}
+      <AnimatePresence>
+        {!loading && (
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          >
 
       {/* ── YOUR PROFILE CARD ─────────────────────────────────────────────── */}
       {ownProfile && (
@@ -563,7 +592,7 @@ export default function SocialTab() {
           )}
         </div>
 
-        {friends.length === 0 ? (
+        {friends.length === 0 && !loading ? (
           <div className="px-5 pb-5">
             <div className="text-center py-8 border border-dashed border-[var(--line-2)] rounded">
               <Users size={24} className="text-[var(--ink-3)] mx-auto mb-2" />
@@ -610,6 +639,10 @@ export default function SocialTab() {
           </div>
         )}
       </div>
+
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Modals ── */}
       <AnimatePresence>

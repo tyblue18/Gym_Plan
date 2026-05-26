@@ -81,6 +81,7 @@ export interface DayRecord {
   bikeDist?: string | number;
   bikeTime?: string | number;
   swimTime?: string | number;
+  swimDist?: string | number;
   exercises?: string;  // JSON-serialised ExerciseEntry[]
   notes?:    string;
   weight?:   string;
@@ -90,6 +91,8 @@ export interface DayRecord {
   protein?:  number;
   foods?: string;          // JSON-serialised FoodEntry[]
   foodMealOrder?: string;  // JSON-serialised string[] — ordered list of section IDs
+  /** Set client-side when a lift PR and a run PR occur on the same day. */
+  prBothDay?: boolean;
   /** Server-provided sync timestamp — stripped on every local edit so the server
    *  always accepts the client's dirty writes without triggering a false conflict. */
   _syncedAt?: string;

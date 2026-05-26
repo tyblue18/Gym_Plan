@@ -21,8 +21,9 @@ interface DayRecord {
 
 interface BadgeCheckData {
   // queLiftPRs: exercise name → all-time max weight (lbs)
-  liftPRs: Record<string, number>;
-  localDB: Record<string, DayRecord>;
+  liftPRs:  Record<string, number>;
+  localDB:  Record<string, DayRecord>;
+  settings: Record<string, unknown>;
 }
 
 interface BadgeDef {
@@ -59,6 +60,40 @@ function maxStreak(localDB: Record<string, DayRecord>): number {
     else           { cur = 1; }
   }
   return max;
+}
+
+/** Shared consecutive-day streak counter. */
+function longestStreak(days: string[]): number {
+  if (days.length === 0) return 0;
+  let max = 1, cur = 1;
+  for (let i = 1; i < days.length; i++) {
+    const gap = Math.round(
+      (new Date(days[i] + 'T00:00:00Z').getTime() - new Date(days[i - 1] + 'T00:00:00Z').getTime()) / 86400000
+    );
+    if (gap === 1) { cur++; max = Math.max(max, cur); }
+    else           { cur = 1; }
+  }
+  return max;
+}
+
+/** Returns the longest consecutive workout-logged streak in localDB. */
+function maxWorkoutStreak(localDB: Record<string, DayRecord>): number {
+  return longestStreak(
+    Object.keys(localDB).filter(d => String(localDB[d].exercises ?? '').length > 2).sort()
+  );
+}
+
+/** Returns the longest streak where BOTH a workout was logged AND the calorie goal was hit. */
+function maxCombinedStreak(localDB: Record<string, DayRecord>): number {
+  return longestStreak(
+    Object.keys(localDB).filter(d => {
+      const rec = localDB[d];
+      return (
+        String(rec.exercises ?? '').length > 2 &&
+        hitGoal(rec.calsEaten as string | undefined, rec.budget)
+      );
+    }).sort()
+  );
 }
 
 /** True if any of the given exercise name variants has a PR ≥ weight. */
@@ -165,6 +200,126 @@ const BADGE_DEFS: BadgeDef[] = [
       parseFloat(String(d.runDist ?? '0')) >= 26.2
     ),
   },
+  {
+    slug: 'run_50mi', label: '50 Miles Run', icon: '/Badges/Running_total_run_badge.png', category: 'cardio',
+    check: ({ localDB }) =>
+      Object.values(localDB).reduce((s, d) => s + (parseFloat(String(d.runDist ?? '0')) || 0), 0) >= 50,
+  },
+  {
+    slug: 'run_50mi_single', label: '50 Mile Run', icon: '/Badges/Run_50miles.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      parseFloat(String(d.runDist ?? '0')) >= 50
+    ),
+  },
+
+  // ── Locked In (diet completion) ───────────────────────────────────────────────
+  {
+    slug: 'locked_in', label: 'Locked In', icon: '/Badges/Locked_in.png', category: 'nutrition',
+    check: ({ localDB, settings }) => {
+      const plan = settings['queAthletePlan'] as {
+        startDate?: string; weeksTarget?: number; goalWeight?: number; type?: string;
+      } | null | undefined;
+      if (!plan?.startDate || !plan.goalWeight || !plan.weeksTarget) return false;
+      const endMs     = new Date(plan.startDate + 'T00:00:00Z').getTime() + plan.weeksTarget * 7 * 86_400_000;
+      const endStr    = new Date(endMs).toISOString().slice(0, 10);
+      const todayStr  = new Date().toISOString().slice(0, 10);
+      if (todayStr < endStr) return false;
+      const windowStr = new Date(endMs - 14 * 86_400_000).toISOString().slice(0, 10);
+      return Object.entries(localDB).some(([date, d]) => {
+        if (date < windowStr) return false;
+        const w = parseFloat(String(d.weight ?? '0')) || 0;
+        return w > 0 && Math.abs(w - plan.goalWeight!) <= 5;
+      });
+    },
+  },
+
+  // ── Triathlete (bike + run + swim same day) ────────────────────────────────────
+  {
+    slug: 'triathlete', label: 'Triathlete', icon: '/Badges/Triathlete_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      (parseFloat(String(d.runDist  ?? '0')) > 0) &&
+      (parseFloat(String(d.bikeDist ?? '0')) > 0) &&
+      (parseFloat(String(d.swimTime ?? '0')) > 0)
+    ),
+  },
+
+  // ── Swimming ──────────────────────────────────────────────────────────────────
+  {
+    slug: 'swim_first', label: 'First Swim', icon: '/Badges/First_swim_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      parseFloat(String(d.swimTime ?? '0')) > 0
+    ),
+  },
+  {
+    slug: 'swim_15mi', label: '15 Miles Swum', icon: '/Badges/Running_total_swim_badge.png', category: 'cardio',
+    check: ({ localDB }) =>
+      Object.values(localDB).reduce((s, d) => s + (parseFloat(String(d.swimDist ?? '0')) || 0), 0) >= 15,
+  },
+
+  // ── Million Pounds Lifted ─────────────────────────────────────────────────────
+  {
+    slug: 'million_lbs', label: 'Million Pounds Lifted', icon: '/Badges/Million_pounds_lifted.png', category: 'lift',
+    check: ({ settings }) => {
+      const groups = settings['queMillionGroups'] as string[] | undefined;
+      return Array.isArray(groups) && groups.length > 0;
+    },
+  },
+
+  // ── Double PR Day ─────────────────────────────────────────────────────────────
+  {
+    slug: 'pr_both', label: 'Double PR Day', icon: '/Badges/PR_both_lift_and_cardio.png', category: 'lift',
+    check: ({ localDB }) => Object.values(localDB).some(d => !!(d as { prBothDay?: boolean }).prBothDay),
+  },
+
+  // ── 1,000 Calorie Burn ────────────────────────────────────────────────────────
+  {
+    slug: 'cal_1000', label: '1,000 Cal Burn', icon: '/Badges/1000_calorie_burned_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d => (parseFloat(String(d.burn ?? '0')) || 0) >= 1000),
+  },
+
+  // ── Cycling ───────────────────────────────────────────────────────────────────
+  {
+    slug: 'bike_first', label: 'First Bike Ride', icon: '/Badges/First_bike_badge.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      parseFloat(String(d.bikeDist ?? '0')) >= 0.1
+    ),
+  },
+  {
+    slug: 'bike_50mi', label: '50 Miles Biked', icon: '/Badges/Running_total_bike_badge.png', category: 'cardio',
+    check: ({ localDB }) =>
+      Object.values(localDB).reduce((s, d) => s + (parseFloat(String(d.bikeDist ?? '0')) || 0), 0) >= 50,
+  },
+  {
+    slug: 'bike_1000mi', label: '1,000 Miles Biked', icon: '/Badges/1000_miles_biked_badge.png', category: 'cardio',
+    check: ({ localDB }) =>
+      Object.values(localDB).reduce((s, d) => s + (parseFloat(String(d.bikeDist ?? '0')) || 0), 0) >= 1000,
+  },
+
+  // ── Workout streak ────────────────────────────────────────────────────────────
+  {
+    slug: 'scholar', label: 'Scholar', icon: '/Badges/scholar_badge.png', category: 'nutrition',
+    check: ({ localDB }) => maxWorkoutStreak(localDB) >= 14,
+  },
+  {
+    slug: 'master', label: 'Master', icon: '/Badges/master_badge.png', category: 'nutrition',
+    check: ({ localDB }) => maxWorkoutStreak(localDB) >= 30,
+  },
+  {
+    slug: 'seer', label: 'Seer', icon: '/Badges/seer_badge.png', category: 'nutrition',
+    check: ({ localDB }) => maxWorkoutStreak(localDB) >= 50,
+  },
+  {
+    slug: 'stoic', label: 'Stoic', icon: '/Badges/stoic_badge.png', category: 'nutrition',
+    check: ({ localDB }) => maxCombinedStreak(localDB) >= 50,
+  },
+
+  // ── Big eating day ────────────────────────────────────────────────────────────
+  {
+    slug: 'eat_5000', label: '5,000 Calories Eaten', icon: '/Badges/5000_calories_eaten.png', category: 'nutrition',
+    check: ({ localDB }) => Object.values(localDB).some(d =>
+      (parseFloat(String(d.calsEaten ?? '0')) || 0) >= 5000
+    ),
+  },
 
   // ── Nutrition streaks ─────────────────────────────────────────────────────────
   {
@@ -239,7 +394,7 @@ export async function checkAndAwardBadges(
     dayRows.map(r => [r.date, r.data as DayRecord])
   );
 
-  const data: BadgeCheckData = { liftPRs, localDB };
+  const data: BadgeCheckData = { liftPRs, localDB, settings };
   const earnedMap = new Map(existing.map(b => [b.slug, b]));
 
   const toAward  = BADGE_DEFS.filter(def => !earnedMap.has(def.slug) && def.check(data));

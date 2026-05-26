@@ -19,8 +19,9 @@ import {
   type DayRecord,
 } from '@/lib/AppContext';
 import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
+import { AutoCropImage } from '@/components/AutoCropImage';
 import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
-import { queueSync } from '@/lib/syncEngine';
+import { queueSync, pushNow, gatherSettings } from '@/lib/syncEngine';
 import Lottie from 'lottie-react';
 import celebrateAnim from '@/public/Celebrate_animation.json';
 
@@ -30,16 +31,85 @@ import celebrateAnim from '@/public/Celebrate_animation.json';
 const BENCH_NAMES = new Set(['Bench Press','Barbell Bench Press','Flat Bench Press','Flat Barbell Bench']);
 const SQUAT_NAMES = new Set(['Squat','Back Squat','Barbell Squat','Low Bar Squat','High Bar Squat']);
 const DEAD_NAMES  = new Set(['Deadlift','Barbell Deadlift','Conventional Deadlift','Romanian Deadlift']);
+const OHP_NAMES   = new Set(['Overhead Press','OHP','Military Press','Barbell OHP','Standing OHP','Barbell Overhead Press']);
 const BADGE_WEIGHTS = [135, 225, 315, 405, 495, 540, 630];
+
+type EarnedBadge = { slug: string; label: string; icon: string; category: string };
+
+// Client-side mirror of badgeEngine BADGE_DEFS (lift only) — lets us show the
+// popup instantly on commit without waiting for the server round-trip.
+const LIFT_CLIENT_BADGES: Array<EarnedBadge & { names: Set<string>; weight: number }> = [
+  { slug: 'bench_135', label: '135 Bench',      icon: '/Badges/135_bench_badge.png',     category: 'lift', names: BENCH_NAMES, weight: 135 },
+  { slug: 'bench_225', label: '225 Bench',      icon: '/Badges/225_bench_badge.png',     category: 'lift', names: BENCH_NAMES, weight: 225 },
+  { slug: 'bench_315', label: '315 Bench',      icon: '/Badges/315_bench_badge.png',     category: 'lift', names: BENCH_NAMES, weight: 315 },
+  { slug: 'bench_405', label: '405 Bench',      icon: '/Badges/405_bench_badge.png',     category: 'lift', names: BENCH_NAMES, weight: 405 },
+  { slug: 'bench_495', label: '495 Bench',      icon: '/Badges/495_bench_badge.png',     category: 'lift', names: BENCH_NAMES, weight: 495 },
+  { slug: 'bench_540', label: '540 Bench',      icon: '/Badges/540_bench_badge.png',     category: 'lift', names: BENCH_NAMES, weight: 540 },
+  { slug: 'bench_630', label: '630 Bench',      icon: '/Badges/630_bench_badge.png',     category: 'lift', names: BENCH_NAMES, weight: 630 },
+  { slug: 'squat_135', label: '135 Squat',      icon: '/Badges/135_squat_badge.png',     category: 'lift', names: SQUAT_NAMES, weight: 135 },
+  { slug: 'squat_225', label: '225 Squat',      icon: '/Badges/225_squat_badge.png',     category: 'lift', names: SQUAT_NAMES, weight: 225 },
+  { slug: 'squat_315', label: '315 Squat',      icon: '/Badges/315_squad_badge.png',     category: 'lift', names: SQUAT_NAMES, weight: 315 },
+  { slug: 'squat_405', label: '405 Squat',      icon: '/Badges/405_squat_badge.png',     category: 'lift', names: SQUAT_NAMES, weight: 405 },
+  { slug: 'squat_495', label: '495 Squat',      icon: '/Badges/495_squat_badge.png',     category: 'lift', names: SQUAT_NAMES, weight: 495 },
+  { slug: 'squat_540', label: '540 Squat',      icon: '/Badges/540_squat_badge.png',     category: 'lift', names: SQUAT_NAMES, weight: 540 },
+  { slug: 'squat_630', label: '630 Squat',      icon: '/Badges/630_squat_badge.png',     category: 'lift', names: SQUAT_NAMES, weight: 630 },
+  { slug: 'dead_135',  label: '135 Deadlift',   icon: '/Badges/135_deadlift_badge.png',  category: 'lift', names: DEAD_NAMES,  weight: 135 },
+  { slug: 'dead_225',  label: '225 Deadlift',   icon: '/Badges/225_deadlift_badge.png',  category: 'lift', names: DEAD_NAMES,  weight: 225 },
+  { slug: 'dead_315',  label: '315 Deadlift',   icon: '/Badges/315_deadlift_badge.png',  category: 'lift', names: DEAD_NAMES,  weight: 315 },
+  { slug: 'dead_405',  label: '405 Deadlift',   icon: '/Badges/405_deadlift_badge.png',  category: 'lift', names: DEAD_NAMES,  weight: 405 },
+  { slug: 'dead_495',  label: '495 Deadlift',   icon: '/Badges/495_deadlift_badge.png',  category: 'lift', names: DEAD_NAMES,  weight: 495 },
+  { slug: 'dead_540',  label: '540 Deadlift',   icon: '/Badges/540_deadlift_badge.png',  category: 'lift', names: DEAD_NAMES,  weight: 540 },
+  { slug: 'dead_630',  label: '630 Deadlift',   icon: '/Badges/630_deadlift_badge.png',  category: 'lift', names: DEAD_NAMES,  weight: 630 },
+  { slug: 'ohp_95',    label: '95 OHP Club',    icon: '🏋️',                              category: 'lift', names: OHP_NAMES,   weight: 95  },
+  { slug: 'ohp_115',   label: '115 OHP Club',   icon: '🏋️',                              category: 'lift', names: OHP_NAMES,   weight: 115 },
+  { slug: 'ohp_135',   label: 'One Plate OHP',  icon: '🥇',                              category: 'lift', names: OHP_NAMES,   weight: 135 },
+  { slug: 'ohp_185',   label: '185 OHP Club',   icon: '💪',                              category: 'lift', names: OHP_NAMES,   weight: 185 },
+  { slug: 'ohp_225',   label: 'Two Plate OHP',  icon: '👑',                              category: 'lift', names: OHP_NAMES,   weight: 225 },
+];
+
+function bestPRFor(prs: Record<string, number>, names: Set<string>): number {
+  let best = 0;
+  for (const [ex, w] of Object.entries(prs)) { if (names.has(ex) && w > best) best = w; }
+  return best;
+}
+
+// Returns badges newly earned and slugs newly lost based on a PR diff.
+function diffLiftBadges(
+  oldPRs: Record<string, number>,
+  newPRs: Record<string, number>,
+): { earned: EarnedBadge[]; revokedSlugs: string[] } {
+  const earned: EarnedBadge[] = [];
+  const revokedSlugs: string[] = [];
+  for (const def of LIFT_CLIENT_BADGES) {
+    const had = bestPRFor(oldPRs, def.names) >= def.weight;
+    const has = bestPRFor(newPRs, def.names) >= def.weight;
+    if (!had && has) earned.push({ slug: def.slug, label: def.label, icon: def.icon, category: def.category });
+    if (had && !has) revokedSlugs.push(def.slug);
+  }
+  return { earned, revokedSlugs };
+}
 
 // Run distance milestones — ordered descending so we surface the highest one earned.
 const RUN_MILESTONES = [
+  { threshold: 50,   icon: '/Badges/Run_50miles.png' },
   { threshold: 26.2, icon: '/Badges/First_marathon_badge.png' },
   { threshold: 13.1, icon: '/Badges/First_half_marathon_badge.png' },
   { threshold: 9.3,  icon: '/Badges/First_15K_badge.png' },
   { threshold: 6.2,  icon: '/Badges/First_10K_badge.png' },
   { threshold: 3.1,  icon: '/Badges/First_5K_badge.png' },
 ];
+
+const BIKE_MILESTONES = [
+  { threshold:  0.1, icon: '/Badges/First_bike_badge.png'          },
+  { threshold: 50,   icon: '/Badges/Running_total_bike_badge.png'  },
+  { threshold: 1000, icon: '/Badges/1000_miles_biked_badge.png'    },
+];
+
+const STREAK_BADGES = [
+  { slug: 'scholar', label: 'Scholar', icon: '/Badges/scholar_badge.png', threshold: 14 },
+  { slug: 'master',  label: 'Master',  icon: '/Badges/master_badge.png',  threshold: 30 },
+  { slug: 'seer',    label: 'Seer',    icon: '/Badges/seer_badge.png',    threshold: 50 },
+] as const;
 
 function liftBadgeIcon(exerciseName: string, prWeight: number): string | null {
   let key: string | null = null;
@@ -78,7 +148,7 @@ const CARDIO_CFG: Record<CardioKind, {
   f2: string; f2ph: string; f2mode: React.HTMLInputTypeAttribute;
   notePh: string;
 }> = {
-  swim: { code: 'SWIM', label: 'Swimming', f1: 'DURATION / MIN', f1ph: '45',  f1mode: 'numeric', f2: 'DISTANCE',  f2ph: '1500 yds', f2mode: 'decimal', notePh: 'drills, laps, style…' },
+  swim: { code: 'SWIM', label: 'Swimming', f1: 'DURATION / MIN', f1ph: '45',  f1mode: 'numeric', f2: 'DIST / MI', f2ph: '1.0',      f2mode: 'decimal', notePh: 'drills, laps, style…' },
   run:  { code: 'RUN',  label: 'Running',  f1: 'DISTANCE / MI', f1ph: '5.2', f1mode: 'decimal', f2: 'TIME / MIN', f2ph: '45',       f2mode: 'numeric', notePh: 'pace, route, effort…' },
   bike: { code: 'BIKE', label: 'Cycling',  f1: 'DISTANCE / MI', f1ph: '20',  f1mode: 'decimal', f2: 'TIME / MIN', f2ph: '60',       f2mode: 'numeric', notePh: 'route, watts, HR zone…' },
 };
@@ -392,12 +462,15 @@ function ReorderableExerciseItem({
 // SUB-COMPONENT — CardioEntryCard
 // ─────────────────────────────────────────────────────────────────────────────
 function CardioEntryCard({
-  entry, onDelete, onUpdateField, firstBadgeIcon,
+  entry, onDelete, onUpdateField, firstBadgeIcon, badgeMilesLabel, burnBadgeIcon, burnCalLabel,
 }: {
   entry: CardioItem;
   onDelete: (idx: number) => void;
   onUpdateField: (idx: number, field: 'v1' | 'v2' | 'note', val: string) => void;
   firstBadgeIcon?: string | null;
+  badgeMilesLabel?: string | null;
+  burnBadgeIcon?: string | null;
+  burnCalLabel?: string | null;
 }) {
   const cfg = CARDIO_CFG[entry.k];
   return (
@@ -411,7 +484,20 @@ function CardioEntryCard({
         <span className="font-mono text-[10px] font-bold tracking-[2px] text-[var(--accent)] uppercase">{cfg.code}</span>
         <span className="text-[14px] font-semibold text-[var(--ink-0)] flex-1">{cfg.label}</span>
         {firstBadgeIcon && (
-          <img src={firstBadgeIcon} alt="first milestone" className="w-6 h-6 object-contain flex-shrink-0" title="First time hitting this distance!" />
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <AutoCropImage src={firstBadgeIcon} alt="first milestone" className="w-6 h-6 object-contain" />
+            {badgeMilesLabel && (
+              <span className="font-mono text-[10px] font-bold tracking-[1px] text-[var(--accent)]">{badgeMilesLabel}</span>
+            )}
+          </div>
+        )}
+        {burnBadgeIcon && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <AutoCropImage src={burnBadgeIcon} alt="1000 cal burn" className="w-6 h-6 object-contain" />
+            {burnCalLabel && (
+              <span className="font-mono text-[10px] font-bold tracking-[1px] text-[var(--accent)]">{burnCalLabel}</span>
+            )}
+          </div>
         )}
         <button
           onClick={() => onDelete(entry._idx)}
@@ -801,7 +887,10 @@ export default function WorkoutLogger() {
   const [dupWarning, setDupWarning] = useState(false);
   const [activeSection, setActiveSection] = useState<'lifting' | 'cardio'>('lifting');
   const [confirmClear, setConfirmClear] = useState(false);
-  const [earnedBadges, setEarnedBadges] = useState<Array<{ slug: string; label: string; icon: string; category: string }>>([]);
+  const [earnedBadges, setEarnedBadges] = useState<EarnedBadge[]>([]);
+  // Tracks badges shown optimistically so the server response doesn't double-show them.
+  // Cleared when the server confirms, deleted when a badge is revoked (so re-earn works).
+  const optimisticallyShownRef = useRef<Set<string>>(new Set());
 
   // Stable keys for Reorder (parallel to exercises array, never derived)
   const exerciseKeysRef = useRef<string[]>([]);
@@ -830,6 +919,7 @@ export default function WorkoutLogger() {
         bikeDist:  bikes.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
         bikeTime:  bikes.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0),
         swimTime:  swims.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
+        swimDist:  swims.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0),
       });
       // Recompute all-time PRs from the full localDB so corrections flow back down.
       // Scan every OTHER day for historical maxes, then overlay today's arr.
@@ -858,8 +948,21 @@ export default function WorkoutLogger() {
         k => (curr[k] ?? 0) !== (prRecs[k] ?? 0)
       );
       if (prChanged) {
+        const oldPRs = prBaselineRef.current ?? {};
         prBaselineRef.current = prRecs;
         localStorage.setItem('queLiftPRs', JSON.stringify(prRecs));
+
+        const { earned, revokedSlugs } = diffLiftBadges(oldPRs, prRecs);
+        // Clear revoked slugs so re-earning them later shows the popup again.
+        for (const slug of revokedSlugs) optimisticallyShownRef.current.delete(slug);
+        if (earned.length > 0) {
+          setEarnedBadges(prev => [...prev, ...earned]);
+          navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+          for (const b of earned) optimisticallyShownRef.current.add(b.slug);
+        }
+
+        // Still push to server so badges are persisted in the DB.
+        pushNow({ settings: gatherSettings() });
       }
 
       setSaveFlash(true);
@@ -1128,7 +1231,7 @@ export default function WorkoutLogger() {
     setExercisesRaw([]); setNotesRaw('');
     updateDayRecord(activeDayFocus, {
       exercises: '', notes: '', steps: 0,
-      runDist: 0, runTime: 0, bikeDist: 0, bikeTime: 0, swimTime: 0, burn: 0,
+      runDist: 0, runTime: 0, bikeDist: 0, bikeTime: 0, swimTime: 0, swimDist: 0, burn: 0,
     });
   }, [activeDayFocus, updateDayRecord]);
 
@@ -1219,17 +1322,18 @@ export default function WorkoutLogger() {
     prevPRRef.current = new Set(prLiftNames);
   }, [prLiftNames]);
 
-  // ── Run first-distance badge ─────────────────────────────────────────────────
-  // historicalMaxRunDist: highest single-day run distance logged on any day OTHER
-  // than today. Recomputed when localDB or the focused day changes.
-  const historicalMaxRunDist = useMemo(() => {
-    let max = 0;
+  // ── Run badges ───────────────────────────────────────────────────────────────
+  // historicalMaxRunDist: highest single-day run total on any day OTHER than today.
+  // historicalTotalRunDist: lifetime cumulative run miles excluding today.
+  const { historicalMaxRunDist, historicalTotalRunDist } = useMemo(() => {
+    let max = 0, total = 0;
     for (const [date, rec] of Object.entries(localDB)) {
       if (date === activeDayFocus) continue;
       const d = parseFloat(String(rec.runDist ?? '0')) || 0;
       if (d > max) max = d;
+      total += d;
     }
-    return max;
+    return { historicalMaxRunDist: max, historicalTotalRunDist: total };
   }, [localDB, activeDayFocus]);
 
   // Total run distance entered in today's session (live, sums all run entries).
@@ -1238,7 +1342,7 @@ export default function WorkoutLogger() {
     [cardios],
   );
 
-  // Badge image for the highest milestone crossed for the first time today.
+  // Badge for highest single-session milestone crossed for the first time today.
   const runFirstBadgeIcon = useMemo((): string | null => {
     for (const { threshold, icon } of RUN_MILESTONES) {
       if (todayRunDist >= threshold && historicalMaxRunDist < threshold) return icon;
@@ -1246,22 +1350,359 @@ export default function WorkoutLogger() {
     return null;
   }, [todayRunDist, historicalMaxRunDist]);
 
-  // Haptic pulse when a new run milestone is first crossed this session.
+  // Badge for crossing 50 lifetime miles for the first time this session.
+  const runTotalBadgeIcon = useMemo((): string | null => {
+    const lifetimeTotal = historicalTotalRunDist + todayRunDist;
+    if (lifetimeTotal >= 50 && historicalTotalRunDist < 50) return '/Badges/Running_total_run_badge.png';
+    return null;
+  }, [todayRunDist, historicalTotalRunDist]);
+
+  const runMilesLabel = useMemo((): string | null => {
+    if (!runTotalBadgeIcon) return null;
+    return `${Math.round(historicalTotalRunDist + todayRunDist)} mi`;
+  }, [runTotalBadgeIcon, historicalTotalRunDist, todayRunDist]);
+
+  // Haptic pulse when any new run badge is first crossed this session.
   const prevRunBadgeRef = useRef<string | null>(null);
   useEffect(() => {
-    if (runFirstBadgeIcon && runFirstBadgeIcon !== prevRunBadgeRef.current) {
+    const active = runFirstBadgeIcon ?? runTotalBadgeIcon;
+    if (active && active !== prevRunBadgeRef.current) {
       navigator.vibrate?.([30, 20, 60, 20, 30]);
+      pushNow({ settings: gatherSettings() });
     }
-    prevRunBadgeRef.current = runFirstBadgeIcon;
-  }, [runFirstBadgeIcon]);
+    prevRunBadgeRef.current = active;
+  }, [runFirstBadgeIcon, runTotalBadgeIcon]);
 
-  // Listen for badges awarded by the sync engine
+  // ── Double PR Day badge ──────────────────────────────────────────────────────
+  const prevPrBothRef = useRef(false);
+  // Reset tracking when the focused day changes; initialise from stored flag.
+  useEffect(() => {
+    prevPrBothRef.current = !!(localDB[activeDayFocus] as { prBothDay?: boolean } | undefined)?.prBothDay;
+  }, [activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (prLiftNames.size === 0) return;
+    if (todayRunDist === 0 || todayRunDist <= historicalMaxRunDist) return;
+    if (prevPrBothRef.current) return;
+    if (optimisticallyShownRef.current.has('pr_both')) return;
+
+    prevPrBothRef.current = true;
+    optimisticallyShownRef.current.add('pr_both');
+    setEarnedBadges(prev => [...prev, {
+      slug: 'pr_both', label: 'Double PR Day', icon: '/Badges/PR_both_lift_and_cardio.png', category: 'lift',
+    }]);
+    navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+    updateDayRecord(activeDayFocus, { prBothDay: true });
+    pushNow({ settings: gatherSettings() });
+  }, [prLiftNames, todayRunDist, historicalMaxRunDist]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Bike badges ──────────────────────────────────────────────────────────────
+  const { historicalMaxBikeDist, historicalTotalBikeDist } = useMemo(() => {
+    let max = 0, total = 0;
+    for (const [date, rec] of Object.entries(localDB)) {
+      if (date === activeDayFocus) continue;
+      const d = parseFloat(String(rec.bikeDist ?? '0')) || 0;
+      if (d > max) max = d;
+      total += d;
+    }
+    return { historicalMaxBikeDist: max, historicalTotalBikeDist: total };
+  }, [localDB, activeDayFocus]);
+
+  const todayBikeDist = useMemo(
+    () => cardios.filter(e => e.k === 'bike').reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
+    [cardios],
+  );
+
+  const bikeBadgeIcon = useMemo((): string | null => {
+    const lifetimeTotal = historicalTotalBikeDist + todayBikeDist;
+    if (lifetimeTotal >= 1000 && historicalTotalBikeDist < 1000) return '/Badges/1000_miles_biked_badge.png';
+    if (lifetimeTotal >= 50  && historicalTotalBikeDist < 50)   return '/Badges/Running_total_bike_badge.png';
+    if (todayBikeDist >= 0.1 && historicalMaxBikeDist < 0.1)    return '/Badges/First_bike_badge.png';
+    return null;
+  }, [todayBikeDist, historicalMaxBikeDist, historicalTotalBikeDist]);
+
+  const bikeMilesLabel = useMemo((): string | null => {
+    if (bikeBadgeIcon !== '/Badges/Running_total_bike_badge.png') return null;
+    return `${Math.round(historicalTotalBikeDist + todayBikeDist)} mi`;
+  }, [bikeBadgeIcon, historicalTotalBikeDist, todayBikeDist]);
+
+  const prevBikeBadgeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (bikeBadgeIcon && bikeBadgeIcon !== prevBikeBadgeRef.current) {
+      navigator.vibrate?.([30, 20, 60, 20, 30]);
+      pushNow({ settings: gatherSettings() });
+    }
+    prevBikeBadgeRef.current = bikeBadgeIcon;
+  }, [bikeBadgeIcon]);
+
+  // ── Swim badges ───────────────────────────────────────────────────────────────
+  const { historicalMaxSwimTime, historicalTotalSwimDist } = useMemo(() => {
+    let maxTime = 0, totalDist = 0;
+    for (const [date, rec] of Object.entries(localDB)) {
+      if (date === activeDayFocus) continue;
+      const t = parseFloat(String(rec.swimTime ?? '0')) || 0;
+      const d = parseFloat(String(rec.swimDist ?? '0')) || 0;
+      if (t > maxTime) maxTime = t;
+      totalDist += d;
+    }
+    return { historicalMaxSwimTime: maxTime, historicalTotalSwimDist: totalDist };
+  }, [localDB, activeDayFocus]);
+
+  const todaySwimTime = useMemo(
+    () => cardios.filter(e => e.k === 'swim').reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
+    [cardios],
+  );
+  const todaySwimDist = useMemo(
+    () => cardios.filter(e => e.k === 'swim').reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0),
+    [cardios],
+  );
+
+  const swimFirstBadgeIcon = useMemo((): string | null => {
+    if (todaySwimTime > 0 && historicalMaxSwimTime === 0) return '/Badges/First_swim_badge.png';
+    return null;
+  }, [todaySwimTime, historicalMaxSwimTime]);
+
+  const swimTotalBadgeIcon = useMemo((): string | null => {
+    const lifetimeTotal = historicalTotalSwimDist + todaySwimDist;
+    if (lifetimeTotal >= 15 && historicalTotalSwimDist < 15) return '/Badges/Running_total_swim_badge.png';
+    return null;
+  }, [todaySwimDist, historicalTotalSwimDist]);
+
+  const swimMilesLabel = useMemo((): string | null => {
+    if (!swimTotalBadgeIcon) return null;
+    return `${(historicalTotalSwimDist + todaySwimDist).toFixed(1)} mi`;
+  }, [swimTotalBadgeIcon, historicalTotalSwimDist, todaySwimDist]);
+
+  const prevSwimBadgeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const active = swimFirstBadgeIcon ?? swimTotalBadgeIcon;
+    if (active && active !== prevSwimBadgeRef.current) {
+      navigator.vibrate?.([30, 20, 60, 20, 30]);
+      pushNow({ settings: gatherSettings() });
+    }
+    prevSwimBadgeRef.current = active;
+  }, [swimFirstBadgeIcon, swimTotalBadgeIcon]);
+
+  // ── Triathlete badge (bike + run + swim same day) ─────────────────────────────
+  const prevTriathleteRef = useRef(false);
+  useEffect(() => {
+    const rec = localDB[activeDayFocus] ?? {};
+    prevTriathleteRef.current =
+      parseFloat(String(rec.runDist  ?? '0')) > 0 &&
+      parseFloat(String(rec.bikeDist ?? '0')) > 0 &&
+      parseFloat(String(rec.swimTime ?? '0')) > 0;
+  }, [activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (todayRunDist === 0 || todayBikeDist === 0 || todaySwimTime === 0) return;
+    if (prevTriathleteRef.current) return;
+    if (optimisticallyShownRef.current.has('triathlete')) return;
+
+    prevTriathleteRef.current = true;
+    optimisticallyShownRef.current.add('triathlete');
+    setEarnedBadges(prev => [...prev, {
+      slug: 'triathlete', label: 'Triathlete', icon: '/Badges/Triathlete_badge.png', category: 'cardio',
+    }]);
+    navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+    pushNow({ settings: gatherSettings() });
+  }, [todayRunDist, todayBikeDist, todaySwimTime]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 1,000 Calorie Burn badge ──────────────────────────────────────────────────
+  const todayBurn = useMemo(
+    () => parseFloat(String(localDB[activeDayFocus]?.burn ?? '0')) || 0,
+    [localDB, activeDayFocus],
+  );
+
+  const historicalMaxBurn = useMemo(() => {
+    let max = 0;
+    for (const [date, rec] of Object.entries(localDB)) {
+      if (date === activeDayFocus) continue;
+      const b = parseFloat(String(rec.burn ?? '0')) || 0;
+      if (b > max) max = b;
+    }
+    return max;
+  }, [localDB, activeDayFocus]);
+
+  const burnBadgeIcon = useMemo((): string | null => {
+    if (todayBurn >= 1000 && historicalMaxBurn < 1000) return '/Badges/1000_calorie_burned_badge.png';
+    return null;
+  }, [todayBurn, historicalMaxBurn]);
+
+  const burnCalLabel = useMemo((): string | null => {
+    if (!burnBadgeIcon) return null;
+    return `${Math.round(todayBurn)} kcal`;
+  }, [burnBadgeIcon, todayBurn]);
+
+  const prevBurnRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevBurnRef.current === null) { prevBurnRef.current = todayBurn; return; }
+    if (todayBurn >= 1000 && prevBurnRef.current < 1000 && historicalMaxBurn < 1000) {
+      if (!optimisticallyShownRef.current.has('cal_1000')) {
+        optimisticallyShownRef.current.add('cal_1000');
+        setEarnedBadges(prev => [...prev, {
+          slug: 'cal_1000', label: '1,000 Cal Burn', icon: '/Badges/1000_calorie_burned_badge.png', category: 'cardio' as const,
+        }]);
+        navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+        pushNow({ settings: gatherSettings() });
+      }
+    }
+    prevBurnRef.current = todayBurn;
+  }, [todayBurn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 5,000 Calories Eaten badge ────────────────────────────────────────────────
+  const todayCalsEaten = useMemo(
+    () => parseFloat(String(localDB[activeDayFocus]?.calsEaten ?? '0')) || 0,
+    [localDB, activeDayFocus],
+  );
+
+  const prevCalsEatenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevCalsEatenRef.current === null) { prevCalsEatenRef.current = todayCalsEaten; return; }
+    if (todayCalsEaten >= 5000 && prevCalsEatenRef.current < 5000) {
+      if (!optimisticallyShownRef.current.has('eat_5000')) {
+        optimisticallyShownRef.current.add('eat_5000');
+        setEarnedBadges(prev => [...prev, {
+          slug: 'eat_5000', label: '5,000 Calories Eaten', icon: '/Badges/5000_calories_eaten.png', category: 'nutrition' as const,
+        }]);
+        navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+        pushNow({ settings: gatherSettings() });
+      }
+    }
+    prevCalsEatenRef.current = todayCalsEaten;
+  }, [todayCalsEaten]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Million Pounds Lifted ─────────────────────────────────────────────────────
+  // Scans full localDB to compute cumulative volume (reps × weight) per muscle group.
+  const groupVolumeTotals = useMemo((): Record<string, number> => {
+    const vol: Record<string, number> = {};
+    for (const [, rec] of Object.entries(localDB)) {
+      for (const ex of parseEx(String(rec.exercises ?? ''))) {
+        if (ex.k !== 'lift' || !ex.g) continue;
+        for (const s of normalizeSets(ex)) {
+          vol[ex.g] = (vol[ex.g] ?? 0) + (parseFloat(s.r) || 0) * (parseFloat(s.w) || 0);
+        }
+      }
+    }
+    return vol;
+  }, [localDB]);
+
+  const millionGroups = useMemo(
+    () => Object.entries(groupVolumeTotals).filter(([, v]) => v >= 1_000_000).map(([g]) => g),
+    [groupVolumeTotals],
+  );
+
+  // Initialised from localStorage so popup only fires for NEW crossings.
+  const knownMillionGroupsRef = useRef<Set<string>>((() => {
+    try { return new Set(JSON.parse(localStorage.getItem('queMillionGroups') ?? '[]') as string[]); }
+    catch { return new Set<string>(); }
+  })());
+
+  useEffect(() => {
+    if (millionGroups.length === 0) return;
+    const newGroups = millionGroups.filter(g => !knownMillionGroupsRef.current.has(g));
+    if (newGroups.length === 0) return;
+
+    for (const g of newGroups) knownMillionGroupsRef.current.add(g);
+    try { localStorage.setItem('queMillionGroups', JSON.stringify([...knownMillionGroupsRef.current])); } catch { /* noop */ }
+
+    optimisticallyShownRef.current.add('million_lbs');
+    setEarnedBadges(prev => [...prev, {
+      slug:     'million_lbs',
+      label:    `Million Lbs — ${newGroups.map(g => capitalize(g)).join(', ')}`,
+      icon:     '/Badges/Million_pounds_lifted.png',
+      category: 'lift' as const,
+    }]);
+    navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+    pushNow({ settings: gatherSettings() });
+  }, [millionGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Workout streak badges (scholar 14d / master 30d / seer 50d) ──────────────
+  const maxWorkoutStreak = useMemo((): number => {
+    const days = Object.keys(localDB)
+      .filter(d => String(localDB[d].exercises ?? '').length > 2)
+      .sort();
+    if (days.length === 0) return 0;
+    let max = 1, cur = 1;
+    for (let i = 1; i < days.length; i++) {
+      const prev = new Date(days[i - 1] + 'T00:00:00Z');
+      const curr = new Date(days[i]     + 'T00:00:00Z');
+      const gap  = Math.round((curr.getTime() - prev.getTime()) / 86400000);
+      if (gap === 1) { cur++; max = Math.max(max, cur); }
+      else           { cur = 1; }
+    }
+    return max;
+  }, [localDB]);
+
+  const maxCombinedStreak = useMemo((): number => {
+    const days = Object.keys(localDB)
+      .filter(d => {
+        const rec   = localDB[d];
+        const hasEx = String(rec.exercises ?? '').length > 2;
+        const eaten = parseFloat(String(rec.calsEaten ?? '0'));
+        const bud   = parseFloat(String(rec.budget   ?? '0'));
+        return hasEx && eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= 100;
+      })
+      .sort();
+    if (days.length === 0) return 0;
+    let max = 1, cur = 1;
+    for (let i = 1; i < days.length; i++) {
+      const prev = new Date(days[i - 1] + 'T00:00:00Z');
+      const curr = new Date(days[i]     + 'T00:00:00Z');
+      const gap  = Math.round((curr.getTime() - prev.getTime()) / 86400000);
+      if (gap === 1) { cur++; max = Math.max(max, cur); }
+      else           { cur = 1; }
+    }
+    return max;
+  }, [localDB]);
+
+  const prevMaxWorkoutStreakRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevMaxWorkoutStreakRef.current === null) {
+      prevMaxWorkoutStreakRef.current = maxWorkoutStreak;
+      return;
+    }
+    for (const def of STREAK_BADGES) {
+      if (maxWorkoutStreak >= def.threshold && prevMaxWorkoutStreakRef.current < def.threshold) {
+        if (!optimisticallyShownRef.current.has(def.slug)) {
+          optimisticallyShownRef.current.add(def.slug);
+          setEarnedBadges(prev => [...prev, { slug: def.slug, label: def.label, icon: def.icon, category: 'nutrition' as const }]);
+          navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+          pushNow({ settings: gatherSettings() });
+        }
+      }
+    }
+    prevMaxWorkoutStreakRef.current = maxWorkoutStreak;
+  }, [maxWorkoutStreak]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const prevMaxCombinedStreakRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevMaxCombinedStreakRef.current === null) {
+      prevMaxCombinedStreakRef.current = maxCombinedStreak;
+      return;
+    }
+    if (maxCombinedStreak >= 50 && prevMaxCombinedStreakRef.current < 50) {
+      if (!optimisticallyShownRef.current.has('stoic')) {
+        optimisticallyShownRef.current.add('stoic');
+        setEarnedBadges(prev => [...prev, {
+          slug: 'stoic', label: 'Stoic', icon: '/Badges/stoic_badge.png', category: 'nutrition' as const,
+        }]);
+        navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
+        pushNow({ settings: gatherSettings() });
+      }
+    }
+    prevMaxCombinedStreakRef.current = maxCombinedStreak;
+  }, [maxCombinedStreak]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for badges awarded by the sync engine (server confirmation).
+  // Skips any badge already shown optimistically; clears tracking so re-earn works.
   useEffect(() => {
     function onBadgeEarned(e: Event) {
-      const badges = (e as CustomEvent<Array<{ slug: string; label: string; icon: string; category: string }>>) .detail;
-      if (badges?.length) {
-        setEarnedBadges(prev => [...prev, ...badges]);
-        // Satisfying haptic: two strong pulses
+      const badges = (e as CustomEvent<EarnedBadge[]>).detail;
+      if (!badges?.length) return;
+      const toShow = badges.filter(b => !optimisticallyShownRef.current.has(b.slug));
+      for (const b of badges) optimisticallyShownRef.current.delete(b.slug);
+      if (toShow.length > 0) {
+        setEarnedBadges(prev => [...prev, ...toShow]);
         navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
       }
     }
@@ -1817,7 +2258,7 @@ export default function WorkoutLogger() {
             ) : (
               <div className="flex flex-col gap-3">
                 <AnimatePresence initial={false}>
-                  {cardios.map(entry => (
+                  {cardios.map((entry, cardioIdx) => (
                     <motion.div
                       key={entry._idx}
                       initial={{ opacity: 0, y: 10, scale: 0.97 }}
@@ -1829,7 +2270,20 @@ export default function WorkoutLogger() {
                         entry={entry}
                         onDelete={deleteEntry}
                         onUpdateField={updateCardioField}
-                        firstBadgeIcon={entry.k === 'run' ? runFirstBadgeIcon : null}
+                        firstBadgeIcon={
+                          entry.k === 'run'  ? (runFirstBadgeIcon ?? runTotalBadgeIcon) :
+                          entry.k === 'bike' ? bikeBadgeIcon :
+                          entry.k === 'swim' ? (swimFirstBadgeIcon ?? swimTotalBadgeIcon) :
+                          null
+                        }
+                        badgeMilesLabel={
+                          entry.k === 'run'  ? runMilesLabel :
+                          entry.k === 'bike' ? bikeMilesLabel :
+                          entry.k === 'swim' ? swimMilesLabel :
+                          null
+                        }
+                        burnBadgeIcon={cardioIdx === 0 ? burnBadgeIcon : null}
+                        burnCalLabel={cardioIdx === 0 ? burnCalLabel : null}
                       />
                     </motion.div>
                   ))}
@@ -1909,10 +2363,12 @@ export default function WorkoutLogger() {
                   </button>
                 </div>
                 <div className="flex flex-col gap-4">
-                  {earnedBadges.map(b => (
-                    <div key={b.slug} className="flex items-center gap-4">
+                  {earnedBadges.map((b, i) => (
+                    <div key={`${b.slug}-${i}`} className="flex items-center gap-4">
                       {b.icon.startsWith('/') ? (
-                        <img src={b.icon} alt={b.label} className="w-14 h-14 object-contain flex-shrink-0" />
+                        b.category === 'cardio'
+                          ? <AutoCropImage src={b.icon} alt={b.label} className="w-14 h-14 object-contain flex-shrink-0" />
+                          : <img src={b.icon} alt={b.label} className="w-14 h-14 object-contain flex-shrink-0" />
                       ) : (
                         <span className="text-[44px] leading-none flex-shrink-0">{b.icon}</span>
                       )}

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Pencil, Clock, Infinity } from 'lucide-react';
+import { AutoCropImage } from '@/components/AutoCropImage';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -32,7 +33,13 @@ export interface BadgeInfo {
 
 function BadgeIcon({ icon, size = 28 }: { icon: string; size?: number }) {
   if (icon.startsWith('/')) {
-    return <img src={icon} alt="" style={{ width: size, height: size, objectFit: 'contain', display: 'block' }} />;
+    return (
+      <AutoCropImage
+        src={icon}
+        alt=""
+        style={{ width: size, height: size, objectFit: 'contain', display: 'block' }}
+      />
+    );
   }
   return <span style={{ fontSize: size, lineHeight: 1 }}>{icon}</span>;
 }
@@ -237,7 +244,7 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
               >
                 {badge ? (
                   badge.icon.startsWith('/') ? (
-                    <img src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+                    <AutoCropImage src={badge.icon} alt={badge.label} />
                   ) : (
                     <span className="text-[11px] leading-none">{badge.icon}</span>
                   )
@@ -375,7 +382,7 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
                   transition={{ type: 'spring', stiffness: 500, damping: 20 }}
                 >
                   {badge.icon.startsWith('/') ? (
-                    <img src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+                    <AutoCropImage src={badge.icon} alt={badge.label} />
                   ) : (
                     <span className="text-[22px] leading-none">{badge.icon}</span>
                   )}
@@ -569,7 +576,7 @@ export default function ProfileCard({
                 }}
               >
                 {b.icon.startsWith('/') ? (
-                  <img src={b.icon} alt={b.label} className="w-full h-full object-contain" />
+                  <AutoCropImage src={b.icon} alt={b.label} />
                 ) : (
                   <span className="text-[16px] leading-none">{b.icon}</span>
                 )}

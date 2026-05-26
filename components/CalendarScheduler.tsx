@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { PRLiveBadge } from '@/components/ActivityIcon';
+import { AutoCropImage } from '@/components/AutoCropImage';
 import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -296,6 +297,21 @@ const SQUAT_NAMES = new Set(['Squat','Back Squat','Barbell Squat','Low Bar Squat
 const DEAD_NAMES  = new Set(['Deadlift','Barbell Deadlift','Conventional Deadlift','Romanian Deadlift']);
 const BADGE_WEIGHTS = [135, 225, 315, 405, 495, 540, 630];
 
+const RUN_MILESTONES = [
+  { threshold: 50,   icon: '/Badges/Run_50miles.png' },
+  { threshold: 26.2, icon: '/Badges/First_marathon_badge.png' },
+  { threshold: 13.1, icon: '/Badges/First_half_marathon_badge.png' },
+  { threshold: 9.3,  icon: '/Badges/First_15K_badge.png' },
+  { threshold: 6.2,  icon: '/Badges/First_10K_badge.png' },
+  { threshold: 3.1,  icon: '/Badges/First_5K_badge.png' },
+];
+
+const BIKE_MILESTONES = [
+  { threshold:  0.1, icon: '/Badges/First_bike_badge.png'         },
+  { threshold: 50,   icon: '/Badges/Running_total_bike_badge.png' },
+  { threshold: 1000, icon: '/Badges/1000_miles_biked_badge.png'   },
+];
+
 function liftBadgeIcon(exerciseName: string, prWeight: number): string | null {
   let key: string | null = null;
   if (BENCH_NAMES.has(exerciseName)) key = 'bench';
@@ -344,6 +360,60 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
     try { localStorage.setItem('queLiftPRs', JSON.stringify(prRecs)); } catch { /* storage full */ }
     pushNow({ settings: gatherSettings() });
   };
+
+  // Historical max and total run distance from all days except dateStr.
+  const { historicalMaxRunDist, historicalTotalRunDist } = useMemo(() => {
+    let max = 0, total = 0;
+    for (const [date, dayRec] of Object.entries(localDB)) {
+      if (date === dateStr) continue;
+      parseEx(String((dayRec as { exercises?: string }).exercises ?? ''))
+        .filter(e => e.k === 'run')
+        .forEach(e => { const d = parseFloat(String(e.v1 ?? '0')) || 0; if (d > max) max = d; total += d; });
+    }
+    return { historicalMaxRunDist: max, historicalTotalRunDist: total };
+  }, [localDB, dateStr]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const currentDayRunDist = useMemo(
+    () => cardio.filter(e => e.k === 'run').reduce((s, e) => s + (parseFloat(String(e.v1 ?? '0')) || 0), 0),
+    [cardio],
+  );
+
+  const { historicalMaxBikeDist, historicalTotalBikeDist } = useMemo(() => {
+    let max = 0, total = 0;
+    for (const [date, dayRec] of Object.entries(localDB)) {
+      if (date === dateStr) continue;
+      parseEx(String((dayRec as { exercises?: string }).exercises ?? ''))
+        .filter(e => e.k === 'bike')
+        .forEach(e => { const d = parseFloat(String(e.v1 ?? '0')) || 0; if (d > max) max = d; total += d; });
+    }
+    return { historicalMaxBikeDist: max, historicalTotalBikeDist: total };
+  }, [localDB, dateStr]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const currentDayBikeDist = useMemo(
+    () => cardio.filter(e => e.k === 'bike').reduce((s, e) => s + (parseFloat(String(e.v1 ?? '0')) || 0), 0),
+    [cardio],
+  );
+
+  const { historicalMaxSwimTime, historicalTotalSwimDist } = useMemo(() => {
+    let maxTime = 0, totalDist = 0;
+    for (const [date, dayRec] of Object.entries(localDB)) {
+      if (date === dateStr) continue;
+      const t = parseFloat(String((dayRec as { swimTime?: unknown }).swimTime ?? '0')) || 0;
+      const d = parseFloat(String((dayRec as { swimDist?: unknown }).swimDist ?? '0')) || 0;
+      if (t > maxTime) maxTime = t;
+      totalDist += d;
+    }
+    return { historicalMaxSwimTime: maxTime, historicalTotalSwimDist: totalDist };
+  }, [localDB, dateStr]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const currentDaySwimTime = useMemo(
+    () => cardio.filter(e => e.k === 'swim').reduce((s, e) => s + (parseFloat(String(e.v1 ?? '0')) || 0), 0),
+    [cardio],
+  );
+  const currentDaySwimDist = useMemo(
+    () => cardio.filter(e => e.k === 'swim').reduce((s, e) => s + (parseFloat(String(e.v2 ?? '0')) || 0), 0),
+    [cardio],
+  );
 
   // Ref for the weight input so Enter on reps can advance focus
   const editWeightRef = useRef<HTMLInputElement>(null);
@@ -447,6 +517,66 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
     return prs;
   }, [lifts, prRecs]);
 
+  // Muscle groups that first crossed 1,000,000 lbs total volume on this specific day.
+  const millionGroupsCrossedToday = useMemo(() => {
+    const todayVol: Record<string, number> = {};
+    lifts.forEach(ex => {
+      if (!ex.g) return;
+      normalizeSets(ex).forEach(s => {
+        todayVol[ex.g!] = (todayVol[ex.g!] ?? 0) + (parseFloat(String(s.r ?? '1')) || 0) * (parseFloat(String(s.w ?? '0')) || 0);
+      });
+    });
+    if (Object.keys(todayVol).length === 0) return [];
+    const histVol: Record<string, number> = {};
+    for (const [date, dayRec] of Object.entries(localDB)) {
+      if (date === dateStr) continue;
+      parseEx(String((dayRec as { exercises?: string }).exercises ?? '')).forEach(ex => {
+        if (ex.k !== 'lift' || !ex.g) return;
+        normalizeSets(ex).forEach(s => {
+          histVol[ex.g!] = (histVol[ex.g!] ?? 0) + (parseFloat(String(s.r ?? '1')) || 0) * (parseFloat(String(s.w ?? '0')) || 0);
+        });
+      });
+    }
+    return Object.entries(todayVol)
+      .filter(([g, v]) => (histVol[g] ?? 0) + v >= 1_000_000 && (histVol[g] ?? 0) < 1_000_000)
+      .map(([g]) => g[0].toUpperCase() + g.slice(1));
+  }, [localDB, dateStr, lifts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Count consecutive logged days ending on (and including) dateStr.
+  const workoutStreakOnDate = useMemo((): number => {
+    const hasEx = (d: string) => String((localDB[d] as { exercises?: string } | undefined)?.exercises ?? '').length > 2;
+    if (!hasEx(dateStr)) return 0;
+    let streak = 1;
+    const cursor = new Date(dateStr + 'T00:00:00Z');
+    for (;;) {
+      cursor.setUTCDate(cursor.getUTCDate() - 1);
+      if (!hasEx(toDateStr(cursor))) break;
+      streak++;
+    }
+    return streak;
+  }, [localDB, dateStr]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Count consecutive days ending on dateStr where BOTH workout logged AND calorie goal hit.
+  const combinedStreakOnDate = useMemo((): number => {
+    const qualifies = (d: string): boolean => {
+      const rec   = (localDB[d] as { exercises?: string; calsEaten?: string; budget?: number | string } | undefined);
+      if (!rec) return false;
+      const hasEx = String(rec.exercises ?? '').length > 2;
+      const eaten = parseFloat(String(rec.calsEaten ?? '0'));
+      const bud   = parseFloat(String(rec.budget   ?? '0'));
+      return hasEx && eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= 100;
+    };
+    if (!qualifies(dateStr)) return 0;
+    let streak = 1;
+    const cursor = new Date(dateStr + 'T00:00:00Z');
+    for (;;) {
+      cursor.setUTCDate(cursor.getUTCDate() - 1);
+      if (!qualifies(toDateStr(cursor))) break;
+      streak++;
+    }
+    return streak;
+  }, [localDB, dateStr]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const today    = new Date();
   const todayStr = toDateStr(today);
   const isToday  = dateStr === todayStr;
@@ -468,9 +598,69 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
       <div className="p-5">
         <div className="flex items-center justify-between mb-5">
           <h2 className="que-section-label"><span className="dot" />{label}</h2>
-          <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px]">
-            {isToday ? 'Swipe ← → to browse days' : '← → to browse'}
-          </p>
+          <div className="flex items-center gap-3">
+            {rec.prBothDay && (
+              <div className="flex items-center gap-1.5">
+                <AutoCropImage src="/Badges/PR_both_lift_and_cardio.png" alt="Double PR Day" className="w-5 h-5 object-contain" />
+                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">Double PR</span>
+              </div>
+            )}
+            {parseFloat(String(rec.runDist  ?? '0')) > 0 &&
+             parseFloat(String(rec.bikeDist ?? '0')) > 0 &&
+             parseFloat(String(rec.swimTime ?? '0')) > 0 && (
+              <div className="flex items-center gap-1.5">
+                <AutoCropImage src="/Badges/Triathlete_badge.png" alt="Triathlete" className="w-5 h-5 object-contain" />
+                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">Triathlete</span>
+              </div>
+            )}
+            {millionGroupsCrossedToday.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <img src="/Badges/Million_pounds_lifted.png" alt="Million Lbs" className="w-5 h-5 object-contain" />
+                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
+                  1M — {millionGroupsCrossedToday.join(', ')}
+                </span>
+              </div>
+            )}
+            {workoutStreakOnDate >= 14 && (
+              <div className="flex items-center gap-1.5">
+                <img
+                  src={workoutStreakOnDate >= 50 ? '/Badges/seer_badge.png' : workoutStreakOnDate >= 30 ? '/Badges/master_badge.png' : '/Badges/scholar_badge.png'}
+                  alt="Streak"
+                  className="w-5 h-5 object-contain"
+                />
+                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
+                  {workoutStreakOnDate}d Streak
+                </span>
+              </div>
+            )}
+            {combinedStreakOnDate >= 50 && (
+              <div className="flex items-center gap-1.5">
+                <img src="/Badges/stoic_badge.png" alt="Stoic" className="w-5 h-5 object-contain" />
+                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
+                  Stoic
+                </span>
+              </div>
+            )}
+            {(parseFloat(String(rec.burn ?? '0')) || 0) >= 1000 && (
+              <div className="flex items-center gap-1.5">
+                <AutoCropImage src="/Badges/1000_calorie_burned_badge.png" alt="1000 Cal Burn" className="w-5 h-5 object-contain" />
+                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
+                  {Math.round(parseFloat(String(rec.burn ?? '0')))} kcal
+                </span>
+              </div>
+            )}
+            {(parseFloat(String(rec.calsEaten ?? '0')) || 0) >= 5000 && (
+              <div className="flex items-center gap-1.5">
+                <AutoCropImage src="/Badges/5000_calories_eaten.png" alt="5000 Cal Day" className="w-5 h-5 object-contain" />
+                <span className="font-mono text-[9px] font-bold tracking-[1px] text-[var(--accent)] uppercase">
+                  {Math.round(parseFloat(String(rec.calsEaten ?? '0')))} kcal
+                </span>
+              </div>
+            )}
+            <p className="font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px]">
+              {isToday ? 'Swipe ← → to browse days' : '← → to browse'}
+            </p>
+          </div>
         </div>
 
         {isEmpty ? (
@@ -623,15 +813,57 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                 <div className="flex flex-col gap-2">
                   {cardio.map((e, i) => {
                     const labels: Record<string, string> = { swim: 'SWIM', run: 'RUN', bike: 'BIKE' };
-                    const unit:   Record<string, string> = { swim: 'min', run: 'mi', bike: 'mi' };
+                    const v1unit: Record<string, string> = { swim: 'min', run: 'mi', bike: 'mi' };
+                    const v2unit: Record<string, string> = { swim: 'mi',  run: 'min', bike: 'min' };
+                    const runDist  = e.k === 'run'  ? (parseFloat(String(e.v1 ?? '0')) || 0) : 0;
+                    const bikeDist = e.k === 'bike' ? (parseFloat(String(e.v1 ?? '0')) || 0) : 0;
+                    const swimTime = e.k === 'swim' ? (parseFloat(String(e.v1 ?? '0')) || 0) : 0;
+                    const runBadgeIcon = e.k === 'run' ? (() => {
+                      const firstHit = RUN_MILESTONES.find(m => runDist >= m.threshold && historicalMaxRunDist < m.threshold)?.icon ?? null;
+                      if (firstHit) return firstHit;
+                      const lifetime = historicalTotalRunDist + currentDayRunDist;
+                      if (lifetime >= 50 && historicalTotalRunDist < 50) return '/Badges/Running_total_run_badge.png';
+                      return null;
+                    })() : null;
+                    const bikeBadgeIcon = e.k === 'bike' ? (() => {
+                      const lifetime = historicalTotalBikeDist + currentDayBikeDist;
+                      if (lifetime >= 1000 && historicalTotalBikeDist < 1000) return '/Badges/1000_miles_biked_badge.png';
+                      if (lifetime >= 50  && historicalTotalBikeDist < 50)   return '/Badges/Running_total_bike_badge.png';
+                      if (bikeDist >= 0.1 && historicalMaxBikeDist < 0.1)    return '/Badges/First_bike_badge.png';
+                      return null;
+                    })() : null;
+                    const swimBadgeIcon = e.k === 'swim' ? (() => {
+                      if (swimTime > 0 && historicalMaxSwimTime === 0) return '/Badges/First_swim_badge.png';
+                      const lifetime = historicalTotalSwimDist + currentDaySwimDist;
+                      if (lifetime >= 15 && historicalTotalSwimDist < 15) return '/Badges/Running_total_swim_badge.png';
+                      return null;
+                    })() : null;
+                    const cardioMilestoneBadge = runBadgeIcon ?? bikeBadgeIcon ?? swimBadgeIcon;
+                    const cardioMilesLabel = (() => {
+                      if (bikeBadgeIcon === '/Badges/Running_total_bike_badge.png')
+                        return `${Math.round(historicalTotalBikeDist + currentDayBikeDist)} mi`;
+                      if (runBadgeIcon === '/Badges/Running_total_run_badge.png')
+                        return `${Math.round(historicalTotalRunDist + currentDayRunDist)} mi`;
+                      if (swimBadgeIcon === '/Badges/Running_total_swim_badge.png')
+                        return `${(historicalTotalSwimDist + currentDaySwimDist).toFixed(1)} mi`;
+                      return null;
+                    })();
                     return (
                       <div key={i} className="flex items-center justify-between gap-3 py-1">
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-[10px] font-bold tracking-[1.5px] text-[var(--accent)] w-12">{labels[e.k]}</span>
                           <span className="text-[14px] text-[var(--ink-0)]">
-                            {e.v1 && <span className="font-mono">{e.v1} {unit[e.k]}</span>}
-                            {e.v2 && <span className="font-mono text-[var(--ink-2)]"> · {e.v2}min</span>}
+                            {e.v1 && <span className="font-mono">{e.v1} {v1unit[e.k]}</span>}
+                            {e.v2 && <span className="font-mono text-[var(--ink-2)]"> · {e.v2}{v2unit[e.k]}</span>}
                           </span>
+                          {cardioMilestoneBadge && (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <AutoCropImage src={cardioMilestoneBadge} alt="milestone" className="w-6 h-6 object-contain" />
+                              {cardioMilesLabel && (
+                                <span className="font-mono text-[10px] font-bold tracking-[1px] text-[var(--accent)]">{cardioMilesLabel}</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         {e.note && <span className="text-[12px] text-[var(--ink-2)] truncate">{e.note}</span>}
                       </div>
@@ -687,7 +919,7 @@ export default function CalendarScheduler() {
     if (!confirmClearDate) return;
     updateDayRecord(confirmClearDate, {
       exercises: '', notes: '', steps: 0,
-      runDist: 0, runTime: 0, bikeDist: 0, bikeTime: 0, swimTime: 0, burn: 0,
+      runDist: 0, runTime: 0, bikeDist: 0, bikeTime: 0, swimTime: 0, swimDist: 0, burn: 0,
     });
     setConfirmClearDate(null);
   }, [confirmClearDate, updateDayRecord]);
