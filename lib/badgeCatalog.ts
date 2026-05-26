@@ -87,7 +87,7 @@ export const BADGE_CATALOG: CatalogEntry[] = [
   { slug: 'stoic',   label: 'Stoic',   icon: '/Badges/stoic_badge.png',   category: 'nutrition', howToGet: 'Log workouts AND hit calorie goals every day for 50 days' },
 
   // ── First Meal ────────────────────────────────────────────────────────────────
-  { slug: 'first_meal', label: 'First Meal', icon: '/Badges/First_mean.png', category: 'nutrition', howToGet: 'Log calories for the first time' },
+  { slug: 'first_meal', label: 'First Meal', icon: '/Badges/First_meal.png', category: 'nutrition', howToGet: 'Log calories for the first time' },
 
   // ── Diet completion ───────────────────────────────────────────────────────────
   { slug: 'locked_in', label: 'Locked In', icon: '/Badges/Locked_in.png', category: 'nutrition', howToGet: 'Complete a diet plan and reach your goal weight (±5 lbs) in the final 2 weeks' },

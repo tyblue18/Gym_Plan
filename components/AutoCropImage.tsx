@@ -32,9 +32,25 @@ export function AutoCropImage({
       const raw = t.getImageData(0, 0, W, H);
       const d = raw.data;
 
+      // Sample corner pixels as background color references (handles colored backgrounds)
+      const cornerRefs: [number, number, number][] = [];
+      for (const [cx, cy] of [[0,0],[W-1,0],[0,H-1],[W-1,H-1]] as [number,number][]) {
+        const i = (cy * W + cx) * 4;
+        if (d[i + 3] > 10) cornerRefs.push([d[i], d[i + 1], d[i + 2]]);
+      }
+
       const visited = new Uint8Array(W * H);
-      const isBg = (i: number) =>
-        d[i + 3] < 10 || (d[i] > 185 && d[i + 1] > 185 && d[i + 2] > 185);
+      const isBg = (i: number) => {
+        if (d[i + 3] < 10) return true;
+        // Light/white background (original rule)
+        if (d[i] > 185 && d[i + 1] > 185 && d[i + 2] > 185) return true;
+        // Match any corner color within tolerance (handles colored/JPEG backgrounds)
+        for (const [r, g, b] of cornerRefs) {
+          const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b;
+          if (dr * dr + dg * dg + db * db < 900) return true; // ~30 RGB units
+        }
+        return false;
+      };
       const stack: number[] = [];
 
       for (const [cx, cy] of [[0,0],[W-1,0],[0,H-1],[W-1,H-1]] as [number,number][]) {
