@@ -16,7 +16,9 @@ import {
   AddFoodModal,
   FIXED_MEALS, MEAL_LABELS, DEFAULT_ORDER, getMealLabel,
 } from '@/components/calorie/AddFoodModal';
-import { useBudgetMetrics, type CardioFields } from '@/lib/metricsTypes';
+import { useBudgetMetrics, type CardioFields, parseNum, fmtDateLong, loadPlan } from '@/lib/metricsTypes';
+import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
+import { CelebrationModal, ProjectionModal } from '@/components/metrics/MetricsModals';
 
 // ── Calorie Coin system ───────────────────────────────────────────────────────
 
@@ -364,10 +366,82 @@ function FoodLogItem({ food, onRemove, onEdit, onMoveUp, onMoveDown, canMoveUp, 
   );
 }
 
+// ── Today's Log Card ─────────────────────────────────────────────────────────
+
+function DailyLogCard({
+  todayLabel, todayWeight, todayCals, todayProtein,
+  onWeightChange, onLogToday, undereatingWarning,
+}: {
+  todayLabel: string; todayWeight: string; todayCals: string; todayProtein: string;
+  onWeightChange: (v: string) => void;
+  onLogToday: () => void;
+  undereatingWarning: boolean;
+}) {
+  const spotlight = useSpotlightBorder({ color: '79,195,247', size: 260, opacity: 0.45 });
+
+  return (
+    <div
+      ref={spotlight.ref}
+      onMouseMove={spotlight.onMouseMove}
+      onMouseLeave={spotlight.onMouseLeave}
+      onTouchMove={spotlight.onTouchMove}
+      onTouchEnd={spotlight.onTouchEnd}
+      className="que-card mb-4"
+    >
+      {spotlight.Overlay}
+      <div className="p-5">
+        <div className="flex items-baseline justify-between mb-5">
+          <h2 className="que-section-label"><span className="dot" />TODAY&apos;S LOG</h2>
+          <span className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px]">{todayLabel}</span>
+        </div>
+
+        {undereatingWarning && (
+          <div className="flex items-start gap-2 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/6 px-3 py-2.5 mb-4">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFB547" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-px" aria-hidden>
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <p className="font-mono text-[9px] text-[var(--warn)] leading-relaxed tracking-[0.3px]">
+              You&apos;ve been eating well under budget for 3+ days — this can slow metabolism over time.
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div>
+            <label className="que-label">Weight / lbs</label>
+            <input
+              type="number" inputMode="decimal" className="que-input"
+              value={todayWeight} onChange={e => onWeightChange(e.target.value)}
+              placeholder="e.g. 180"
+            />
+          </div>
+          <div>
+            <label className="que-label">Calories</label>
+            <div className="que-input flex items-center font-mono text-[13px] text-[var(--ink-1)] bg-[var(--bg-3)] cursor-default select-none">
+              {todayCals || '—'}
+            </div>
+          </div>
+          <div>
+            <label className="que-label">Protein / g</label>
+            <div className="que-input flex items-center font-mono text-[13px] text-[var(--ink-1)] bg-[var(--bg-3)] cursor-default select-none">
+              {todayProtein || '—'}
+            </div>
+          </div>
+        </div>
+
+        <button onClick={onLogToday} className="que-btn-primary w-full">
+          LOG TODAY
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Calorie Tracker ──────────────────────────────────────────────────────
 
 export default function CalorieTracker() {
-  const { localDB, updateDayRecord, todayStr, today, profile } = useApp();
+  const { localDB, updateDayRecord, todayStr, today, profile, persistProfile, getLastKnownWeight } = useApp();
   const todayRec = localDB[todayStr] ?? {};
   const [showModal,    setShowModal]    = useState(false);
   const [targetMeal,   setTargetMeal]   = useState<string>('breakfast');
@@ -375,6 +449,9 @@ export default function CalorieTracker() {
   const [pendingCoin,   setPendingCoin]  = useState<{ date: string; label: string; amount: number } | null>(null);
   const [macroGoals,    setMacroGoals]   = useState<MacroGoals | null>(() => loadMacroGoals());
   const [showMacroModal, setShowMacroModal] = useState(false);
+  const [todayWeight, setTodayWeight] = useState('');
+  const [projVisible,      setProjVisible]      = useState(false);
+  const [celebrateVisible, setCelebrateVisible] = useState(false);
 
   const foods = useMemo((): FoodEntry[] => {
     try { return JSON.parse(String(todayRec.foods ?? '[]')); }
@@ -421,6 +498,56 @@ export default function CalorieTracker() {
   const proteinTarget = Math.round(parseFloat(profile.weight) * 0.8) || 0;
 
   const todayGoalHit = budget > 0 && totals.kcal > 0 && Math.abs(totals.kcal - budget) <= GOAL_TOLERANCE;
+
+  // Sync todayWeight from localDB on load / date change
+  useEffect(() => {
+    const w = String(todayRec.weight ?? getLastKnownWeight(todayStr) ?? '');
+    setTodayWeight(w);
+  }, [todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleWeightChange = useCallback((val: string) => {
+    setTodayWeight(val);
+    updateDayRecord(todayStr, { weight: val });
+    if (val && parseFloat(val) > 0) persistProfile({ weight: val });
+  }, [todayStr, updateDayRecord, persistProfile]);
+
+  const undereatingWarning = useMemo(() => {
+    const days = Object.keys(localDB).sort().reverse();
+    let streak = 0;
+    for (const ds of days) {
+      const r = localDB[ds];
+      const eaten  = parseNum(String(r.calsEaten ?? 0));
+      const bud    = parseNum(String(r.budget    ?? 0));
+      if (bud > 0 && eaten > 0 && eaten < bud * 0.60) streak++;
+      else break;
+      if (streak >= 3) return true;
+    }
+    return false;
+  }, [localDB]);
+
+  const handleLogToday = useCallback(() => {
+    updateDayRecord(todayStr, {
+      burn:   liveMetrics.activityBurn,
+      budget: liveMetrics.budget || baseBudget,
+      ...(todayWeight && parseFloat(todayWeight) > 0 && { weight: todayWeight }),
+    });
+    const plan = typeof window !== 'undefined' ? loadPlan() : null;
+    const cals = totals.kcal;
+    const bud  = liveMetrics.budget || baseBudget;
+    let hitGoalFlag = false;
+    if (cals > 0 && bud > 0) {
+      const minReasonable = bud * 0.40;
+      hitGoalFlag = plan?.type === 'bulk'
+        ? cals >= bud * 0.9 && cals <= bud * 1.15
+        : cals <= bud && cals >= minReasonable;
+    }
+    if (hitGoalFlag) {
+      navigator.vibrate?.([50, 30, 80]);
+      setCelebrateVisible(true);
+    } else {
+      setProjVisible(true);
+    }
+  }, [todayStr, liveMetrics, baseBudget, todayWeight, totals.kcal, updateDayRecord]);
 
   // On mount: scan past days for unawarded coins (only days before today).
   useEffect(() => {
@@ -877,6 +1004,16 @@ export default function CalorieTracker() {
         Nutrition data from USDA FoodData Central &amp; Open Food Facts
       </p>
 
+      <DailyLogCard
+        todayLabel={fmtDateLong(todayStr)}
+        todayWeight={todayWeight}
+        todayCals={totals.kcal > 0 ? String(Math.round(totals.kcal)) : ''}
+        todayProtein={totals.protein > 0 ? String(Math.round(totals.protein)) : ''}
+        onWeightChange={handleWeightChange}
+        onLogToday={handleLogToday}
+        undereatingWarning={undereatingWarning}
+      />
+
       <AddFoodModal
         open={showModal}
         onClose={() => setShowModal(false)}
@@ -931,6 +1068,23 @@ export default function CalorieTracker() {
         onClose={() => setEditingFood(null)}
         onSave={saveEditedFood}
         mealOrder={mealOrder}
+      />
+
+      <CelebrationModal
+        open={celebrateVisible}
+        onClose={() => setCelebrateVisible(false)}
+        localDB={localDB}
+        calsEaten={totals.kcal}
+        budget={budget}
+      />
+
+      <ProjectionModal
+        open={projVisible}
+        m={liveMetrics}
+        weightLbs={parseFloat(todayWeight || profile.weight) || 0}
+        calsEaten={totals.kcal}
+        localDB={localDB}
+        onClose={() => setProjVisible(false)}
       />
     </div>
   );

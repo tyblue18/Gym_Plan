@@ -39,7 +39,7 @@ function loadCoins(): { total: number; awardedDates: string[] } {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function MorningWeightPrompt() {
-  const { isLoaded, localDB, todayStr, today, profile, updateDayRecord, persistProfile, getLastKnownWeight } = useApp();
+  const { localDB, todayStr, today, profile, updateDayRecord, persistProfile, getLastKnownWeight } = useApp();
 
   const [open,   setOpen]   = useState(false);
   const [weight, setWeight] = useState('');
@@ -60,15 +60,10 @@ export function MorningWeightPrompt() {
     ].join('-');
   }, [today]);
 
-  // Re-check on every app foreground (visibilitychange) so the prompt reappears
-  // on mobile PWA re-opens. A 5-minute cooldown prevents re-showing on quick switches.
-  //
-  // IMPORTANT: todayStr must NOT be captured from the outer scope — if the PWA
-  // stays in background overnight, the closure would hold yesterday's date and
-  // suppress the prompt even though it's a new day. We compute it fresh each time.
+  // This component only mounts once isLoaded=true and onboarding is done
+  // (gated in WorkoutPage), so we can fire immediately on mount with no guard.
+  // We read localStorage directly — no React state needed for the blocked() check.
   useEffect(() => {
-    if (!isLoaded) return;
-
     const nowStr = () => {
       const d = new Date();
       return [
@@ -83,28 +78,21 @@ export function MorningWeightPrompt() {
       (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000);
 
     const show = () => {
-      const today = nowStr();
-      const last = getLastKnownWeightRef.current(today);
+      const last = getLastKnownWeightRef.current(nowStr());
       if (last) setWeight(last);
       setOpen(true);
     };
 
-    // On mount: no visibilityState guard. The user just opened the app —
-    // visibilityState can still be 'hidden' during the iOS PWA splash screen
-    // while React is already hydrated. Guarding here causes the prompt to
-    // silently skip because iOS never fires visibilitychange on initial open.
     if (!blocked()) show();
 
-    // On foreground resume: re-check when the user brings the app back.
-    // visibilityState guard is correct here — we only want to show on actual re-open.
+    // On foreground resume (PWA brought back from background)
     const onForeground = () => {
       if (document.visibilityState !== 'visible') return;
       if (!blocked()) show();
     };
-
     document.addEventListener('visibilitychange', onForeground);
     return () => document.removeEventListener('visibilitychange', onForeground);
-  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dismiss = (saveWeight: boolean) => {
     const didEnter = saveWeight && weight && parseFloat(weight) > 0;

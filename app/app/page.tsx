@@ -74,7 +74,7 @@ export default function WorkoutPage() {
       {showOnboarding && (
         <Onboarding onComplete={() => setOnboarding(false)} />
       )}
-      <MorningWeightPrompt />
+      {!showOnboarding && isLoaded && <MorningWeightPrompt />}
     </div>
   );
 }

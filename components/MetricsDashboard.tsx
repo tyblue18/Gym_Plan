@@ -273,6 +273,15 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
     setCardioModal(null);
   }, [cardioModal, f1, f2, todayStr, updateDayRecord]);
 
+  const clearCardio = useCallback((kind: 'run' | 'bike' | 'swim') => {
+    const clears: Partial<Record<string, number>> = kind === 'run'
+      ? { runDist: 0, runTime: 0 }
+      : kind === 'bike'
+      ? { bikeDist: 0, bikeTime: 0 }
+      : { swimTime: 0 };
+    updateDayRecord(todayStr, clears as Parameters<typeof updateDayRecord>[1]);
+  }, [todayStr, updateDayRecord]);
+
   const todayRec = localDB[todayStr] ?? {};
   const runDist  = parseNum(String(todayRec.runDist  ?? 0));
   const bikeDist = parseNum(String(todayRec.bikeDist ?? 0));
@@ -436,7 +445,7 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
                     : 'border-[var(--line-2)] bg-[var(--bg-2)] hover:border-[var(--accent)] transition-all cursor-pointer',
                 ].join(' ')}
                 style={lit ? {
-                  background: 'rgba(109,255,153,0.05)',
+                  background: 'var(--tile-bg-lit)',
                   animation:  'tile-glow-pulse 2.8s ease-in-out infinite',
                 } : undefined}
                 title={t.dim ? undefined : 'Tap to log'}
@@ -458,6 +467,15 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
                       {prFlags?.[`pr${t.key.charAt(0).toUpperCase()}${t.key.slice(1)}` as keyof PRFlags] && (
                         <PRBadge size={36} />
                       )}
+                      {lit && (
+                        <button
+                          onClick={e => { e.stopPropagation(); clearCardio(t.key as 'run' | 'bike' | 'swim'); }}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[var(--ink-3)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors"
+                          title="Clear"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
                       <ActivityIcon kind={t.key as 'run' | 'bike' | 'swim'} active={lit} size={28} />
                     </div>
                   )}
@@ -468,7 +486,7 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
                       className="font-display tabular leading-none text-[26px]"
                       style={{
                         color:      t.dim ? 'var(--ink-3)' : lit ? 'var(--positive)' : 'var(--accent)',
-                        textShadow: t.dim || !lit ? 'none' : '0 0 16px rgba(109,255,153,0.3)',
+                        textShadow: t.dim || !lit ? 'none' : '0 0 16px var(--tile-text-glow)',
                       }}
                     >
                       {t.value > 0 ? fmt(t.value) : '—'}
@@ -833,90 +851,6 @@ function WeeklyVolumeCard() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENT — DailyLogCard
-// ─────────────────────────────────────────────────────────────────────────────
-
-function DailyLogCard({
-  todayLabel, todayWeight, todayCals, todayProtein,
-  onWeightChange, onCalsChange, onProteinChange, onLogToday,
-  undereatingWarning,
-}: {
-  todayLabel: string; todayWeight: string; todayCals: string; todayProtein: string;
-  onWeightChange:  (v: string) => void;
-  onCalsChange:    (v: string) => void;
-  onProteinChange: (v: string) => void;
-  onLogToday: () => void;
-  undereatingWarning: boolean;
-}) {
-  const spotlight = useSpotlightBorder({ color: '79,195,247', size: 260, opacity: 0.45 });
-
-  return (
-    <div
-      ref={spotlight.ref}
-      onMouseMove={spotlight.onMouseMove}
-      onMouseLeave={spotlight.onMouseLeave}
-      onTouchMove={spotlight.onTouchMove}
-      onTouchEnd={spotlight.onTouchEnd}
-      className="que-card mb-4"
-    >
-      {spotlight.Overlay}
-      <div className="p-5">
-        <div className="flex items-baseline justify-between mb-5">
-          <h2 className="que-section-label"><span className="dot" />TODAY&apos;S LOG</h2>
-          <span className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px]">{todayLabel}</span>
-        </div>
-
-        {undereatingWarning && (
-          <div className="flex items-start gap-2 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/6 px-3 py-2.5 mb-4">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFB547" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-px" aria-hidden>
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            <p className="font-mono text-[9px] text-[var(--warn)] leading-relaxed tracking-[0.3px]">
-              You&apos;ve been eating well under budget for 3+ days — this can slow metabolism over time.
-            </p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="que-label">Weight / lbs</label>
-            <input
-              type="number" inputMode="decimal" className="que-input"
-              value={todayWeight} onChange={e => onWeightChange(e.target.value)}
-              placeholder="e.g. 180"
-            />
-          </div>
-          <div>
-            <label className="que-label">Calories Eaten</label>
-            <input
-              type="number" inputMode="numeric" className="que-input"
-              value={todayCals} onChange={e => onCalsChange(e.target.value)}
-              placeholder="e.g. 1800"
-            />
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <label className="que-label">
-            Protein / g
-            <span className="ml-1.5 font-normal text-[var(--ink-3)] normal-case tracking-normal">(optional)</span>
-          </label>
-          <input
-            type="number" inputMode="numeric" className="que-input"
-            value={todayProtein} onChange={e => onProteinChange(e.target.value)}
-            placeholder="e.g. 150"
-          />
-        </div>
-
-        <button onClick={onLogToday} className="que-btn-primary w-full">
-          LOG TODAY
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — ActivityLogCard
@@ -1467,18 +1401,6 @@ export default function MetricsDashboard() {
       {profileOpen && <ProfilePanel profile={profile} onChange={handleProfileChange} onOpenPlan={() => setPlanOpen(true)} onOpenRunPlan={() => setRunPlanOpen(true)} />}
 
       <CalorieBudgetCard m={m} onOpenProgress={() => setProgressOpen(true)} prFlags={prFlags} />
-
-      <DailyLogCard
-        todayLabel={fmtDateLong(todayStr)}
-        todayWeight={todayWeight}
-        todayCals={todayCals}
-        todayProtein={todayProtein}
-        onWeightChange={handleWeightChange}
-        onCalsChange={handleCalsChange}
-        onProteinChange={handleProteinChange}
-        onLogToday={handleLogToday}
-        undereatingWarning={undereatingWarning}
-      />
 
       <WeeklyVolumeCard />
       <TrophyCaseCard />

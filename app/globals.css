@@ -668,17 +668,43 @@ html, body { height: 100%; background: var(--bg-0); color: var(--ink-0); }
 @keyframes glowPulseB { 0%,100%{opacity:.30;transform:scale(1);} 50%{opacity:.55;transform:scale(1.06);} }
 @keyframes glowPulseC { 0%,100%{opacity:.18;transform:scale(1);} 50%{opacity:.38;transform:scale(1.10);} }
 
+/* Activity tile animation color tokens — overridden in light mode */
+:root {
+  --tile-bg-lit:    rgba(109,255,153,0.05);
+  --tile-text-glow: rgba(109,255,153,0.30);
+  --tile-flash-0:   rgba(109,255,153,0.32);
+  --tile-flash-1:   rgba(109,255,153,0.12);
+  --tile-glow-lo-a: rgba(109,255,153,0.28);
+  --tile-glow-hi-a: rgba(109,255,153,0.52);
+  --tile-glow-lo-b: rgba(109,255,153,0.14);
+  --tile-glow-hi-b: rgba(109,255,153,0.26);
+  --tile-glow-lo-c: rgba(109,255,153,0.06);
+  --tile-glow-hi-c: rgba(109,255,153,0.12);
+}
+[data-theme="light"] {
+  --tile-bg-lit:    rgba(22,163,74,0.07);
+  --tile-text-glow: rgba(22,163,74,0.50);
+  --tile-flash-0:   rgba(22,163,74,0.28);
+  --tile-flash-1:   rgba(22,163,74,0.10);
+  --tile-glow-lo-a: rgba(22,163,74,0.45);
+  --tile-glow-hi-a: rgba(22,163,74,0.75);
+  --tile-glow-lo-b: rgba(22,163,74,0.22);
+  --tile-glow-hi-b: rgba(22,163,74,0.42);
+  --tile-glow-lo-c: rgba(22,163,74,0.08);
+  --tile-glow-hi-c: rgba(22,163,74,0.18);
+}
+
 /* Activity tile — one-shot green flash when an activity is logged */
 @keyframes tile-activate {
-  0%   { background: rgba(109,255,153,0.32); }
-  55%  { background: rgba(109,255,153,0.12); }
+  0%   { background: var(--tile-flash-0); }
+  55%  { background: var(--tile-flash-1); }
   100% { background: transparent; }
 }
 
 /* Activity tile — persistent breathing glow while logged */
 @keyframes tile-glow-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(109,255,153,0.28), 0 0 18px rgba(109,255,153,0.14), 0 0 36px rgba(109,255,153,0.06); }
-  50%       { box-shadow: 0 0 0 1px rgba(109,255,153,0.52), 0 0 28px rgba(109,255,153,0.26), 0 0 56px rgba(109,255,153,0.12); }
+  0%, 100% { box-shadow: 0 0 0 1px var(--tile-glow-lo-a), 0 0 18px var(--tile-glow-lo-b), 0 0 36px var(--tile-glow-lo-c); }
+  50%       { box-shadow: 0 0 0 1px var(--tile-glow-hi-a), 0 0 28px var(--tile-glow-hi-b), 0 0 56px var(--tile-glow-hi-c); }
 }
 
 /* Custom scrollbar */
