@@ -893,9 +893,30 @@ export default function WorkoutLogger() {
   const [activeSection, setActiveSection] = useState<'lifting' | 'cardio'>('lifting');
   const [confirmClear, setConfirmClear] = useState(false);
   const [earnedBadges, setEarnedBadges] = useState<EarnedBadge[]>([]);
-  // Tracks badges shown optimistically so the server response doesn't double-show them.
-  // Cleared when the server confirms, deleted when a badge is revoked (so re-earn works).
-  const optimisticallyShownRef = useRef<Set<string>>(new Set());
+  // Persisted across refreshes so badge popups never re-fire for already-earned badges.
+  // Cleared per-slug only when a badge is revoked, enabling re-earn popups.
+  const optimisticallyShownRef = useRef<Set<string>>((() => {
+    try { return new Set(JSON.parse(localStorage.getItem('queShownBadgePopups') ?? '[]') as string[]); }
+    catch { return new Set<string>(); }
+  })());
+
+  const markShown = useCallback((slug: string) => {
+    optimisticallyShownRef.current.add(slug);
+    try {
+      const all = new Set(JSON.parse(localStorage.getItem('queShownBadgePopups') ?? '[]') as string[]);
+      all.add(slug);
+      localStorage.setItem('queShownBadgePopups', JSON.stringify([...all]));
+    } catch { /* noop */ }
+  }, []);
+
+  const unmarkShown = useCallback((slug: string) => {
+    optimisticallyShownRef.current.delete(slug);
+    try {
+      const all = new Set(JSON.parse(localStorage.getItem('queShownBadgePopups') ?? '[]') as string[]);
+      all.delete(slug);
+      localStorage.setItem('queShownBadgePopups', JSON.stringify([...all]));
+    } catch { /* noop */ }
+  }, []);
 
   // Stable keys for Reorder (parallel to exercises array, never derived)
   const exerciseKeysRef = useRef<string[]>([]);
@@ -959,11 +980,11 @@ export default function WorkoutLogger() {
 
         const { earned, revokedSlugs } = diffLiftBadges(oldPRs, prRecs);
         // Clear revoked slugs so re-earning them later shows the popup again.
-        for (const slug of revokedSlugs) optimisticallyShownRef.current.delete(slug);
+        for (const slug of revokedSlugs) unmarkShown(slug);
         if (earned.length > 0) {
           setEarnedBadges(prev => [...prev, ...earned]);
           navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
-          for (const b of earned) optimisticallyShownRef.current.add(b.slug);
+          for (const b of earned) markShown(b.slug);
         }
 
         // Still push to server so badges are persisted in the DB.
@@ -1392,7 +1413,7 @@ export default function WorkoutLogger() {
     if (optimisticallyShownRef.current.has('pr_both')) return;
 
     prevPrBothRef.current = true;
-    optimisticallyShownRef.current.add('pr_both');
+    markShown('pr_both');
     setEarnedBadges(prev => [...prev, {
       slug: 'pr_both', label: 'Double PR Day', icon: '/Badges/PR_both_lift_and_cardio.png', category: 'lift',
     }]);
@@ -1504,7 +1525,7 @@ export default function WorkoutLogger() {
     if (optimisticallyShownRef.current.has('triathlete')) return;
 
     prevTriathleteRef.current = true;
-    optimisticallyShownRef.current.add('triathlete');
+    markShown('triathlete');
     setEarnedBadges(prev => [...prev, {
       slug: 'triathlete', label: 'Triathlete', icon: '/Badges/Triathlete_badge.png', category: 'cardio',
     }]);
@@ -1543,7 +1564,7 @@ export default function WorkoutLogger() {
     if (prevBurnRef.current === null) { prevBurnRef.current = todayBurn; return; }
     if (todayBurn >= 1000 && prevBurnRef.current < 1000 && historicalMaxBurn < 1000) {
       if (!optimisticallyShownRef.current.has('cal_1000')) {
-        optimisticallyShownRef.current.add('cal_1000');
+        markShown('cal_1000');
         setEarnedBadges(prev => [...prev, {
           slug: 'cal_1000', label: '1,000 Cal Burn', icon: '/Badges/1000_calorie_burned_badge.png', category: 'cardio' as const,
         }]);
@@ -1576,7 +1597,7 @@ export default function WorkoutLogger() {
     for (const def of CAL_EAT_BADGES) {
       if (todayCalsEaten >= def.threshold && prevCalsEatenRef.current < def.threshold) {
         if (!optimisticallyShownRef.current.has(def.slug)) {
-          optimisticallyShownRef.current.add(def.slug);
+          markShown(def.slug);
           const maxEver = Math.max(todayCalsEaten, historicalMaxCalsEaten);
           setEarnedBadges(prev => [...prev, {
             slug:     def.slug,
@@ -1626,7 +1647,7 @@ export default function WorkoutLogger() {
     for (const g of newGroups) knownMillionGroupsRef.current.add(g);
     try { localStorage.setItem('queMillionGroups', JSON.stringify([...knownMillionGroupsRef.current])); } catch { /* noop */ }
 
-    optimisticallyShownRef.current.add('million_lbs');
+    markShown('million_lbs');
     setEarnedBadges(prev => [...prev, {
       slug:     'million_lbs',
       label:    `Million Lbs — ${newGroups.map(g => capitalize(g)).join(', ')}`,
@@ -1685,7 +1706,7 @@ export default function WorkoutLogger() {
     for (const def of STREAK_BADGES) {
       if (maxWorkoutStreak >= def.threshold && prevMaxWorkoutStreakRef.current < def.threshold) {
         if (!optimisticallyShownRef.current.has(def.slug)) {
-          optimisticallyShownRef.current.add(def.slug);
+          markShown(def.slug);
           setEarnedBadges(prev => [...prev, { slug: def.slug, label: def.label, icon: def.icon, category: 'nutrition' as const }]);
           navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
           pushNow({ settings: gatherSettings() });
@@ -1703,7 +1724,7 @@ export default function WorkoutLogger() {
     }
     if (maxCombinedStreak >= 50 && prevMaxCombinedStreakRef.current < 50) {
       if (!optimisticallyShownRef.current.has('stoic')) {
-        optimisticallyShownRef.current.add('stoic');
+        markShown('stoic');
         setEarnedBadges(prev => [...prev, {
           slug: 'stoic', label: 'Stoic', icon: '/Badges/stoic_badge.png', category: 'nutrition' as const,
         }]);
@@ -1721,7 +1742,7 @@ export default function WorkoutLogger() {
       const badges = (e as CustomEvent<EarnedBadge[]>).detail;
       if (!badges?.length) return;
       const toShow = badges.filter(b => !optimisticallyShownRef.current.has(b.slug));
-      for (const b of badges) optimisticallyShownRef.current.delete(b.slug);
+      for (const b of badges) unmarkShown(b.slug);
       if (toShow.length > 0) {
         setEarnedBadges(prev => [...prev, ...toShow]);
         navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
