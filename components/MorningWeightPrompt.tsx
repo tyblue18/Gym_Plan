@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { X } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import type { UserProfile } from '@/lib/AppContext';
 
@@ -38,7 +39,7 @@ function loadCoins(): { total: number; awardedDates: string[] } {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function MorningWeightPrompt() {
-  const { isLoaded, localDB, todayStr, today, profile, updateDayRecord, getLastKnownWeight } = useApp();
+  const { isLoaded, localDB, todayStr, today, profile, updateDayRecord, persistProfile, getLastKnownWeight } = useApp();
 
   const [open,   setOpen]   = useState(false);
   const [weight, setWeight] = useState('');
@@ -67,32 +68,56 @@ export function MorningWeightPrompt() {
   // suppress the prompt even though it's a new day. We compute it fresh each time.
   useEffect(() => {
     if (!isLoaded) return;
-    const maybeShow = () => {
-      if (document.visibilityState !== 'visible') return;
+
+    const nowStr = () => {
       const d = new Date();
-      const nowStr = [
+      return [
         d.getFullYear(),
         String(d.getMonth() + 1).padStart(2, '0'),
         String(d.getDate()).padStart(2, '0'),
       ].join('-');
-      if (localStorage.getItem(RECAP_KEY) === nowStr) return;
-      if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
-      const last = getLastKnownWeightRef.current(nowStr);
+    };
+
+    const blocked = () =>
+      localStorage.getItem(RECAP_KEY) === nowStr() ||
+      (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000);
+
+    const show = () => {
+      const today = nowStr();
+      const last = getLastKnownWeightRef.current(today);
       if (last) setWeight(last);
       setOpen(true);
     };
-    maybeShow();
-    document.addEventListener('visibilitychange', maybeShow);
-    return () => document.removeEventListener('visibilitychange', maybeShow);
-  }, [isLoaded]);
+
+    // On mount: no visibilityState guard. The user just opened the app —
+    // visibilityState can still be 'hidden' during the iOS PWA splash screen
+    // while React is already hydrated. Guarding here causes the prompt to
+    // silently skip because iOS never fires visibilitychange on initial open.
+    if (!blocked()) show();
+
+    // On foreground resume: re-check when the user brings the app back.
+    // visibilityState guard is correct here — we only want to show on actual re-open.
+    const onForeground = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!blocked()) show();
+    };
+
+    document.addEventListener('visibilitychange', onForeground);
+    return () => document.removeEventListener('visibilitychange', onForeground);
+  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dismiss = (saveWeight: boolean) => {
     const didEnter = saveWeight && weight && parseFloat(weight) > 0;
     if (didEnter) {
+      // Save to today's day record (weight history / chart)
       updateDayRecord(todayStr, { weight });
+      // Update profile weight so BMR, budget, and all calorie calculations
+      // use the fresh number immediately everywhere in the app
+      persistProfile({ weight });
+      // Only permanently block today's prompt once weight is actually logged
+      localStorage.setItem(RECAP_KEY, todayStr);
     }
-    // Always mark today as seen so the prompt doesn't re-fire on PWA reopen
-    localStorage.setItem(RECAP_KEY, todayStr);
+    // Always set cooldown so it doesn't re-flash on quick foreground/background switches
     dismissedAtRef.current = Date.now();
     setOpen(false);
   };
@@ -165,9 +190,16 @@ export function MorningWeightPrompt() {
           >
             {/* Header */}
             <div
-              className="px-6 pt-6 pb-5 bg-[var(--bg-2)]"
+              className="px-6 pt-6 pb-5 bg-[var(--bg-2)] relative"
               style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
             >
+              <button
+                onClick={() => dismiss(false)}
+                className="absolute top-4 right-4 p-1.5 rounded-lg text-[var(--ink-3)] hover:text-[var(--ink-1)] hover:bg-[var(--bg-3)] transition-colors"
+                aria-label="Close"
+              >
+                <X size={14} />
+              </button>
               <p className="font-mono text-[9px] font-bold tracking-[2.5px] uppercase text-[var(--accent)] mb-1">
                 {dayLabel} · {dateLabel}
               </p>

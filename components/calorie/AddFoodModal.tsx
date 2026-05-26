@@ -339,9 +339,16 @@ export function AddFoodModal({ open, onClose, onAdd }: {
   const videoRef      = useRef<HTMLVideoElement>(null);
   const controlsRef   = useRef<{ stop: () => void } | null>(null);
   const debounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Pre-loaded ZXing module — avoids async import inside the click handler which
+  // breaks the user-gesture chain iOS requires for getUserMedia
+  const zxingRef      = useRef<typeof import('@zxing/browser') | null>(null);
 
-  // Reset on close
+  // Pre-warm ZXing when modal opens so the module is cached before startCamera
+  // is called — avoids an async boundary between the user gesture and getUserMedia
   useEffect(() => {
+    if (open && !zxingRef.current) {
+      import('@zxing/browser').then(mod => { zxingRef.current = mod; }).catch(() => {});
+    }
     if (!open) {
       setMode('scan'); setSearchQuery(''); setSearchResults([]);
       setManualBarcode(''); setSelectedProduct(null); setError('');
@@ -359,7 +366,8 @@ export function AddFoodModal({ open, onClose, onAdd }: {
     setError('');
     setScanning(true);
     try {
-      const { BrowserMultiFormatReader } = await import('@zxing/browser');
+      // Use pre-warmed module if available, otherwise import (fallback)
+      const { BrowserMultiFormatReader } = zxingRef.current ?? await import('@zxing/browser');
       if (!videoRef.current) { setScanning(false); return; }
       const reader = new BrowserMultiFormatReader();
       let handled = false;
@@ -548,7 +556,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                         <video
                           ref={videoRef}
                           className={['block w-full h-full object-cover', scanning ? '' : 'hidden'].join(' ')}
-                          playsInline muted
+                          playsInline autoPlay muted
                         />
                         {!scanning && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
