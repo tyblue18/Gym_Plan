@@ -6,6 +6,7 @@ import { X } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import { GOAL_TOLERANCE, WEIGHT_PROMPT_KEY } from '@/lib/constants';
 import { computeBaseBudget, loadCoins } from '@/lib/calorie-utils';
+import { toDateStr } from '@/lib/metricsTypes';
 
 // set to today's date-string on dismiss so the prompt only shows once per day
 const PROMPT_KEY = WEIGHT_PROMPT_KEY;
@@ -17,7 +18,16 @@ function fmt(n: number) {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function MorningWeightPrompt() {
-  const { localDB, todayStr, today, profile, updateDayRecord, persistProfile, getLastKnownWeight } = useApp();
+  const { localDB, profile, updateDayRecord, persistProfile, getLastKnownWeight } = useApp();
+
+  // Live "today" — AppContext derives today/todayStr once at mount and never
+  // refreshes them. On a mobile PWA the page is frozen and resumed (not remounted),
+  // so that value goes stale across midnight — which broke this prompt both ways:
+  // it stopped firing on a genuinely new day, and it reshowed on a 5-min loop because
+  // the dismiss key never matched the stale comparison date. We keep our own clock
+  // and refresh it (setNow) whenever we actually open the prompt.
+  const [now, setNow] = useState<Date>(() => new Date());
+  const today = now;
 
   const [open,   setOpen]   = useState(false);
   const [weight, setWeight] = useState('');
@@ -37,48 +47,57 @@ export function MorningWeightPrompt() {
     ].join('-');
   }, [today]);
 
-  // Blocked for today only if the user already dismissed the prompt today.
-  // Weight presence is NOT a blocker — the prompt is the UI for logging weight,
-  // so it should show regardless of whether weight came in via cloud sync.
-  const dismissedToday = () => localStorage.getItem(PROMPT_KEY) === todayStr;
+  // Decide whether to open the prompt. Always compares against a freshly-computed
+  // date string (never a value captured at render/mount), so a long-lived PWA still
+  // recognises that the day has rolled over. Weight presence is NOT a blocker — the
+  // prompt is the UI for logging weight, so it shows regardless of whether weight
+  // already arrived via cloud sync. Held in a ref so the stable event listeners
+  // below always invoke the latest implementation without re-subscribing.
+  const tryShow = useRef<() => void>(() => {});
+  tryShow.current = () => {
+    const liveStr = toDateStr(new Date());
+    // Already dismissed/handled today.
+    if (localStorage.getItem(PROMPT_KEY) === liveStr) return;
+    // Just dismissed moments ago — don't nag on a quick app-switch round-trip.
+    if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
+    setNow(new Date()); // refresh recap/streak/greeting to the real current day
+    const last = getLastKnownWeightRef.current(liveStr);
+    if (last) setWeight(last);
+    setOpen(true);
+  };
 
   useEffect(() => {
     // Clean up old keys from previous code versions so they don't interfere.
     localStorage.removeItem('queLastRecapDate');
 
     // Show after a short delay so the app shell settles before the modal appears.
-    const timer = setTimeout(() => {
-      if (dismissedToday()) return;
-      if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
-      const last = getLastKnownWeightRef.current(todayStr);
-      if (last) setWeight(last);
-      setOpen(true);
-    }, 500);
+    const timer = setTimeout(() => tryShow.current(), 500);
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-show when PWA comes back to foreground (e.g., app switcher → reopen).
+  // Re-show when the PWA comes back to foreground (app switcher → reopen). This,
+  // not the mount effect, is the path that runs on mobile — the page is resumed
+  // rather than remounted, so it must re-derive the date itself.
   useEffect(() => {
     const onForeground = () => {
       if (document.visibilityState !== 'visible') return;
-      if (dismissedToday()) return;
-      if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
-      const last = getLastKnownWeightRef.current(todayStr);
-      if (last) setWeight(last);
-      setOpen(true);
+      tryShow.current();
     };
     document.addEventListener('visibilitychange', onForeground);
     return () => document.removeEventListener('visibilitychange', onForeground);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dismiss = (saveWeight: boolean) => {
+    const liveStr  = toDateStr(new Date());
     const didEnter = saveWeight && weight && parseFloat(weight) > 0;
     if (didEnter) {
-      updateDayRecord(todayStr, { weight });
+      updateDayRecord(liveStr, { weight });
       persistProfile({ weight });
     }
     // Mark as dismissed for today so the prompt doesn't reappear until tomorrow.
-    localStorage.setItem(PROMPT_KEY, todayStr);
+    // Use the live date (not a captured render value) so this key always matches
+    // what tryShow() compares against — otherwise the prompt loops on foreground.
+    localStorage.setItem(PROMPT_KEY, liveStr);
     dismissedAtRef.current = Date.now();
     setOpen(false);
   };
