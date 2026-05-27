@@ -53,13 +53,14 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function sumField(rows: DayRow[], field: string): number {
-  let total = 0;
-  for (const r of rows) total += num(r.data[field]);
-  return total;
-}
-
-/** Sum `field` from each food entry × its serving count. */
+/**
+ * Sum `field` across every food entry in the window.
+ *
+ * Each entry's stored protein/carbs/fat is ALREADY the total for its serving
+ * count (CalorieTracker stores `perServing × servings`, and its own macro
+ * totals sum the entries directly). So we must NOT multiply by `servings`
+ * again here — doing so double-counts it.
+ */
 function sumFromFoods(rows: DayRow[], field: 'protein' | 'carbs' | 'fat'): number {
   let total = 0;
   for (const r of rows) {
@@ -67,9 +68,7 @@ function sumFromFoods(rows: DayRow[], field: 'protein' | 'carbs' | 'fat'): numbe
       const foods = JSON.parse(String(r.data.foods ?? '[]'));
       if (!Array.isArray(foods)) continue;
       for (const f of foods) {
-        const amt      = num((f as Record<string, unknown>)[field]);
-        const servings = num((f as Record<string, unknown>).servings) || 1;
-        total += amt * servings;
+        total += num((f as Record<string, unknown>)[field]);
       }
     } catch { /* skip corrupt day */ }
   }
@@ -168,8 +167,8 @@ function foodsHasField(rows: DayRow[], field: 'protein' | 'carbs' | 'fat'): bool
       const foods = JSON.parse(String(r.data.foods ?? '[]'));
       if (Array.isArray(foods) && foods.length > 0) return true;
     } catch { /* skip */ }
-    // Day-level protein field (older entries) also counts
-    if (field === 'protein' && num(r.data.protein) > 0) return true;
+    // A day-level macro field (pre-summed by CalorieTracker) also counts as data.
+    if (num(r.data[field]) > 0) return true;
   }
   return false;
 }
@@ -301,6 +300,10 @@ export const BATTLE_CATEGORIES: readonly BattleCategory[] = [
     noDataLabel: 'no food logged',
     score: rows => {
       if (!foodsHasField(rows, 'carbs')) return null;
+      // Prefer the day-level field (already summed by CalorieTracker); fall back
+      // to summing the foods array for days logged before it was stored.
+      const dayLevel = sumOrNull(rows, 'carbs');
+      if (dayLevel !== null && dayLevel > 0) return dayLevel;
       return sumFromFoods(rows, 'carbs');
     },
   },
@@ -314,6 +317,10 @@ export const BATTLE_CATEGORIES: readonly BattleCategory[] = [
     noDataLabel: 'no food logged',
     score: rows => {
       if (!foodsHasField(rows, 'fat')) return null;
+      // Prefer the day-level field (already summed by CalorieTracker); fall back
+      // to summing the foods array for days logged before it was stored.
+      const dayLevel = sumOrNull(rows, 'fat');
+      if (dayLevel !== null && dayLevel > 0) return dayLevel;
       return sumFromFoods(rows, 'fat');
     },
   },

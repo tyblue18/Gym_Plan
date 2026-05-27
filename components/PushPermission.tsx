@@ -36,6 +36,22 @@ async function registerSubscription(reg: ServiceWorkerRegistration): Promise<boo
   }
 }
 
+/**
+ * Resolve the active SW registration, but never hang. `serviceWorker.ready`
+ * can stall on mobile when no worker is controlling the page yet, which would
+ * leave the enable flow stuck in its loading state forever. Race it against a
+ * timeout and fall back to whatever registration already exists.
+ */
+async function swReady(timeoutMs = 8000): Promise<ServiceWorkerRegistration | null> {
+  try {
+    const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs));
+    const reg = await Promise.race([navigator.serviceWorker.ready, timeout]);
+    return reg ?? (await navigator.serviceWorker.getRegistration()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function getUnsupportedReason(): string {
   const ua  = navigator.userAgent;
   const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -52,6 +68,10 @@ function getUnsupportedReason(): string {
 export function PushPermission() {
   const [status,  setStatus]  = useState<'unsupported' | 'denied' | 'granted' | 'default'>('default');
   const [loading, setLoading] = useState(false);
+  // True when permission is granted but we couldn't register the push
+  // subscription on the server — surfaces the failure instead of falsely
+  // showing "Notifications on".
+  const [error,   setError]   = useState(false);
   const [unsupportedMsg, setUnsupportedMsg] = useState('Install as app for notifications');
   const didRegister = useRef(false);
 
@@ -68,11 +88,16 @@ export function PushPermission() {
     const perm = Notification.permission as typeof status;
     setStatus(perm);
 
-    // If already granted, silently ensure the subscription is live on the server.
+    // If already granted, ensure the subscription is live on the server.
     // This recovers from: PWA reinstall, browser-data clear, failed first-subscribe POST.
+    // If it can't re-subscribe, flag it so the UI shows a retry instead of a
+    // false "Notifications on".
     if (perm === 'granted' && !didRegister.current) {
       didRegister.current = true;
-      navigator.serviceWorker.ready.then(reg => registerSubscription(reg)).catch(() => {});
+      swReady()
+        .then(reg => (reg ? registerSubscription(reg) : false))
+        .then(ok => { if (!ok) setError(true); })
+        .catch(() => setError(true));
     }
   }, []);
 
@@ -86,6 +111,25 @@ export function PushPermission() {
   }
 
   if (status === 'granted') {
+    // Permission granted but the server subscription didn't take — show a retry
+    // rather than a misleading "Notifications on".
+    if (error) {
+      return (
+        <div className="flex items-center justify-between w-full gap-2">
+          <span className="flex items-center gap-1.5 font-mono text-[9px] font-bold px-0.5" style={{ color: 'var(--warn)' }}>
+            <BellOff size={10} />
+            Couldn&apos;t subscribe
+          </span>
+          <button
+            onClick={retry}
+            disabled={loading}
+            className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-2 py-1 rounded border border-[var(--line-2)] text-[var(--ink-3)] hover:text-[var(--ink-1)] hover:border-[var(--line)] transition-colors disabled:opacity-40"
+          >
+            {loading ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-between w-full gap-2">
         <span className="flex items-center gap-1.5 font-mono text-[9px] font-bold px-0.5" style={{ color: 'var(--positive)' }}>
@@ -106,15 +150,33 @@ export function PushPermission() {
 
   async function enable() {
     setLoading(true);
+    setError(false);
     try {
       const permission = await Notification.requestPermission();
       setStatus(permission as typeof status);
       if (permission !== 'granted') return;
 
-      const reg = await navigator.serviceWorker.ready;
-      await registerSubscription(reg);
+      // swReady() can't hang — it races serviceWorker.ready against a timeout,
+      // so loading is always cleared and the button never gets stuck disabled.
+      const reg = await swReady();
+      const ok  = reg ? await registerSubscription(reg) : false;
+      setError(!ok);
     } catch {
-      setStatus('denied');
+      // A thrown error here is a subscription failure, not a permission denial —
+      // keep the real permission status and surface a retry.
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Re-attempt the server subscription after a failure (permission already granted).
+  async function retry() {
+    setLoading(true);
+    try {
+      const reg = await swReady();
+      const ok  = reg ? await registerSubscription(reg) : false;
+      setError(!ok);
     } finally {
       setLoading(false);
     }

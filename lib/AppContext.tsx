@@ -89,7 +89,9 @@ export interface DayRecord {
   burn?:     number;
   budget?:   number;
   calsEaten?: string;
-  protein?:  number;
+  protein?:  number;       // grams — day total, summed from foods (used by battles)
+  carbs?:    number;       // grams — day total, summed from foods (used by battles)
+  fat?:      number;       // grams — day total, summed from foods (used by battles)
   foods?: string;          // JSON-serialised FoodEntry[]
   foodMealOrder?: string;  // JSON-serialised string[] — ordered list of section IDs
   /** Set client-side when a lift PR and a run PR occur on the same day. */

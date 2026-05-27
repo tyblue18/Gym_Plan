@@ -84,7 +84,10 @@ export const walletImportSchema = z.object({
 // ── /api/push/subscribe POST ──────────────────────────────────────────────────
 
 export const pushSubscribeSchema = z.object({
-  endpoint: z.string().url().max(500),
+  // Push endpoints are URLs that can run long on mobile (Apple Web Push, FCM).
+  // 500 was too tight and silently 400'd valid mobile subscriptions; 2048 is a
+  // safe URL ceiling.
+  endpoint: z.string().url().max(2048),
   keys: z.object({
     p256dh: z.string().min(1).max(200),
     auth:   z.string().min(1).max(100),
@@ -94,7 +97,7 @@ export const pushSubscribeSchema = z.object({
 // ── /api/push/subscribe DELETE ────────────────────────────────────────────────
 
 export const pushDeleteSchema = z.object({
-  endpoint: z.string().min(1).max(500),
+  endpoint: z.string().min(1).max(2048),
 });
 
 // ── /api/food/search GET (?q=) ────────────────────────────────────────────────

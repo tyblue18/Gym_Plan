@@ -624,14 +624,26 @@ export default function CalorieTracker() {
   }, [isPerfect]);
 
   const persistFoods = useCallback((updated: FoodEntry[], newOrder?: string[]) => {
+    // Store day-level calorie + macro totals (each entry's macros are already
+    // the total for its servings). Battles read these pre-summed fields, so all
+    // three macros must be persisted, not just protein.
+    //
+    // These are written UNCONDITIONALLY (even when zero). updateDayRecord MERGES
+    // partials, so omitting a field on zero — which a `kcal > 0 && {…}` guard
+    // does — would leave the previous value stranded. That's the bug where
+    // removing all food kept the calories deducted in Metrics and the budget.
     const kcal    = updated.reduce((s, f) => s + f.kcal, 0);
     const protein = +(updated.reduce((s, f) => s + f.protein, 0)).toFixed(1);
+    const carbs   = +(updated.reduce((s, f) => s + f.carbs,   0)).toFixed(1);
+    const fat     = +(updated.reduce((s, f) => s + f.fat,     0)).toFixed(1);
     updateDayRecord(activeDayFocus, {
       foods: JSON.stringify(updated),
       ...(newOrder && { foodMealOrder: JSON.stringify(newOrder) }),
-      ...(kcal > 0    && { calsEaten: String(kcal) }),
-      ...(protein > 0 && { protein }),
-      ...(budget > 0  && { budget }),
+      calsEaten: String(kcal),
+      protein,
+      carbs,
+      fat,
+      ...(budget > 0 && { budget }),
     });
   }, [activeDayFocus, updateDayRecord, budget]);
 
