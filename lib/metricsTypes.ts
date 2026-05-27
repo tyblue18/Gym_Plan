@@ -1,7 +1,7 @@
 // Shared types, constants, and pure utility functions for MetricsDashboard.
 
 import { useMemo } from 'react';
-import type { UserProfile } from '@/lib/AppContext';
+import type { UserProfile, LocalDB } from '@/lib/AppContext';
 
 // ── Locale helpers ────────────────────────────────────────────────────────────
 
@@ -53,11 +53,19 @@ export const INTENSITY_LABELS: Record<'cut' | 'bulk', Record<PlanIntensity, stri
 export interface AthletePlan {
   type:        'cut' | 'bulk';
   intensity:   PlanIntensity;
+  /** The intensity preset value (250 / 500 / 1000). Display-only. For the
+   *  rate-bearing number that progress tracking should compare against,
+   *  use getEffectiveDailyKcal() — it accounts for cardio's contribution. */
   dailyKcal:   number;
   startDate:   string;
   startWeight: number;
   goalWeight:  number;
   weeksTarget: number;
+  /** Snapshot of m.activityBurn at plan creation. Used by
+   *  getEffectiveDailyKcal() to convert dailyKcal into an effective deficit
+   *  (cut) or surplus (bulk). Optional for backwards compat with plans
+   *  created before this field was added. */
+  creationActivityBurn?: number;
 }
 
 import { ATHLETE_PLAN_KEY } from '@/lib/constants';
@@ -70,6 +78,126 @@ export function loadPlan(): AthletePlan | null {
 }
 export function savePlanToStorage(p: AthletePlan) {
   try { localStorage.setItem(PLAN_KEY, JSON.stringify(p)); } catch { /* noop */ }
+}
+
+/**
+ * Effective daily caloric delta the plan is built around.
+ *
+ *   Cut:  dailyKcal + 0.4 × activityBurn   (cardio enlarges the deficit)
+ *   Bulk: dailyKcal − 0.4 × activityBurn   (cardio shrinks the surplus, clamped ≥ 0)
+ *
+ * Why 0.4 × activityBurn: the daily budget formula adds back 60% of cardio burn,
+ * so only the remaining 40% lands in actual caloric balance. This matches the
+ * projection used at plan creation, so progress tracking compares against the
+ * same rate the user was shown.
+ *
+ * Plans created before creationActivityBurn was tracked return their raw
+ * dailyKcal — same as the pre-fix behavior, so old plans aren't disrupted.
+ */
+export function getEffectiveDailyKcal(plan: AthletePlan): number {
+  const cardioAdjust = (plan.creationActivityBurn ?? 0) * 0.4;
+  return plan.type === 'cut'
+    ? plan.dailyKcal + cardioAdjust
+    : Math.max(0, plan.dailyKcal - cardioAdjust);
+}
+
+/**
+ * Resolves the plan's true starting weight.
+ *
+ * If the user logged a weight within ~1.5 days of plan.startDate, that
+ * weigh-in is treated as the authoritative baseline — they were estimating
+ * when they typed plan.startWeight, and the actual scale reading supersedes
+ * the estimate. Otherwise falls back to plan.startWeight.
+ *
+ * Used by progress tracking, chart anchoring, and Recent Weigh-ins delta
+ * so every "change since start" calculation uses the same reference point.
+ */
+export function getPlanBaseline(plan: AthletePlan, localDB: LocalDB): number {
+  const planStartMs = new Date(plan.startDate + 'T00:00:00').getTime();
+  const sortedDays  = Object.keys(localDB).filter(d => d >= plan.startDate).sort();
+  for (const ds of sortedDays) {
+    const w = parseNum(String(localDB[ds]?.weight ?? '0'));
+    if (w <= 0) continue;
+    const week = (new Date(ds + 'T00:00:00').getTime() - planStartMs) / (7 * 86400000);
+    if (week > 0.2) break;        // first log is too far past start to override
+    return w;
+  }
+  return plan.startWeight;
+}
+
+// ── Plan compliance (per-day caloric balance) ────────────────────────────────
+
+export interface PlanCompliance {
+  /** Whole days elapsed since plan.startDate (inclusive of today). */
+  daysElapsed:           number;
+  /** Days within the plan window where the user logged calsEaten. */
+  daysLogged:            number;
+  /** Days logged that landed inside the ±100 kcal goal band. */
+  daysOnTarget:          number;
+  /** Sum of (calsEaten − true maintenance) across logged days. Negative means
+   *  a real caloric deficit (good for cuts, bad for bulks). */
+  cumulativeBalance:     number;
+  /** cumulativeBalance / daysLogged. 0 if no days logged. */
+  avgDailyBalance:       number;
+  /** Weight change implied by the cumulative caloric balance (lb).
+   *  Calorie-based, data-driven counterpart to expectedChange. */
+  calorieBasedChange:    number;
+}
+
+/**
+ * Walks the plan window day-by-day and aggregates real caloric balance vs.
+ * true maintenance, derived from each day's stored budget and burn.
+ *
+ *   budget       = tdee − profile.deficit + 0.6 × burn        (from useBudgetMetrics)
+ *   ⇒ maintenance = tdee + burn = budget + profile.deficit + 0.4 × burn
+ *
+ * Uses the user's CURRENT profile.deficit. This is honest regardless of
+ * whether the plan's intent matches the user's eating profile — if a bulk
+ * user still has deficit=500, the ledger will correctly show they're in a
+ * caloric deficit, prompting them to fix their config.
+ *
+ * Returns zeroed metrics on a missing plan or empty window.
+ */
+export function getPlanCompliance(
+  plan:     AthletePlan,
+  localDB:  LocalDB,
+  profile:  UserProfile,
+): PlanCompliance {
+  const planStartMs = new Date(plan.startDate + 'T00:00:00').getTime();
+  const todayStr    = new Date().toISOString().slice(0, 10);
+  const daysElapsed = Math.max(
+    0,
+    Math.floor((new Date(todayStr + 'T00:00:00').getTime() - planStartMs) / 86400000) + 1,
+  );
+
+  let daysLogged       = 0;
+  let daysOnTarget     = 0;
+  let cumulativeBalance = 0;
+
+  const profileDeficit = parseNum(profile.deficit) || 500;
+
+  for (const [ds, rec] of Object.entries(localDB)) {
+    if (ds < plan.startDate || ds > todayStr) continue;
+    const calsEaten = parseNum(String(rec.calsEaten ?? '0'));
+    const budget    = parseNum(String(rec.budget    ?? '0'));
+    const burn      = parseNum(String(rec.burn      ?? '0'));
+    if (calsEaten <= 0 || budget <= 0) continue;
+
+    daysLogged++;
+    if (Math.abs(calsEaten - budget) <= 100) daysOnTarget++;
+
+    const maintenance = budget + profileDeficit + burn * 0.4;
+    cumulativeBalance += calsEaten - maintenance;
+  }
+
+  return {
+    daysElapsed,
+    daysLogged,
+    daysOnTarget,
+    cumulativeBalance,
+    avgDailyBalance:    daysLogged > 0 ? cumulativeBalance / daysLogged : 0,
+    calorieBasedChange: cumulativeBalance / 3500,
+  };
 }
 
 // ── Budget metrics ────────────────────────────────────────────────────────────

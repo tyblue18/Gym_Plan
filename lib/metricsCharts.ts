@@ -1,6 +1,7 @@
 // Pure canvas drawing functions for MetricsDashboard charts.
 
 import type { BudgetMetrics, AthletePlan } from '@/lib/metricsTypes';
+import { getEffectiveDailyKcal } from '@/lib/metricsTypes';
 
 // ── Weight projection (35-day, "if every day was like today") ─────────────────
 
@@ -278,9 +279,17 @@ export function drawProgressChart(
   ctx.clearRect(0, 0, W, H);
 
   const totalWks  = plan.weeksTarget;
+  // Anchor the projection at the user's actual first-logged weight if they
+  // weighed in near the plan start; otherwise fall back to plan.startWeight.
   const startWt   = firstLoggedWeight ?? plan.startWeight;
   const goalWt    = plan.goalWeight;
-  const ratePerWk = (goalWt - startWt) / totalWks;
+  // Use the plan's *effective* rate (cardio-adjusted) so the projection line
+  // matches the rate that progress-tracking compares against. Goal-implied
+  // rate would drift if firstLoggedWeight ≠ plan.startWeight.
+  const effKcal   = getEffectiveDailyKcal(plan);
+  const ratePerWk = plan.type === 'cut'
+    ? -(effKcal * 7 / 3500)
+    :  (effKcal * 7 / 3500);
   const projPts   = Array.from({ length: totalWks + 1 }, (_, i) => startWt + ratePerWk * i);
 
   const planLo  = Math.min(startWt, goalWt);
@@ -288,8 +297,12 @@ export function drawProgressChart(
   const buf     = Math.max((planHi - planLo) * 0.14, 5);
   const dataLo  = chartPts.length ? Math.min(...chartPts.map(p => p.weight)) : planLo;
   const dataHi  = chartPts.length ? Math.max(...chartPts.map(p => p.weight)) : planHi;
-  const yMin    = Math.min(planLo - buf, dataLo - 1);
-  const yMax    = Math.max(planHi + buf, dataHi + 1);
+  // Include projPts so the rate-driven projection doesn't get clipped when
+  // it overshoots the goal (happens when firstLoggedWeight ≠ plan.startWeight).
+  const projLo  = Math.min(...projPts);
+  const projHi  = Math.max(...projPts);
+  const yMin    = Math.min(planLo - buf, dataLo - 1, projLo - 1);
+  const yMax    = Math.max(planHi + buf, dataHi + 1, projHi + 1);
   const yR      = yMax - yMin;
 
   const PAD = { t: 28, r: 20, b: 32, l: 48 };
@@ -336,15 +349,22 @@ export function drawProgressChart(
   ctx.stroke(); ctx.setLineDash([]);
 
   if (chartPts.length >= 2) {
-    const first  = chartPts[0];
-    const latest = chartPts[chartPts.length - 1];
-    const projAtLatest = startWt + ratePerWk * latest.week;
-    const isAhead = plan.type === 'cut' ? latest.weight <= projAtLatest : latest.weight >= projAtLatest;
-    ctx.beginPath(); ctx.lineWidth = 2; ctx.lineJoin = 'round';
-    ctx.strokeStyle = isAhead ? 'rgba(109,255,153,0.6)' : 'rgba(255,77,94,0.6)';
-    ctx.moveTo(xOf(first.week), yOf(first.weight));
-    ctx.lineTo(xOf(latest.week), yOf(latest.weight));
-    ctx.stroke();
+    // Polyline through every logged weight (not a shortcut from first to
+    // last). Each segment is colored by whether the segment's end-point is
+    // ahead of or behind the projection at that week, so the user can see
+    // exactly when they drifted in/out of pace.
+    ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    for (let i = 1; i < chartPts.length; i++) {
+      const a = chartPts[i - 1];
+      const b = chartPts[i];
+      const projAtB = startWt + ratePerWk * b.week;
+      const isAhead = plan.type === 'cut' ? b.weight <= projAtB : b.weight >= projAtB;
+      ctx.beginPath();
+      ctx.strokeStyle = isAhead ? 'rgba(109,255,153,0.55)' : 'rgba(255,77,94,0.55)';
+      ctx.moveTo(xOf(a.week), yOf(a.weight));
+      ctx.lineTo(xOf(b.week), yOf(b.weight));
+      ctx.stroke();
+    }
   }
 
   const firstEntryAtStart = chartPts.length > 0 && chartPts[0].week <= 0.2;

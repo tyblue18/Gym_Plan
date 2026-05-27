@@ -26,9 +26,11 @@ interface DayRecord {
 
 interface BadgeCheckData {
   // queLiftPRs: exercise name → all-time max weight (lbs)
-  liftPRs:  Record<string, number>;
-  localDB:  Record<string, DayRecord>;
-  settings: Record<string, unknown>;
+  liftPRs:    Record<string, number>;
+  localDB:    Record<string, DayRecord>;
+  settings:   Record<string, unknown>;
+  /** Count of resolved Challenge rows where this user was the winner. */
+  battleWins: number;
 }
 
 interface BadgeDef {
@@ -360,6 +362,27 @@ const BADGE_DEFS: BadgeDef[] = [
     slug: 'streak_100', label: 'Century Club',         icon: '👑', category: 'nutrition',
     check: ({ localDB }) => maxStreak(localDB) >= 100,
   },
+
+  // ── Battle wins ──────────────────────────────────────────────────────────────
+  // Counted from resolved Challenge rows where this user was the winner.
+  // Categorised as 'nutrition' so they're never revoked — competitive
+  // achievements are permanent records.
+  {
+    slug: 'battle_first', label: 'First Battle Win', icon: '/Badges/First_battle_win.png', category: 'nutrition',
+    check: ({ battleWins }) => battleWins >= 1,
+  },
+  {
+    slug: 'battle_5',  label: '5 Battle Wins',  icon: '/Badges/5_battle_win.png',  category: 'nutrition',
+    check: ({ battleWins }) => battleWins >= 5,
+  },
+  {
+    slug: 'battle_10', label: '10 Battle Wins', icon: '/Badges/10_battle_win.png', category: 'nutrition',
+    check: ({ battleWins }) => battleWins >= 10,
+  },
+  {
+    slug: 'battle_20', label: '20 Battle Wins', icon: '/Badges/20_battle_win.png', category: 'nutrition',
+    check: ({ battleWins }) => battleWins >= 20,
+  },
 ];
 
 // ── Public API ─────────────────────────────────────────────────────────────────
@@ -395,20 +418,21 @@ export async function checkAndAwardBadges(
   try { liftPRs = (settings[LIFT_PRS_KEY] ?? {}) as Record<string, number>; }
   catch { /* malformed — treat as empty */ }
 
-  // Fetch full history and existing badges in parallel.
-  const [existing, dayRows] = await Promise.all([
+  // Fetch full history, existing badges, and battle wins in parallel.
+  const [existing, dayRows, battleWins] = await Promise.all([
     prisma.badge.findMany({
       where:  { userId },
       select: { slug: true, label: true, icon: true, category: true },
     }),
     dayRecordTable.findMany({ where: { userId }, select: { date: true, data: true } }),
+    prisma.challenge.count({ where: { winnerId: userId, status: 'resolved' } }),
   ]);
 
   const localDB: Record<string, DayRecord> = Object.fromEntries(
     dayRows.map(r => [r.date, r.data as DayRecord])
   );
 
-  const data: BadgeCheckData = { liftPRs, localDB, settings };
+  const data: BadgeCheckData = { liftPRs, localDB, settings, battleWins };
   const earnedMap = new Map(existing.map(b => [b.slug, b]));
 
   const toAward  = BADGE_DEFS.filter(def => !earnedMap.has(def.slug) && def.check(data));

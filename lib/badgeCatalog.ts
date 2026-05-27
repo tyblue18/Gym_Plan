@@ -103,4 +103,10 @@ export const BADGE_CATALOG: CatalogEntry[] = [
   { slug: 'streak_30',  label: 'Monthly Master',     icon: '🌟', category: 'nutrition', howToGet: 'Hit your calorie goal 30 days in a row (±100 kcal)' },
   { slug: 'streak_60',  label: '60-Day Domination',  icon: '💎', category: 'nutrition', howToGet: 'Hit your calorie goal 60 days in a row (±100 kcal)' },
   { slug: 'streak_100', label: 'Century Club',       icon: '👑', category: 'nutrition', howToGet: 'Hit your calorie goal 100 days in a row (±100 kcal)' },
+
+  // ── Battle wins ───────────────────────────────────────────────────────────────
+  { slug: 'battle_first', label: 'First Battle Win', icon: '/Badges/First_battle_win.png', category: 'nutrition', howToGet: 'Win your first friendship battle' },
+  { slug: 'battle_5',     label: '5 Battle Wins',    icon: '/Badges/5_battle_win.png',     category: 'nutrition', howToGet: 'Win 5 friendship battles' },
+  { slug: 'battle_10',    label: '10 Battle Wins',   icon: '/Badges/10_battle_win.png',    category: 'nutrition', howToGet: 'Win 10 friendship battles' },
+  { slug: 'battle_20',    label: '20 Battle Wins',   icon: '/Badges/20_battle_win.png',    category: 'nutrition', howToGet: 'Win 20 friendship battles' },
 ];

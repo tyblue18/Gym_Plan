@@ -21,10 +21,10 @@ import prData from '@/public/PR_animation.json';
 import {
   type CardioFields, type BudgetMetrics, type PRFlags,
   EMPTY_CARDIO, INTENSITY_LABELS,
-  useBudgetMetrics, loadPlan,
+  useBudgetMetrics, loadPlan, getEffectiveDailyKcal, getPlanBaseline,
   parseNum, fmt, fmtDateLong, toDateStr,
 } from '@/lib/metricsTypes';
-import { drawProjection, drawLineChart } from '@/lib/metricsCharts';
+import { drawLineChart } from '@/lib/metricsCharts';
 import {
   MilestoneModal, CelebrationModal, PlanProgressModal, PlanModal, ProjectionModal,
 } from '@/components/metrics/MetricsModals';
@@ -173,12 +173,30 @@ function ProfilePanel({ profile, onChange, onOpenPlan, onOpenRunPlan }: {
           </div>
 
           <div>
-            <label className="que-label">Deficit / kcal</label>
-            <input
-              type="number" className="que-input"
-              value={profile.deficit}
-              onChange={e => onChange({ deficit: e.target.value })}
-            />
+            {/* Label and displayed value adapt to the sign of profile.deficit.
+                Fix D stores a bulk plan's surplus as a negative deficit so the
+                budget formula stays unchanged — we hide that sign from the
+                user here and label the field accordingly. The onChange
+                preserves the current sign so editing a bulk surplus doesn't
+                accidentally flip it into a cut deficit. */}
+            {(() => {
+              const rawDef    = parseNum(profile.deficit);
+              const isSurplus = rawDef < 0;
+              const display   = String(Math.abs(rawDef) || (profile.deficit === '' ? '' : 0));
+              return (
+                <>
+                  <label className="que-label">{isSurplus ? 'Surplus / kcal' : 'Deficit / kcal'}</label>
+                  <input
+                    type="number" inputMode="numeric" className="que-input"
+                    value={display}
+                    onChange={e => {
+                      const n = parseNum(e.target.value);
+                      onChange({ deficit: String(isSurplus ? -n : n) });
+                    }}
+                  />
+                </>
+              );
+            })()}
           </div>
 
           <div className="col-span-2 sm:col-span-3 lg:col-span-1">
@@ -376,7 +394,11 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
 
           {calsEaten === 0 && (
             <p className="mt-3 font-mono text-[11px] text-[var(--ink-3)] tracking-[1px]">
-              {`${fmt(m.tdee)} − ${fmt(m.deficit)}${m.eatBack > 0 ? ` + ${fmt(m.eatBack)}` : ''} = ${fmt(m.budget)} kcal`}
+              {/* m.deficit goes negative for active bulk plans (Fix D stores
+                  surplus as a signed deficit). Render the operator separately
+                  so the formula reads as "tdee + 500 + eatBack = budget" for a
+                  bulk instead of the visually confusing "tdee − -500 + …". */}
+              {`${fmt(m.tdee)} ${m.deficit < 0 ? '+' : '−'} ${fmt(Math.abs(m.deficit))}${m.eatBack > 0 ? ` + ${fmt(m.eatBack)}` : ''} = ${fmt(m.budget)} kcal`}
             </p>
           )}
         </div>
@@ -388,7 +410,12 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
             { label: '× Activity Multiplier',  value: `× ${m.multiplier}`,             indent: true,  bold: false },
             { label: '= Maintenance (TDEE)',   value: `${fmt(m.tdee)} kcal`,           indent: false, bold: true  },
             null,
-            { label: '− Deficit Goal',         value: `−${fmt(m.deficit)} kcal`,       indent: false, bold: false, red: true },
+            // When a bulk plan is active, profile.deficit is negative (Fix D
+            // stores surplus as signed deficit). Flip the row to read as a
+            // surplus instead of "− Deficit: −-500".
+            m.deficit < 0
+              ? { label: '+ Surplus Goal', value: `+${fmt(Math.abs(m.deficit))} kcal`, indent: false, bold: false, green: true }
+              : { label: '− Deficit Goal', value: `−${fmt(m.deficit)} kcal`,           indent: false, bold: false, red:   true },
             { label: 'Tracked cardio burn',    value: m.activityBurn > 0 ? `${fmt(m.activityBurn)} kcal` : '— kcal', indent: true, bold: false, accent: true },
             { label: 'Run',  value: m.runBurn  > 0 ? `${fmt(m.runBurn)}  kcal` : '—', indent: true,  bold: false, icon: 'run'  as const, iconActive: m.runBurn  > 0 },
             { label: 'Bike', value: m.bikeBurn > 0 ? `${fmt(m.bikeBurn)} kcal` : '—', indent: true,  bold: false, icon: 'bike' as const, iconActive: m.bikeBurn > 0 },
@@ -570,10 +597,15 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
           const plan = loadPlan(); if (!plan) return null;
           const daysSince  = Math.round((Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / 86400000);
           const weeksSince = Math.max(0, daysSince / 7);
+          const effKcal    = getEffectiveDailyKcal(plan);
           const weeklyRate = plan.type === 'cut'
-            ? -(plan.dailyKcal * 7 / 3500)
-            :  (plan.dailyKcal * 7 / 3500);
-          const projNow      = plan.startWeight + weeklyRate * weeksSince;
+            ? -(effKcal * 7 / 3500)
+            :  (effKcal * 7 / 3500);
+          // Anchor projection at the resolved baseline (first weigh-in near start
+          // if available) so this tile stays consistent with the chart in
+          // PlanProgressModal and the Change stat there.
+          const baseline   = getPlanBaseline(plan, localDB);
+          const projNow      = baseline + weeklyRate * weeksSince;
           const weeksLeft    = Math.max(0, plan.weeksTarget - weeksSince);
           const planAccent   = plan.type === 'cut' ? 'var(--accent)' : 'var(--positive)';
           const planBg       = plan.type === 'cut' ? 'var(--accent-12)' : 'var(--positive-12)';
@@ -971,35 +1003,6 @@ function CalorieHistoryCard({ streak, avgNet, days }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENT — WeightProjectionCard
-// ─────────────────────────────────────────────────────────────────────────────
-
-function WeightProjectionCard({ m, weightLbs, hidden }: {
-  m: BudgetMetrics; weightLbs: number; hidden: boolean;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || hidden || weightLbs <= 0 || m.budget <= 0) return;
-    drawProjection(canvas, weightLbs, m);
-  }, [m, weightLbs, hidden]);
-
-  if (hidden) return null;
-  return (
-    <div className="que-card mb-4">
-      <div className="p-5">
-        <h2 className="que-section-label mb-5"><span className="dot" />WEIGHT PROJECTION <span className="font-normal text-[var(--ink-3)] normal-case tracking-normal ml-1">/ 90-DAY EST.</span></h2>
-        <canvas ref={canvasRef} className="block w-full h-[200px]" />
-        <p className="mt-3 font-mono text-[10px] text-[var(--ink-3)] text-center tracking-[1px]">
-          3,500 KCAL ≈ 1 LB · 60% of cardio is eaten back; 40% counts as deficit
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENT — TrendsCard
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1104,7 +1107,7 @@ export default function MetricsDashboard() {
     today, todayStr,
     activeDayFocus,
     profile, setProfile, persistProfile,
-    localDB, updateDayRecord, setLastBurn, setLastBudget,
+    localDB, setLastBurn, setLastBudget,
     getLastKnownWeight,
     isLoaded,
   } = useApp();
@@ -1139,24 +1142,41 @@ export default function MetricsDashboard() {
         const pct = Math.round(t * 100);
         seen.push(pct);
         localStorage.setItem('quePlanMilestones', JSON.stringify({ planStartDate: plan.startDate, seen }));
+        // Plan-window only — a pre-plan weight doesn't represent progress.
+        // weightChange = 0 (shown as no figure in the modal) when nothing has
+        // been weighed since plan start.
         const entries = (Object.entries(localDB) as [string, DayRecord][])
-          .filter(([, r]) => parseNum(String(r.weight ?? '0')) > 0)
+          .filter(([ds, r]) => ds >= plan.startDate && parseNum(String(r.weight ?? '0')) > 0)
           .sort(([a], [b]) => a.localeCompare(b));
-        const latestW = entries.length > 0 ? parseNum(String(entries[entries.length - 1][1].weight)) : 0;
-        setMilestone({ pct, weightChange: latestW > 0 ? latestW - plan.startWeight : 0 });
+        const latestW  = entries.length > 0 ? parseNum(String(entries[entries.length - 1][1].weight)) : 0;
+        const baseline = getPlanBaseline(plan, localDB);
+        setMilestone({ pct, weightChange: latestW > 0 ? latestW - baseline : 0 });
         break;
       }
     }
   }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [cardio, setCardio]             = useState<CardioFields>(EMPTY_CARDIO);
-  const [todayWeight,  setTodayWeightRaw]  = useState('');
-  const [todayCals,    setTodayCalsRaw]    = useState('');
-  const [todayProtein, setTodayProteinRaw] = useState('');
+  const [cardio, setCardio]                = useState<CardioFields>(EMPTY_CARDIO);
+  const [todayWeight, setTodayWeightRaw]   = useState('');
+  const [todayCals,   setTodayCalsRaw]     = useState('');
 
   useEffect(() => {
     if (!isLoaded) return;
     const rec = localDB[activeDayFocus] ?? {};
+    setTodayWeightRaw(String(rec.weight ?? getLastKnownWeight(activeDayFocus) ?? ''));
+    setTodayCalsRaw(String(rec.calsEaten ?? ''));
+  }, [isLoaded, activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync cardio from localDB on every change to the active day's record. This
+  // fixes the stale-budget bug where logging cardio through the BudgetCard
+  // quick-log writes to localDB but the cardio state here didn't refresh,
+  // leaving m.budget computed from pre-log cardio. Cardio has no direct user
+  // input in this component, so re-firing on every localDB change is safe
+  // (no race with in-progress typing).
+  const activeDayRec = localDB[activeDayFocus];
+  useEffect(() => {
+    if (!isLoaded) return;
+    const rec = activeDayRec ?? {};
     setCardio({
       steps:    String(rec.steps    ?? 0),
       runDist:  String(rec.runDist  ?? 0),
@@ -1165,11 +1185,7 @@ export default function MetricsDashboard() {
       bikeTime: String(rec.bikeTime ?? 0),
       swimTime: String(rec.swimTime ?? 0),
     });
-    const activeRec = localDB[activeDayFocus] ?? {};
-    setTodayWeightRaw(String(activeRec.weight ?? getLastKnownWeight(activeDayFocus) ?? ''));
-    setTodayCalsRaw(String(activeRec.calsEaten ?? ''));
-    setTodayProteinRaw(activeRec.protein ? String(activeRec.protein) : '');
-  }, [isLoaded, activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoaded, activeDayFocus, activeDayRec]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -1187,64 +1203,6 @@ export default function MetricsDashboard() {
   const handleProfileChange = useCallback((updates: Partial<UserProfile>) => {
     setProfile(updates); persistProfile(updates);
   }, [setProfile, persistProfile]);
-
-  const handleWeightChange = useCallback((val: string) => {
-    setTodayWeightRaw(val);
-    updateDayRecord(activeDayFocus, { weight: val });
-  }, [activeDayFocus, updateDayRecord]);
-
-  const handleCalsChange = useCallback((val: string) => {
-    setTodayCalsRaw(val);
-    updateDayRecord(activeDayFocus, { calsEaten: val, budget: m.budget });
-  }, [activeDayFocus, m.budget, updateDayRecord]);
-
-  const handleProteinChange = useCallback((val: string) => {
-    setTodayProteinRaw(val);
-    const n = parseNum(val);
-    if (n > 0) updateDayRecord(activeDayFocus, { protein: n });
-  }, [activeDayFocus, updateDayRecord]);
-
-  const undereatingWarning = useMemo(() => {
-    const days = Object.keys(localDB).sort().reverse();
-    let streak = 0;
-    for (const ds of days) {
-      const r = localDB[ds];
-      const eaten  = parseNum(String(r.calsEaten ?? 0));
-      const budget = parseNum(String(r.budget ?? 0));
-      if (budget > 0 && eaten > 0 && eaten < budget * 0.60) streak++;
-      else break;
-      if (streak >= 3) return true;
-    }
-    return false;
-  }, [localDB]);
-
-  const handleLogToday = useCallback(() => {
-    const cals = parseNum(todayCals);
-    updateDayRecord(activeDayFocus, {
-      burn:   m.activityBurn,
-      budget: m.budget,
-      weight: todayWeight || undefined,
-      ...(cals > 0 && { calsEaten: todayCals }),
-    });
-
-    const hasCals = cals > 0;
-    const plan    = typeof window !== 'undefined' ? loadPlan() : null;
-
-    let hitGoal = false;
-    if (hasCals && m.budget > 0) {
-      const minReasonable = m.budget * 0.40;
-      hitGoal = plan?.type === 'bulk'
-        ? cals >= m.budget * 0.9 && cals <= m.budget * 1.15
-        : cals <= m.budget && cals >= minReasonable;
-    }
-
-    if (hitGoal) {
-      navigator.vibrate?.([50, 30, 80]);
-      setCelebrateVisible(true);
-    } else {
-      setProjVisible(true);
-    }
-  }, [activeDayFocus, m.activityBurn, m.budget, todayWeight, todayCals, updateDayRecord]);
 
   const prFlags = useMemo((): PRFlags => {
     const today = (localDB[activeDayFocus] ?? {}) as DayRecord;
@@ -1422,6 +1380,7 @@ export default function MetricsDashboard() {
         open={planOpen}
         onClose={() => setPlanOpen(false)}
         profile={profile}
+        persistProfile={persistProfile}
         m={m}
         localDB={localDB}
         todayStr={todayStr}
@@ -1431,6 +1390,7 @@ export default function MetricsDashboard() {
         open={progressOpen}
         onClose={() => setProgressOpen(false)}
         localDB={localDB}
+        profile={profile}
       />
 
       <CelebrationModal

@@ -19,6 +19,9 @@ import {
   INTENSITY_LABELS,
   loadPlan,
   savePlanToStorage,
+  getEffectiveDailyKcal,
+  getPlanBaseline,
+  getPlanCompliance,
   parseNum,
   fmt,
   fmtDateLong,
@@ -93,24 +96,27 @@ export function CelebrationModal({ open, onClose, localDB, calsEaten, budget }: 
   const plan   = open ? loadPlan() : null;
   const sign   = (n: number) => n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1);
 
-  const { latestWeight, actualChange, weeksSince, status } = useMemo(() => {
-    if (!plan) return { latestWeight: null, actualChange: null, weeksSince: 0, status: 'no-data' };
+  const { latestWeight, actualChange, weeksSince, status, baseline } = useMemo(() => {
+    if (!plan) return { latestWeight: null, actualChange: null, weeksSince: 0, status: 'no-data', baseline: 0 };
+    // Filter to plan window — a pre-plan weight isn't "current" progress.
     const entries = (Object.entries(localDB) as [string, DayRecord][])
-      .filter(([, r]) => parseNum(String(r.weight ?? '0')) > 0)
+      .filter(([ds, r]) => ds >= plan.startDate && parseNum(String(r.weight ?? '0')) > 0)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([, r]) => parseNum(String(r.weight)));
     const latest = entries.length > 0 ? entries[entries.length - 1] : null;
     const wks    = Math.max(0, (Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / (7 * 86400000));
-    const rate   = plan.type === 'cut' ? -(plan.dailyKcal * 7 / 3500) : (plan.dailyKcal * 7 / 3500);
+    const eff    = getEffectiveDailyKcal(plan);
+    const rate   = plan.type === 'cut' ? -(eff * 7 / 3500) : (eff * 7 / 3500);
     const exp    = rate * wks;
-    const act    = latest !== null ? latest - plan.startWeight : null;
+    const base   = getPlanBaseline(plan, localDB);
+    const act    = latest !== null ? latest - base : null;
     let   st     = 'no-data';
     if (act !== null && wks >= 0.5 && Math.abs(exp) > 0.05) {
       const thr = Math.abs(exp) * 0.2, d = act - exp;
       st = plan.type === 'cut' ? (d < -thr ? 'ahead' : d > thr ? 'behind' : 'on-track')
                                 : (d > thr  ? 'ahead' : d < -thr ? 'behind' : 'on-track');
     } else if (act !== null) { st = 'on-track'; }
-    return { latestWeight: latest, actualChange: act, weeksSince: wks, status: st };
+    return { latestWeight: latest, actualChange: act, weeksSince: wks, status: st, baseline: base };
   }, [plan, localDB, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusLabel = { ahead: 'Ahead of pace', 'on-track': 'On track', behind: 'Behind pace', 'no-data': '' }[status] ?? '';
@@ -167,7 +173,7 @@ export function CelebrationModal({ open, onClose, localDB, calsEaten, budget }: 
 
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: 'Start',   value: `${plan.startWeight.toFixed(1)} lb` },
+                      { label: 'Start',   value: `${baseline.toFixed(1)} lb` },
                       { label: 'Current', value: latestWeight ? `${latestWeight.toFixed(1)} lb` : '—' },
                       { label: 'Change',  value: actualChange !== null ? `${sign(actualChange)} lb` : '—', accent: true },
                     ].map(t => (
@@ -215,10 +221,11 @@ export function CelebrationModal({ open, onClose, localDB, calsEaten, budget }: 
 // PlanProgressModal
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function PlanProgressModal({ open, onClose, localDB }: {
+export function PlanProgressModal({ open, onClose, localDB, profile }: {
   open: boolean;
   onClose: () => void;
   localDB: LocalDB;
+  profile: UserProfile;
 }) {
   const [planVersion, setPlanVersion] = useState(0);
   const plan      = open ? loadPlan() : null;
@@ -234,12 +241,15 @@ export function PlanProgressModal({ open, onClose, localDB }: {
   const {
     weightEntries, chartPts, weeksSince, planWeeklyRate,
     expectedChange, firstWeight, actualChange, actualWeeklyRate, status,
-    projectedTotalWeeks,
+    projectedTotalWeeks, compliance, kcalAdjust, baselineDivergence,
   } = useMemo(() => {
     if (!plan) return {
       weightEntries: [], chartPts: [], weeksSince: 0, planWeeklyRate: 0,
       expectedChange: 0, firstWeight: 0, actualChange: null, actualWeeklyRate: null,
       status: 'no-data' as const, projectedTotalWeeks: null,
+      compliance: null as ReturnType<typeof getPlanCompliance> | null,
+      kcalAdjust: null as { kcal: number; weeksLeft: number; reached: boolean } | null,
+      baselineDivergence: null as { projAtPlanEnd: number; gap: number } | null,
     };
 
     const entries = (Object.entries(localDB) as [string, DayRecord][])
@@ -257,41 +267,114 @@ export function PlanProgressModal({ open, onClose, localDB }: {
       week: (new Date(e.date + 'T00:00:00').getTime() - planStartMs) / (7 * 86400000),
     })).filter(p => p.week >= 0);
 
+    // Resolve the plan's true starting weight (first weigh-in near start if it
+    // exists, else plan.startWeight). Shared with the chart, MilestoneModal,
+    // CelebrationModal, and ProjectionModal so "change since start" is
+    // computed identically everywhere.
+    const baseWeight  = getPlanBaseline(plan, localDB);
+
+    const eff         = getEffectiveDailyKcal(plan);
     const rate        = plan.type === 'cut'
-      ? -(plan.dailyKcal * 7 / 3500)
-      :  (plan.dailyKcal * 7 / 3500);
+      ? -(eff * 7 / 3500)
+      :  (eff * 7 / 3500);
     const expChange   = rate * wks;
-    const firstWeight = plan.startWeight;
-    const latest      = entries.length > 0 ? entries[entries.length - 1] : null;
-    const actChange   = latest ? latest.weight - firstWeight : null;
+    // "Latest" must be a weigh-in *within* the plan window. Using the full
+    // history would let a pre-plan weight masquerade as current progress when
+    // the user hasn't logged anything since starting the plan.
+    const windowEntries = entries.filter(e => e.date >= plan.startDate);
+    const latest        = windowEntries.length > 0 ? windowEntries[windowEntries.length - 1] : null;
+    // Compare against the resolved baseline, not the planned start. Lets a
+    // user whose first weigh-in differs from plan.startWeight see correct
+    // ahead/on-track/behind status.
+    const actChange     = latest ? latest.weight - baseWeight : null;
+
+    // Smoothed weight: mean of the last 3 in-window weigh-ins (or fewer if
+    // that's all there is). Daily readings fluctuate ±1–2 lb from water alone,
+    // which can flip ahead↔behind status from a single bad reading. The
+    // smoothed value is used for the status determination and the goal-shift
+    // recommendation; raw `latest` is still used for display (Latest tile,
+    // chart dots) so the user sees their actual scale reading.
+    const smoothCount     = Math.min(3, windowEntries.length);
+    const smoothedWeight  = smoothCount > 0
+      ? windowEntries.slice(-smoothCount).reduce((s, e) => s + e.weight, 0) / smoothCount
+      : null;
+    const actChangeSmooth = smoothedWeight !== null ? smoothedWeight - baseWeight : null;
 
     let actRate: number | null = null;
-    if (entries.length >= 2 && latest) {
-      const first = entries[0];
+    if (windowEntries.length >= 2 && latest) {
+      const first = windowEntries[0];
       const span  = (new Date(latest.date + 'T00:00:00').getTime() - new Date(first.date + 'T00:00:00').getTime()) / 86400000;
       if (span >= 4) actRate = ((latest.weight - first.weight) / span) * 7;
     }
 
     let st: 'ahead' | 'on-track' | 'behind' | 'no-data' = 'no-data';
-    if (actChange !== null && totalDays >= 3 && Math.abs(expChange) > 0.05) {
-      const thr = Math.abs(expChange) * 0.2, delta = actChange - expChange;
+    if (actChangeSmooth !== null && totalDays >= 3 && Math.abs(expChange) > 0.05) {
+      const thr = Math.abs(expChange) * 0.2, delta = actChangeSmooth - expChange;
       if (plan.type === 'cut') st = delta < -thr ? 'ahead' : delta > thr ? 'behind' : 'on-track';
       else                     st = delta > thr  ? 'ahead' : delta < -thr ? 'behind' : 'on-track';
-    } else if (actChange !== null) { st = 'on-track'; }
+    } else if (actChangeSmooth !== null) { st = 'on-track'; }
 
     let projWks: number | null = null;
     if (actRate !== null && Math.abs(actRate) > 0.01) {
-      projWks = Math.max(0, wks + (plan.goalWeight - (latest?.weight ?? plan.startWeight)) / actRate);
+      projWks = Math.max(0, wks + (plan.goalWeight - (smoothedWeight ?? baseWeight)) / actRate);
+    }
+
+    // Baseline divergence: if the resolved baseline (first weigh-in) differs
+    // from plan.startWeight, the chart's perfect-pace line — anchored at the
+    // baseline — ends at a different weight than the goal at week N. Surface
+    // this so the user knows the goal won't be hit at the plan rate just from
+    // baseline shift (independent of their actual compliance).
+    let baselineDivergence: { projAtPlanEnd: number; gap: number } | null = null;
+    if (Math.abs(baseWeight - plan.startWeight) > 0.5) {
+      const projAtPlanEnd = baseWeight + rate * plan.weeksTarget;
+      const gap           = plan.goalWeight - projAtPlanEnd; // signed
+      if (Math.abs(gap) > 0.5) baselineDivergence = { projAtPlanEnd, gap };
+    }
+
+    // Per-day calorie-compliance metrics (real balance vs. true maintenance).
+    const comp = getPlanCompliance(plan, localDB, profile);
+
+    // Recommended kcal/day intake shift. Signed: positive → eat more, negative
+    // → eat less. Works for cuts and bulks because the sign already encodes
+    // "more/less" through requiredRate.
+    //
+    // Two phases:
+    //   reached → user has already crossed the goal in the right direction.
+    //             Suggest maintenance, not "to hit goal in N wks".
+    //   adjust  → user is mid-plan; compute the rate delta needed to land
+    //             exactly on goal at plan.weeksTarget.
+    let adj: { kcal: number; weeksLeft: number; reached: boolean } | null = null;
+    if (actRate !== null && wks >= 1 && smoothedWeight !== null) {
+      const weeksLeft = Math.max(0, plan.weeksTarget - wks);
+      // Use smoothed weight so a single noisy reading doesn't flip the
+      // "reached" badge or swing the recommended shift.
+      const reached   = plan.type === 'cut'
+        ? smoothedWeight <= plan.goalWeight
+        : smoothedWeight >= plan.goalWeight;
+      if (reached) {
+        // Maintenance shift: counteract the current actRate so weight holds.
+        const kcalDelta = Math.round((-actRate * 3500) / 7);
+        if (Math.abs(kcalDelta) >= 50) adj = { kcal: kcalDelta, weeksLeft, reached: true };
+      } else if (weeksLeft >= 0.5 && weeksLeft <= 52) {
+        const weightLeft   = plan.goalWeight - smoothedWeight;   // signed
+        const requiredRate = weightLeft / weeksLeft;              // signed lb/wk
+        const rateDelta    = requiredRate - actRate;               // signed lb/wk
+        const kcalDelta    = Math.round((rateDelta * 3500) / 7);   // signed kcal/day
+        if (Math.abs(kcalDelta) >= 50) adj = { kcal: kcalDelta, weeksLeft, reached: false };
+      }
     }
 
     return {
-      weightEntries: entries, chartPts: cPts, weeksSince: wks,
+      // weightEntries is now plan-window only so the Recent Weigh-ins list
+      // doesn't show pre-plan history next to plan-specific deltas/status.
+      weightEntries: windowEntries, chartPts: cPts, weeksSince: wks,
       planWeeklyRate: rate, expectedChange: expChange,
-      firstWeight,
+      firstWeight: baseWeight,
       actualChange: actChange, actualWeeklyRate: actRate,
       status: st, projectedTotalWeeks: projWks,
+      compliance: comp, kcalAdjust: adj, baselineDivergence,
     };
-  }, [plan, localDB, open, planVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [plan, localDB, profile, open, planVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -350,7 +433,8 @@ export function PlanProgressModal({ open, onClose, localDB }: {
 
               <div className="grid grid-cols-4 gap-2">
                 {[
-                  { label: 'Start',    value: plan!.startWeight.toFixed(1), unit: 'lb' },
+                  // Use the resolved baseline so Start + Change = Latest stays internally consistent.
+                  { label: 'Start',    value: firstWeight ? firstWeight.toFixed(1) : plan!.startWeight.toFixed(1), unit: 'lb' },
                   { label: 'Latest',   value: latest ? latest.weight.toFixed(1) : '—', unit: latest ? 'lb' : '' },
                   { label: 'Change',   value: actualChange !== null ? sign(actualChange) : '—', unit: actualChange !== null ? 'lb' : '', accent: true },
                   { label: 'Expected', value: sign(expectedChange), unit: 'lb', dim: true },
@@ -403,13 +487,154 @@ export function PlanProgressModal({ open, onClose, localDB }: {
                 </div>
               )}
 
+              {/* Baseline divergence — shown when the resolved baseline differs
+                  meaningfully from plan.startWeight, so the perfect-pace line
+                  doesn't actually hit the goal at week N. Independent of user
+                  compliance: it's a fixed offset from where the user started
+                  vs. where the plan assumed. */}
+              {baselineDivergence && plan && (
+                <div className="rounded border border-[var(--ink-3)]/30 bg-[var(--bg-2)] px-4 py-3">
+                  <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] uppercase mb-1.5">
+                    Baseline shifted
+                  </p>
+                  <p className="font-mono text-[11px] text-[var(--ink-0)] tracking-[0.3px] leading-relaxed">
+                    Your first weigh-in was {firstWeight.toFixed(1)} lb, not the {plan.startWeight.toFixed(1)} lb entered at plan creation. At the plan rate from your actual baseline, you&apos;ll be at{' '}
+                    <span className="font-bold text-[var(--accent)]">{baselineDivergence.projAtPlanEnd.toFixed(1)} lb</span>{' '}
+                    at week {plan.weeksTarget} — {Math.abs(baselineDivergence.gap).toFixed(1)} lb {baselineDivergence.gap > 0
+                      ? (plan.type === 'cut' ? 'short of' : 'past')
+                      : (plan.type === 'cut' ? 'past'      : 'short of')} the {plan.goalWeight.toFixed(1)} lb goal.
+                  </p>
+                  <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[0.3px]">
+                    See the recommended adjustment below to hit the original goal in time.
+                  </p>
+                </div>
+              )}
+
+              {/* kcal-shift recommendation. Two phases:
+                  - reached: user has crossed the goal — suggest maintenance shift.
+                  - adjust: user is mid-plan — shift needed to land on goal at weeksTarget.
+                  Hidden when the shift is < 50 kcal/day (noise). */}
+              {kcalAdjust && (
+                <div
+                  className="rounded border px-4 py-3"
+                  style={{
+                    borderColor: kcalAdjust.reached
+                      ? 'var(--accent)'
+                      : kcalAdjust.kcal < 0 ? 'var(--warn)' : 'var(--positive)',
+                    background:  kcalAdjust.reached
+                      ? 'rgba(79,195,247,0.06)'
+                      : kcalAdjust.kcal < 0 ? 'rgba(255,181,71,0.06)' : 'rgba(109,255,153,0.06)',
+                  }}
+                >
+                  <p className="font-mono text-[9px] font-bold tracking-[2px] uppercase mb-1.5"
+                    style={{
+                      color: kcalAdjust.reached
+                        ? 'var(--accent)'
+                        : kcalAdjust.kcal < 0 ? 'var(--warn)' : 'var(--positive)',
+                    }}>
+                    {kcalAdjust.reached ? 'Goal reached · maintain' : 'Recommended adjustment'}
+                  </p>
+                  <p className="font-mono text-[11px] text-[var(--ink-0)] tracking-[0.3px] leading-relaxed">
+                    <span
+                      className="font-display text-[18px] mr-1"
+                      style={{
+                        color: kcalAdjust.reached
+                          ? 'var(--accent)'
+                          : kcalAdjust.kcal < 0 ? 'var(--warn)' : 'var(--positive)',
+                      }}
+                    >
+                      {kcalAdjust.kcal > 0 ? '+' : '−'}{fmt(Math.abs(kcalAdjust.kcal))}
+                    </span>
+                    kcal/day {kcalAdjust.reached
+                      ? 'to hold current weight'
+                      : `to hit goal in ${Math.ceil(kcalAdjust.weeksLeft)} wks`}
+                  </p>
+                  <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[0.3px]">
+                    {kcalAdjust.reached
+                      ? `You've passed your goal — current pace would drift past it. Eat ${kcalAdjust.kcal > 0 ? 'more' : 'less'} to hold.`
+                      : kcalAdjust.kcal < 0
+                        ? 'Eat less or add cardio to catch up'
+                        : 'You can eat more — currently overshooting the plan'}
+                  </p>
+                </div>
+              )}
+
+              {/* Calorie compliance derived from logged calsEaten/budget per
+                  day. Distinct from the time-based "Expected" stat above. */}
+              {compliance && compliance.daysElapsed > 0 && (() => {
+                // Direction colors: a real caloric deficit is good for cuts,
+                // bad for bulks; vice versa for a surplus. Neutral when no
+                // logged days or the balance is near zero.
+                const dirColor = (signed: number): string => {
+                  if (compliance.daysLogged === 0 || Math.abs(signed) < 0.01) return 'var(--ink-0)';
+                  const isGood = plan!.type === 'cut' ? signed < 0 : signed > 0;
+                  return isGood ? 'var(--positive)' : 'var(--warn)';
+                };
+                return (
+                <div>
+                  <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] uppercase mb-2">
+                    Calorie Ledger
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    {[
+                      {
+                        label: 'Logged',
+                        value: `${compliance.daysLogged}/${compliance.daysElapsed}`,
+                        sub:   `${compliance.daysElapsed > 0 ? Math.round((compliance.daysLogged / compliance.daysElapsed) * 100) : 0}%`,
+                        color: 'var(--ink-0)',
+                      },
+                      {
+                        label: 'On target',
+                        value: `${compliance.daysOnTarget}`,
+                        sub:   compliance.daysLogged > 0 ? `${Math.round((compliance.daysOnTarget / compliance.daysLogged) * 100)}% of logged` : '—',
+                        color: compliance.daysOnTarget >= compliance.daysLogged / 2 ? 'var(--positive)' : 'var(--ink-0)',
+                      },
+                      {
+                        label: 'Avg balance',
+                        value: compliance.daysLogged > 0 ? `${compliance.avgDailyBalance > 0 ? '+' : ''}${fmt(Math.round(compliance.avgDailyBalance))}` : '—',
+                        sub:   'kcal / day',
+                        color: dirColor(compliance.avgDailyBalance),
+                      },
+                      {
+                        label: 'By calories',
+                        value: compliance.daysLogged > 0 ? sign(compliance.calorieBasedChange) : '—',
+                        sub:   compliance.daysLogged > 0 ? 'lb implied' : '',
+                        color: dirColor(compliance.calorieBasedChange),
+                      },
+                    ].map(s => (
+                      <div key={s.label} className="rounded border border-[var(--line)] bg-[var(--bg-2)] p-2.5">
+                        <p className="font-mono text-[8px] font-bold tracking-[1px] text-[var(--ink-3)] uppercase mb-0.5">{s.label}</p>
+                        <p className="font-display text-[15px] leading-none" style={{ color: s.color }}>{s.value}</p>
+                        {s.sub && <p className="font-mono text-[8px] text-[var(--ink-3)] mt-0.5">{s.sub}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">
+                    Balance = calsEaten − maintenance. By-calories ≈ Σ balance / 3,500.
+                  </p>
+                </div>
+                );
+              })()}
+
               {weightEntries.length > 0 && (
                 <div>
                   <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] uppercase mb-2">Recent Weigh-ins</p>
                   <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] divide-y divide-[var(--line)]">
                     {[...weightEntries].reverse().slice(0, 6).map((e, i, arr) => {
-                      const prev   = arr[i + 1];
-                      const delta  = prev ? e.weight - prev.weight : e.weight - plan!.startWeight;
+                      const prev = arr[i + 1];
+                      // For the oldest entry in the visible 6, prev is undefined.
+                      // Look up the chronologically previous entry from the full
+                      // history (not just what's on-screen) so the delta reflects
+                      // a true day-to-day change, not a months-long jump back to
+                      // the plan baseline.
+                      let priorWeight: number | null = null;
+                      if (prev) {
+                        priorWeight = prev.weight;
+                      } else {
+                        const idx = weightEntries.findIndex(x => x.date === e.date);
+                        if (idx > 0) priorWeight = weightEntries[idx - 1].weight;
+                      }
+                      const delta  = priorWeight !== null ? e.weight - priorWeight : 0;
                       const isGood = plan!.type === 'cut' ? delta <= 0 : delta >= 0;
                       return (
                         <div key={e.date} className="flex items-center justify-between px-3 py-2">
@@ -453,9 +678,14 @@ export function PlanProgressModal({ open, onClose, localDB }: {
 // PlanModal
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
+export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, todayStr }: {
   open: boolean; onClose: () => void;
-  profile: UserProfile; m: BudgetMetrics;
+  profile: UserProfile;
+  /** Persists profile changes (mirrors AppContext.persistProfile). Used on
+   *  save to align profile.deficit with plan intent so the budget formula
+   *  reflects the chosen surplus/deficit (avoids the "bulk-but-eating-at-a-deficit" trap). */
+  persistProfile: (updates: Partial<UserProfile>) => void;
+  m: BudgetMetrics;
   localDB: LocalDB;
   todayStr: string;
 }) {
@@ -483,26 +713,80 @@ export function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Goal direction sanity — independent of projData so we can surface a clear
+  // error even when projData returns null. A cut requires the target weight
+  // to be below the starting weight; a bulk requires above. Without this,
+  // Math.abs in the weeks calc accepts any input and renders a chart whose
+  // projection line moves the OPPOSITE direction of the goal — visually
+  // contradictory and unrecoverable from the chart alone.
+  const goalDirectionError = useMemo<'cut-goal-too-high' | 'bulk-goal-too-low' | null>(() => {
+    if (!planType || goalMode !== 'weight') return null;
+    const sw = parseNum(startWeight);
+    const gw = parseNum(goalWeight);
+    if (sw <= 0 || gw <= 0) return null;
+    if (planType === 'cut'  && gw >= sw) return 'cut-goal-too-high';
+    if (planType === 'bulk' && gw <= sw) return 'bulk-goal-too-low';
+    return null;
+  }, [planType, goalMode, startWeight, goalWeight]);
+
   const projData = useMemo(() => {
     if (!planType || !startWeight) return null;
     const sw = parseNum(startWeight);
     if (sw <= 0) return null;
-    const kcal     = INTENSITY_KCAL[intensity];
-    const effectiveDeficit = planType === 'cut' ? kcal + m.activityBurn * 0.4 : 0;
+    const kcal         = INTENSITY_KCAL[intensity];
+    const cardioAdjust = m.activityBurn * 0.4;
+    // Cut: cardio enlarges the deficit. Bulk: cardio shrinks the surplus (clamped ≥ 0
+    // so a heavy-cardio user with a small surplus picks a higher intensity instead
+    // of getting a nonsensical negative-rate "bulk").
+    const effective = planType === 'cut'
+      ? kcal + cardioAdjust
+      : Math.max(0, kcal - cardioAdjust);
     const weeklyRate = planType === 'cut'
-      ? -(effectiveDeficit * 7 / 3500)
-      : kcal * 7 / 3500;
+      ? -(effective * 7 / 3500)
+      :  (effective * 7 / 3500);
     if (weeklyRate === 0) return null;
-    let weeks: number; let gw: number;
+    let weeks: number; let gw: number; let weeksNeeded: number | null = null;
     if (goalMode === 'weight') {
       gw = parseNum(goalWeight); if (gw <= 0) return null;
-      weeks = Math.max(1, Math.min(52, Math.ceil(Math.abs((gw - sw) / weeklyRate))));
+      // Skip projection when the goal direction is wrong — the UI shows a
+      // dedicated validation error instead.
+      if (planType === 'cut'  && gw >= sw) return null;
+      if (planType === 'bulk' && gw <= sw) return null;
+      const raw   = Math.ceil(Math.abs((gw - sw) / weeklyRate));
+      weeksNeeded = raw;
+      weeks       = Math.max(1, Math.min(52, raw));
     } else {
       weeks = Math.max(1, parseInt(goalWeeks) || 12);
       gw    = sw + weeklyRate * weeks;
     }
     const pts = Array.from({ length: weeks + 1 }, (_, w) => sw + weeklyRate * w);
-    return { pts, weeks, startWeight: sw, goalWeight: gw, weeklyRate, effectiveDeficit, kcal };
+    // wasCapped: target requires >52 wks at chosen intensity. The chart only
+    // shows the capped duration, so callers need to warn the user that the
+    // goal won't actually be reached in this window.
+    const wasCapped = weeksNeeded !== null && weeksNeeded > 52;
+    // If capped, suggest the lowest intensity that *would* hit the goal in
+    // ≤52 wks. The rate is (effective × 7 / 3500) where effective scales
+    // linearly with the chosen kcal (cardio adjust is constant for the day).
+    // Returns null if even the most aggressive setting can't fit.
+    let suggestedIntensity: { level: PlanIntensity; weeks: number } | null = null;
+    if (wasCapped && goalMode === 'weight') {
+      const order: PlanIntensity[] = ['slight', 'moderate', 'aggressive'];
+      const currentIdx = order.indexOf(intensity);
+      for (let i = currentIdx + 1; i < order.length; i++) {
+        const tryKcal = INTENSITY_KCAL[order[i]];
+        const tryEff  = planType === 'cut'
+          ? tryKcal + cardioAdjust
+          : Math.max(0, tryKcal - cardioAdjust);
+        if (tryEff <= 0) continue;
+        const tryRate = tryEff * 7 / 3500; // unsigned magnitude
+        const tryWks  = Math.ceil(Math.abs(gw - sw) / tryRate);
+        if (tryWks <= 52) {
+          suggestedIntensity = { level: order[i], weeks: tryWks };
+          break;
+        }
+      }
+    }
+    return { pts, weeks, startWeight: sw, goalWeight: gw, weeklyRate, effective, kcal, cardioAdjust, weeksNeeded, wasCapped, suggestedIntensity };
   }, [planType, intensity, startWeight, goalMode, goalWeight, goalWeeks, m.activityBurn]);
 
   const actualData = useMemo(() => {
@@ -523,14 +807,25 @@ export function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
 
   const handleSave = useCallback(() => {
     if (!projData || !planType) return;
+    const kcal = INTENSITY_KCAL[intensity];
     savePlanToStorage({
-      type: planType, intensity, dailyKcal: INTENSITY_KCAL[intensity],
+      type: planType, intensity, dailyKcal: kcal,
+      // Snapshot the activity burn used to derive the projection so progress
+      // tracking can apply the same cardio adjustment via getEffectiveDailyKcal().
+      creationActivityBurn: Math.round(m.activityBurn),
       startDate: todayStr,
       startWeight: projData.startWeight, goalWeight: projData.goalWeight,
       weeksTarget: projData.weeks,
     });
+    // Align profile.deficit with plan intent. Cuts use a positive deficit
+    // (budget = tdee − dailyKcal + eatBack), bulks store a negative value so
+    // the same budget formula produces the intended surplus
+    // (budget = tdee + dailyKcal + eatBack). Without this, a bulk user with
+    // the default deficit=500 would be told to eat at a real deficit even
+    // though the plan projects weight gain.
+    persistProfile({ deficit: String(planType === 'cut' ? kcal : -kcal) });
     onClose();
-  }, [projData, planType, intensity, todayStr, onClose]);
+  }, [projData, planType, intensity, m.activityBurn, todayStr, persistProfile, onClose]);
 
   const isValid = !!projData && !!planType;
 
@@ -667,13 +962,50 @@ export function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
                     ))}
                   </div>
 
-                  {planType === 'cut' && m.activityBurn > 0 && projData && (
+                  {m.activityBurn > 0 && projData && (
                     <div className="flex items-center gap-2 rounded border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2">
-                      <span className="block w-1.5 h-1.5 rounded-full bg-[var(--positive)] flex-shrink-0" />
+                      <span
+                        className="block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                        style={{ background: planType === 'cut' ? 'var(--positive)' : 'var(--warn)' }}
+                      />
                       <p className="font-mono text-[9px] text-[var(--ink-1)] tracking-[0.5px]">
-                        <span className="text-[var(--positive)] font-bold">+{fmt(Math.round(m.activityBurn * 0.4))} kcal/day</span>{' '}
-                        cardio factored in — {fmt(projData.kcal)} base + 40% of {fmt(Math.round(m.activityBurn))} cardio burn
+                        {planType === 'cut' ? (
+                          <>
+                            <span className="text-[var(--positive)] font-bold">+{fmt(Math.round(projData.cardioAdjust))} kcal/day</span>{' '}
+                            cardio adds to deficit — {fmt(projData.kcal)} base + 40% of {fmt(Math.round(m.activityBurn))} cardio = {fmt(Math.round(projData.effective))} eff.
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-[var(--warn)] font-bold">−{fmt(Math.round(projData.cardioAdjust))} kcal/day</span>{' '}
+                            cardio reduces surplus — {fmt(projData.kcal)} base − 40% of {fmt(Math.round(m.activityBurn))} cardio = {fmt(Math.round(projData.effective))} eff.
+                          </>
+                        )}
                       </p>
+                    </div>
+                  )}
+
+                  {projData.wasCapped && (
+                    <div className="mt-2 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/8 px-3 py-2">
+                      <div className="flex items-start gap-2">
+                        <span className="block w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5" style={{ background: 'var(--warn)' }} />
+                        <p className="font-mono text-[9px] text-[var(--warn)] tracking-[0.5px] leading-relaxed">
+                          Goal needs ~{projData.weeksNeeded} wks at this intensity — capped at 52 wks.
+                          {projData.suggestedIntensity ? (
+                            <>
+                              {' '}<button
+                                type="button"
+                                onClick={() => setIntensity(projData.suggestedIntensity!.level)}
+                                className="underline underline-offset-2 hover:text-[var(--ink-0)] transition-colors font-bold"
+                              >
+                                Switch to {INTENSITY_LABELS[planType!][projData.suggestedIntensity.level]}
+                              </button>{' '}
+                              to reach goal in ~{projData.suggestedIntensity.weeks} wks.
+                            </>
+                          ) : (
+                            <> Even the most aggressive intensity can&apos;t fit in 52 wks — pick a closer target weight.</>
+                          )}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </motion.div>
@@ -692,6 +1024,22 @@ export function PlanModal({ open, onClose, profile, m, localDB, todayStr }: {
                       ))}
                     </div>
                   )}
+                </div>
+              ) : goalDirectionError ? (
+                <div className="mb-4 rounded border border-[var(--danger)]/40 bg-[var(--danger)]/8 px-3 py-3">
+                  <p className="font-mono text-[10px] text-[var(--danger)] tracking-[0.5px] leading-relaxed">
+                    {goalDirectionError === 'cut-goal-too-high'
+                      ? `Cut goal must be lower than starting weight. Set a target below ${parseNum(startWeight).toFixed(1)} lb, or switch to Bulk.`
+                      : `Bulk goal must be higher than starting weight. Set a target above ${parseNum(startWeight).toFixed(1)} lb, or switch to Cut.`}
+                  </p>
+                </div>
+              ) : planType === 'bulk' && m.activityBurn * 0.4 >= INTENSITY_KCAL[intensity] ? (
+                <div className="mb-4 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/8 px-3 py-3">
+                  <p className="font-mono text-[10px] text-[var(--warn)] tracking-[0.5px] leading-relaxed">
+                    Cardio burn of {fmt(Math.round(m.activityBurn))} kcal/day cancels out the
+                    {' '}{fmt(INTENSITY_KCAL[intensity])} kcal surplus (40% of cardio counts against surplus).
+                    Pick a higher intensity or reduce logged cardio to enable this bulk.
+                  </p>
                 </div>
               ) : planType && (
                 <div className="mb-4 rounded border border-dashed border-[var(--line-2)] py-8 text-center">
@@ -768,15 +1116,18 @@ export function ProjectionModal({ open, m, weightLbs, calsEaten, localDB, onClos
 
   const { latestWeight, status: planStatus, weeksSince } = useMemo(() => {
     if (!plan || !open) return { latestWeight: null, status: 'no-data', weeksSince: 0 };
+    // Filter to plan window — pre-plan weights aren't current progress.
     const entries = (Object.entries(localDB) as [string, DayRecord][])
-      .filter(([, r]) => parseNum(String(r.weight ?? '0')) > 0)
+      .filter(([ds, r]) => ds >= plan.startDate && parseNum(String(r.weight ?? '0')) > 0)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([, r]) => parseNum(String(r.weight)));
     const latest = entries.length > 0 ? entries[entries.length - 1] : null;
     const wks = Math.max(0, (Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / (7 * 86400000));
-    const rate = plan.type === 'cut' ? -(plan.dailyKcal * 7 / 3500) : (plan.dailyKcal * 7 / 3500);
+    const eff  = getEffectiveDailyKcal(plan);
+    const rate = plan.type === 'cut' ? -(eff * 7 / 3500) : (eff * 7 / 3500);
     const exp  = rate * wks;
-    const act  = latest !== null ? latest - plan.startWeight : null;
+    const base = getPlanBaseline(plan, localDB);
+    const act  = latest !== null ? latest - base : null;
     let st = 'no-data';
     if (act !== null && wks >= 0.5 && Math.abs(exp) > 0.05) {
       const thr = Math.abs(exp) * 0.2, d = act - exp;
