@@ -84,27 +84,6 @@ export interface OFFProduct {
   nutriments: OFFNutriments;
 }
 
-/**
- * Validate a scanned barcode's check digit so a misread is rejected before we
- * waste a lookup on it. UPC-A (12) and EAN-13 (13) use the standard
- * right-to-left ×3/×1 weighting; other lengths (EAN-8, UPC-E, ITF-14) use
- * varying schemes, so we accept those on shape alone rather than risk a false
- * rejection of a valid code.
- */
-export function isValidBarcode(code: string): boolean {
-  if (!/^\d+$/.test(code)) return false;
-  if (code.length === 12 || code.length === 13) {
-    const digits = code.split('').map(Number);
-    const check  = digits.pop()!;
-    let sum = 0;
-    for (let i = digits.length - 1, w = 3; i >= 0; i--, w = w === 3 ? 1 : 3) {
-      sum += digits[i] * w;
-    }
-    return (10 - (sum % 10)) % 10 === check;
-  }
-  return code.length === 8 || code.length === 14;
-}
-
 export function perServing(p: OFFProduct, servings: number): Pick<FoodEntry, 'kcal'|'protein'|'carbs'|'fat'> {
   const n   = p.nutriments;
   const g   = parseFloat(String(p.serving_quantity ?? '100')) || 100;
@@ -628,18 +607,25 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       const reader = new BrowserMultiFormatReader();
       let handled = false;
 
-      // ── Misread gate ──────────────────────────────────────────────────────
-      // Reject any frame that fails its EAN/UPC check digit so a garbled read is
-      // never looked up; keep scanning until a valid code appears. Fed by both
-      // the ZXing and BarcodeDetector paths below. (Accept on the first VALID
-      // read — BarcodeDetector self-stops after one detection, so anything
-      // stricter than that would never complete on Android.)
+      // ╔══════════════════════════════════════════════════════════════════════╗
+      // ║  KNOWN-GOOD CAMERA SETUP — DO NOT "improve" without testing on a REAL  ║
+      // ║  iOS Safari AND Android Chrome device first. This block has broken the ║
+      // ║  scanner three separate times. Each of the following was tried and    ║
+      // ║  BROKE detection on a real phone — do NOT reintroduce any of them:     ║
+      // ║   1. Adding width/height to the getUserMedia constraints               ║
+      // ║      (e.g. { width:{ideal:1920} }). Keep it { facingMode:'environment' }.║
+      // ║   2. Calling track.applyConstraints({advanced:[{focusMode:...}]}) on   ║
+      // ║      the live stream — it destabilises the feed ZXing/BD read from.    ║
+      // ║   3. Requiring >1 matching frame before accepting. The BarcodeDetector ║
+      // ║      loop self-stops after ONE detection, so anything stricter than    ║
+      // ║      accept-on-first never completes on Android.                       ║
+      // ║  Reliability improvements belong in lookupBarcode (AFTER detection),   ║
+      // ║  never in this stream/detection setup.                                 ║
+      // ╚══════════════════════════════════════════════════════════════════════╝
       // ZXing handles camera open, video setup, and play() retry on canplay.
-      // This is the approach that works on iOS/Android — do not replace it.
-      // On a valid read: flash green, freeze the frame for 450 ms, then transition.
+      // Shared handler — flashes green, freezes the frame for 450 ms, then transitions.
       const onFound = (code: string, stopFn: () => void) => {
         if (handled) return;
-        if (!isValidBarcode(code)) return;       // misread — ignore, keep scanning
         handled = true;
         setDetected(true);
         setTimeout(() => {
@@ -652,12 +638,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       };
 
       const controls = await reader.decodeFromConstraints(
-        // Ask for a high-res rear camera so small barcodes resolve sharply.
-        { video: {
-          facingMode: { ideal: 'environment' },
-          width:  { ideal: 1920 },
-          height: { ideal: 1080 },
-        } },
+        { video: { facingMode: 'environment' } },
         videoRef.current,
         (result, _err, ctrl) => {
           if (result) onFound(result.getText(), () => ctrl.stop());
@@ -665,22 +646,8 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       );
       controlsRef.current = controls;
 
-      // Best-effort continuous autofocus — sharper frames = better decode rates.
-      // Fire-and-forget so it never blocks or interferes with detection; silently
-      // ignored on devices/browsers that don't support the constraint.
-      try {
-        const stream = videoRef.current.srcObject as MediaStream | null;
-        const track  = stream?.getVideoTracks?.()[0];
-        // focusMode isn't in the TS MediaTrackConstraints type yet.
-        void track?.applyConstraints?.(
-          { advanced: [{ focusMode: 'continuous' }] } as unknown as MediaTrackConstraints
-        ).catch(() => {});
-      } catch { /* unsupported — fine */ }
-
-      // If BarcodeDetector is available, run it alongside ZXing for faster
-      // detection. It keeps scanning until onFound ACCEPTS a valid code (sets
-      // `handled`) — it must not stop on a checksum-invalid read, or a single
-      // bad frame would end the scan with nothing accepted.
+      // If BarcodeDetector is available, run it alongside for better detection.
+      // First to find a barcode wins; handled flag prevents double-lookup.
       if ('BarcodeDetector' in window && videoRef.current) {
         const video = videoRef.current;
         const origStop = controls.stop.bind(controls);
@@ -699,10 +666,14 @@ export function AddFoodModal({ open, onClose, onAdd }: {
               try {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const codes: any[] = await detector.detect(video);
-                if (codes.length > 0) onFound(codes[0].rawValue, origStop);
+                if (codes.length > 0) {
+                  bdActive = false;
+                  onFound(codes[0].rawValue, origStop);
+                  return;
+                }
               } catch { /* no barcode this frame */ }
             }
-            if (!handled) requestAnimationFrame(tick);
+            requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
         } catch { /* BarcodeDetector init failed — ZXing still detecting */ }
@@ -722,12 +693,10 @@ export function AddFoodModal({ open, onClose, onAdd }: {
     const candidates = [code];
     if (code.length === 12)                     candidates.push('0' + code);
     if (code.length === 13 && code[0] === '0')  candidates.push(code.slice(1));
-    const fields = 'product_name,brands,serving_size,serving_quantity,nutriments,code';
     try {
       for (const c of candidates) {
-        const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${c}.json?fields=${fields}`);
-        if (!res.ok) continue;
-        const data = await res.json() as { status?: number; product?: OFFProduct };
+        const res  = await fetch(`https://world.openfoodfacts.org/api/v0/product/${c}.json`);
+        const data = await res.json() as { status: number; product?: OFFProduct };
         if (data.status === 1 && data.product?.product_name) {
           setSelectedProduct({ p: data.product, barcode: c, source: 'scan' });
           return;
