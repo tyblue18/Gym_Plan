@@ -28,6 +28,9 @@ export interface PushPayload {
   title: string;
   body:  string;
   url?:  string;
+  /** Notification tag — same tag replaces a prior notification of that kind
+   *  instead of stacking. Defaults to 'que' in the service worker. */
+  tag?:  string;
 }
 
 /** Outcome of a send attempt — lets callers (e.g. the test endpoint) report

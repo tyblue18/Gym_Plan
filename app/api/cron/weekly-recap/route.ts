@@ -27,6 +27,9 @@ type PushSubClient = {
 
 const ps = () => (prisma as unknown as { pushSubscription: PushSubClient }).pushSubscription;
 
+type DayClient = { findMany: (a: unknown) => Promise<Array<{ userId: string; date: string; data: unknown }>> };
+const dr = () => (prisma as unknown as { dayRecord: DayClient }).dayRecord;
+
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 function dateStr(d: Date): string {
@@ -149,19 +152,32 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   const userIds = subscribers.map(s => s.userId);
 
-  const workoutRows = await prisma.workoutData.findMany({
-    where:  { userId: { in: userIds } },
-    select: { userId: true, localDB: true, settings: true },
-  });
+  // Settings (for streak) come from WorkoutData; per-day stats come from
+  // DayRecord rows — the WorkoutData.localDB blob is no longer written by sync.
+  const [settingsRows, dayRows] = await Promise.all([
+    prisma.workoutData.findMany({
+      where:  { userId: { in: userIds } },
+      select: { userId: true, settings: true },
+    }),
+    dr().findMany({
+      where:  { userId: { in: userIds }, date: { in: dates } },
+      select: { userId: true, date: true, data: true },
+    }),
+  ]);
 
-  const dataByUser = new Map(workoutRows.map(r => [r.userId, r]));
+  const settingsByUser = new Map(settingsRows.map(r => [r.userId, (r.settings ?? {}) as Record<string, unknown>]));
+  const daysByUser = new Map<string, Record<string, DayRecord>>();
+  for (const r of dayRows) {
+    const m = daysByUser.get(r.userId) ?? {};
+    m[r.date] = (r.data ?? {}) as DayRecord;
+    daysByUser.set(r.userId, m);
+  }
 
   let sent = 0;
 
   for (const { userId } of subscribers) {
-    const row      = dataByUser.get(userId);
-    const localDB  = (row?.localDB  ?? {}) as Record<string, DayRecord>;
-    const settings = (row?.settings ?? {}) as Record<string, unknown>;
+    const settings = settingsByUser.get(userId) ?? {};
+    const localDB  = daysByUser.get(userId) ?? {};
 
     const streak = (() => {
       try {
@@ -173,7 +189,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     const stats = computeStats(localDB, dates);
     const msg   = buildRecap(stats, streak);
 
-    await sendPushToUser(userId, { ...msg, url: '/app' });
+    await sendPushToUser(userId, { ...msg, url: '/app', tag: 'weekly-recap' });
     sent++;
   }
 

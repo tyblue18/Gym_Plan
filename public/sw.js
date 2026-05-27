@@ -15,12 +15,14 @@
 // route handling). The activate handler purges every cache whose name
 // doesn't match, so a deploy with a fresh version guarantees no stale
 // entries linger. JS/CSS hashes already invalidate via network-first below.
-const CACHE = 'que-v4';
+const CACHE = 'que-v6';
 
 const PRECACHE = [
   '/',
   '/index.html',
   '/Que_logo.png',
+  '/badge.png',
+  '/notification-icon.png',
   '/manifest.json',
 ];
 
@@ -57,13 +59,25 @@ self.addEventListener('activate', event => {
 
 /* ── Push notifications ────────────────────────────────────────────── */
 self.addEventListener('push', event => {
-  const data = event.data?.json() ?? {};
+  let data = {};
+  try { data = event.data?.json() ?? {}; } catch { /* malformed payload */ }
   event.waitUntil(
     self.registration.showNotification(data.title ?? 'Que', {
-      body:  data.body  ?? '',
-      icon:  '/Que_logo.png',
-      badge: '/Que_logo.png',
-      data:  { url: data.url ?? '/' },
+      body:    data.body ?? '',
+      // Large icon (right side): branded dark tile with the Q (looks clean on
+      // the dark notification shade, unlike the plain white logo square).
+      icon:    data.icon ?? '/notification-icon.png',
+      // Small status-bar icon (left): MUST be a monochrome transparent PNG —
+      // Android masks it to its alpha. Using the full-color logo here rendered
+      // as a blank square; badge.png is a white Q silhouette on transparent.
+      badge:   '/badge.png',
+      // Same tag → a new reminder of the same kind replaces the old one instead
+      // of stacking. Distinct kinds (weigh-in / food / battle) pass their own.
+      tag:     data.tag ?? 'que',
+      renotify: true,
+      vibrate: [60, 40, 60],
+      timestamp: Date.now(),
+      data:    { url: data.url ?? '/app' },
     })
   );
 });

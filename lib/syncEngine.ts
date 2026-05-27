@@ -62,6 +62,10 @@ export function gatherSettings(): Record<string, unknown> {
     try { out[key] = JSON.parse(raw); }
     catch { out[key] = raw; } // keep as string if not valid JSON
   }
+  // Stamp the device's current UTC offset (minutes; local = UTC − offset) so the
+  // server-side reminder crons can resolve each user's LOCAL date and hour —
+  // e.g. fire the food-log nudge at ~8pm local and check the right day's data.
+  out.queTzOffset = new Date().getTimezoneOffset();
   return out;
 }
 

@@ -1,76 +1,41 @@
 /**
- * GET /api/cron/daily-nudge
+ * GET /api/cron/daily-nudge  — Evening food-log reminder
  *
- * Scheduled at 20:00 UTC daily by Vercel Cron.
- * For every user with a push subscription, checks today's localDB entry.
- * Sends a targeted nudge if they haven't logged food, a workout, or either.
+ * Scheduled at 00:00 UTC daily by Vercel Cron (= 8 pm US Eastern).
+ * For every subscribed user, if it's evening in THEIR timezone and they
+ * haven't logged any calories for their local today, send a reminder.
+ *
+ * Reads per-day data from DayRecord rows (the WorkoutData.localDB blob is no
+ * longer written by /api/sync) and resolves each user's local date + hour from
+ * the timezone offset stamped into their synced settings (queTzOffset).
+ *
+ * Note: Vercel Hobby crons run once per day at a fixed UTC time, so this fires
+ * at the evening of US-timezone users (around 00:00 UTC). The local-hour gate
+ * keeps users far from that window from getting an off-hours ping.
  * Protected by CRON_SECRET.
  */
 
-import { NextResponse }     from 'next/server';
-import { prisma }           from '@/lib/prisma';
-import { sendPushToUser }   from '@/lib/push';
-import { LAST_STREAK_KEY }  from '@/lib/constants';
+import { NextResponse }    from 'next/server';
+import { prisma }          from '@/lib/prisma';
+import { sendPushToUser }  from '@/lib/push';
+import { LAST_STREAK_KEY } from '@/lib/constants';
 
-interface DayRecord {
-  calsEaten?: string | number;
-  exercises?: string;
-  budget?:    number | string;
+type SubClient = { findMany: (a: unknown) => Promise<Array<{ userId: string }>> };
+const ps = () => (prisma as unknown as { pushSubscription: SubClient }).pushSubscription;
+
+type DayClient = { findMany: (a: unknown) => Promise<Array<{ userId: string; date: string; data: unknown }>> };
+const dr = () => (prisma as unknown as { dayRecord: DayClient }).dayRecord;
+
+const DEFAULT_TZ_OFFSET = 240; // US Eastern; local = UTC − offsetMinutes
+
+function utcDateStr(offsetDays = 0): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
 }
-
-type PushSubClient = {
-  findMany: (args: {
-    distinct:  string[];
-    select:    Record<string, boolean>;
-  }) => Promise<Array<{ userId: string }>>;
-};
-
-const ps = () => (prisma as unknown as { pushSubscription: PushSubClient }).pushSubscription;
-
-function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function hasLoggedFood(day: DayRecord | undefined): boolean {
-  if (!day) return false;
-  const eaten = parseFloat(String(day.calsEaten ?? '0'));
-  return eaten > 50;
-}
-
-function hasLoggedWorkout(day: DayRecord | undefined): boolean {
-  if (!day?.exercises) return false;
-  try {
-    const entries = JSON.parse(day.exercises) as Array<{ k: string }>;
-    return entries.some(e => e.k === 'lift' || e.k === 'run' || e.k === 'bike' || e.k === 'swim');
-  } catch { return false; }
-}
-
-function buildMessage(
-  loggedFood: boolean,
-  loggedWorkout: boolean,
-  streak: number,
-): { title: string; body: string } | null {
-  const streakNote = streak >= 3 ? ` Keep your ${streak}-day streak alive.` : '';
-
-  if (!loggedFood && !loggedWorkout) {
-    return {
-      title: 'Log your day 📋',
-      body:  `You haven't tracked food or a workout yet today.${streakNote}`,
-    };
-  }
-  if (!loggedFood) {
-    return {
-      title: 'Track your meals 🍽️',
-      body:  `Workout logged — just missing today's food.${streakNote}`,
-    };
-  }
-  if (!loggedWorkout) {
-    return {
-      title: 'Hit the gym? 💪',
-      body:  `Food's tracked — no workout logged yet today.`,
-    };
-  }
-  return null; // all done, no nudge needed
+function localParts(tzOffsetMin: number): { date: string; hour: number } {
+  const d = new Date(Date.now() - tzOffsetMin * 60_000);
+  return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
@@ -79,54 +44,57 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const today = todayUTC();
-
-  // Get distinct user IDs that have at least one push subscription
-  const subscribers = await ps().findMany({
-    distinct: ['userId'],
-    select:   { userId: true },
-  });
-
-  if (subscribers.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0, skipped: 0, date: today });
-  }
+  const subscribers = await ps().findMany({ distinct: ['userId'], select: { userId: true } });
+  if (subscribers.length === 0) return NextResponse.json({ ok: true, sent: 0, skipped: 0 });
 
   const userIds = subscribers.map(s => s.userId);
 
-  // Fetch workout data for all subscribed users in one query
-  const workoutRows = await prisma.workoutData.findMany({
+  const wd = await prisma.workoutData.findMany({
     where:  { userId: { in: userIds } },
-    select: { userId: true, localDB: true, settings: true },
+    select: { userId: true, settings: true },
   });
+  const settingsByUser = new Map(wd.map(r => [r.userId, (r.settings ?? {}) as Record<string, unknown>]));
 
-  const dataByUser = new Map(workoutRows.map(r => [r.userId, r]));
+  const dates = [utcDateStr(-1), utcDateStr(0), utcDateStr(1)];
+  const rows  = await dr().findMany({
+    where:  { userId: { in: userIds }, date: { in: dates } },
+    select: { userId: true, date: true, data: true },
+  });
+  const byUser = new Map<string, Record<string, { calsEaten?: string | number }>>();
+  for (const r of rows) {
+    const m = byUser.get(r.userId) ?? {};
+    m[r.date] = (r.data ?? {}) as { calsEaten?: string | number };
+    byUser.set(r.userId, m);
+  }
 
   let sent = 0, skipped = 0;
 
   for (const { userId } of subscribers) {
-    const row      = dataByUser.get(userId);
-    const localDB  = (row?.localDB  ?? {}) as Record<string, DayRecord>;
-    const settings = (row?.settings ?? {}) as Record<string, unknown>;
-    const today_record = localDB[today];
+    const settings = settingsByUser.get(userId) ?? {};
+    const tz   = typeof settings.queTzOffset === 'number' ? settings.queTzOffset : DEFAULT_TZ_OFFSET;
+    const { date, hour } = localParts(tz);
 
-    const loggedFood    = hasLoggedFood(today_record);
-    const loggedWorkout = hasLoggedWorkout(today_record);
+    // Only fire in the user's evening (~6 pm–11 pm local).
+    if (hour < 18 || hour > 23) { skipped++; continue; }
 
-    // Parse streak from synced settings
+    const eaten = parseFloat(String(byUser.get(userId)?.[date]?.calsEaten ?? '0')) || 0;
+    if (eaten > 50) { skipped++; continue; } // already logged food today
+
     const streak = (() => {
-      try {
-        const raw = settings[LAST_STREAK_KEY];
-        return typeof raw === 'number' ? raw : parseInt(String(raw ?? '0')) || 0;
-      } catch { return 0; }
+      const raw = settings[LAST_STREAK_KEY];
+      return typeof raw === 'number' ? raw : parseInt(String(raw ?? '0')) || 0;
     })();
+    const streakNote = streak >= 3 ? ` Don't break your ${streak}-day streak.` : '';
 
-    const msg = buildMessage(loggedFood, loggedWorkout, streak);
-    if (!msg) { skipped++; continue; }
-
-    await sendPushToUser(userId, { ...msg, url: '/app' });
+    await sendPushToUser(userId, {
+      title: 'Log your meals 🍽️',
+      body:  `You haven't tracked any calories today.${streakNote}`,
+      url:   '/app',
+      tag:   'food-log',
+    });
     sent++;
   }
 
-  console.log(`[cron/daily-nudge] ${today} — sent:${sent} skipped:${skipped}`);
-  return NextResponse.json({ ok: true, date: today, sent, skipped });
+  console.log(`[cron/daily-nudge] evening food reminder — sent:${sent} skipped:${skipped}`);
+  return NextResponse.json({ ok: true, sent, skipped });
 }
