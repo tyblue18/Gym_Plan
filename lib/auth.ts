@@ -7,7 +7,10 @@ import { prisma } from '@/lib/prisma';
  * Centralised NextAuth config — imported by:
  *   • app/api/auth/[...nextauth]/route.ts   (the handler)
  *   • app/api/sync/route.ts                 (getServerSession)
- *   • app/api/health/google-fit/*           (getServerSession)
+ *   • app/api/health/token/route.ts         (getServerSession)
+ *
+ * Note: Google sign-in uses only the default scopes (openid, email, profile) —
+ * no sensitive scopes — so the app needs no Google OAuth verification.
  */
 export const authOptions: NextAuthOptions = {
   logger: {

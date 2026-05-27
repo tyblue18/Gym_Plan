@@ -22,7 +22,7 @@ export default function PrivacyPage() {
         <li><strong>Account information</strong> — when you sign in with Google or GitHub, we receive your name, email address, profile image, and a provider account ID. You also choose a username.</li>
         <li><strong>Fitness &amp; nutrition data you enter</strong> — workouts (exercises, sets, reps, weights), cardio, body weight, calories and macros, food logs, plans, and related notes.</li>
         <li><strong>Profile photo</strong> — if you upload one, it&apos;s stored in our image storage.</li>
-        <li><strong>Google Fit data</strong> — <em>only if you choose to connect Google Fit</em>, we read your daily step count (read-only access to the <code>fitness.activity.read</code> scope). You can disconnect at any time.</li>
+        <li><strong>Step count</strong> — if you enter your daily steps (manually, or by pushing them from a phone shortcut), we store that number with your day&apos;s data.</li>
         <li><strong>Push subscriptions</strong> — if you enable notifications, we store the browser push subscription needed to deliver them.</li>
         <li><strong>Technical data</strong> — error diagnostics (to fix crashes), anonymous usage analytics, your timezone, and your IP address (used transiently for rate-limiting and abuse prevention).</li>
       </Ul>
@@ -50,28 +50,26 @@ export default function PrivacyPage() {
         <li><strong>Vercel</strong> — hosting, image storage, and anonymous analytics.</li>
         <li><strong>Neon</strong> — our PostgreSQL database.</li>
         <li><strong>Upstash</strong> — rate-limiting and caching.</li>
-        <li><strong>Google &amp; GitHub</strong> — sign-in; Google Fit (only if connected).</li>
+        <li><strong>Google &amp; GitHub</strong> — sign-in (OAuth).</li>
         <li><strong>USDA FoodData Central &amp; Open Food Facts</strong> — food lookups (your search terms / scanned barcodes are sent to find nutrition info).</li>
         <li><strong>Sentry</strong> — error monitoring.</li>
         <li><strong>Browser push services</strong> (e.g. Apple, Google) — to deliver notifications you enable.</li>
       </Ul>
 
-      <H2>Google user data</H2>
+      <H2>Google sign-in</H2>
       <P>
-        {SITE.name}&apos;s use and transfer of information received from Google APIs adheres to the{' '}
+        When you sign in with Google we receive only your basic profile (name, email address, and
+        profile image) to create and identify your account. {SITE.name} does not request or access
+        any other Google data. Our use of information received from Google APIs adheres to the{' '}
         <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] underline">
           Google API Services User Data Policy
-        </a>, including the Limited Use requirements. Google Fit step data is used only to display
-        your activity inside the app. It is never sold, never used for advertising, and never
-        shared with third parties except as needed to provide this feature to you. You can revoke
-        access anytime by disconnecting Google Fit in the app or via your Google Account settings.
+        </a>. We never sell this data or use it for advertising.
       </P>
 
       <H2>Your choices &amp; rights</H2>
       <Ul>
         <li><strong>Export</strong> — download a full copy of your data anytime via Export Data in the app.</li>
         <li><strong>Delete</strong> — request deletion of your account and associated data by emailing us.</li>
-        <li><strong>Disconnect Google Fit</strong> — stops all step syncing immediately.</li>
         <li><strong>Notifications</strong> — turn off anytime in the app or your browser settings.</li>
       </Ul>
 

@@ -5,6 +5,11 @@ import {
   TrendingUp, Award, Dumbbell,
 } from 'lucide-react';
 import queLogo from '@/public/Que_logo.png';
+import calendarPreview from '@/public/Calendar_preview.png';
+import caloriesPreview from '@/public/Calories_preview.png';
+import metricsPreview from '@/public/Metrics_preview.png';
+import protocolPreview from '@/public/Protocol_preview.png';
+import socialPreview from '@/public/Social_preview.png';
 import { InstallCTA } from '@/components/landing/InstallCTA';
 import { InviteBanner } from '@/components/landing/InviteBanner';
 
@@ -45,6 +50,14 @@ const STATS = [
   { value: '5', label: 'tabs. One app.' },
   { value: 'PWA', label: 'works offline' },
   { value: '∞', label: 'food database' },
+] as const;
+
+const PREVIEWS = [
+  { img: calendarPreview, label: 'Calendar', body: 'Log every set, rep, and weight in a clean week view.' },
+  { img: caloriesPreview, label: 'Calories', body: 'Search foods, scan barcodes, hit your macros daily.' },
+  { img: metricsPreview,  label: 'Metrics',  body: 'Weight trends, PRs, and cut/bulk progress at a glance.' },
+  { img: protocolPreview, label: 'Protocol', body: 'Plan workouts and build running training plans.' },
+  { img: socialPreview,   label: 'Social',   body: 'Add friends, compare stats, and battle for coins.' },
 ] as const;
 
 export default function LandingPage() {
@@ -125,6 +138,33 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ── Product previews ── */}
+      <section className="lp-previews">
+        <div className="lp-previews-inner">
+          <p className="lp-section-label">See it in action</p>
+          <h2 className="lp-section-title">Every tab, dialed in</h2>
+        </div>
+        <div className="lp-preview-strip">
+          {PREVIEWS.map(({ img, label, body }) => (
+            <figure key={label} className="lp-preview-card">
+              <div className="lp-preview-frame">
+                <Image
+                  src={img}
+                  alt={`${label} screen in the Que app`}
+                  placeholder="blur"
+                  sizes="(max-width: 640px) 66vw, 240px"
+                  className="lp-preview-img"
+                />
+              </div>
+              <figcaption className="lp-preview-cap">
+                <span className="lp-preview-label">{label}</span>
+                <span className="lp-preview-body">{body}</span>
+              </figcaption>
+            </figure>
+          ))}
         </div>
       </section>
 

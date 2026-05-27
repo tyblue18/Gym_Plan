@@ -1,8 +1,7 @@
 /**
  * GET /api/cron/resolve-battles
  *
- * Scheduled at 03:00 UTC daily (after sync-steps at 02:00 — gives Google Fit
- * data a chance to land before scoring).
+ * Scheduled at 03:00 UTC daily.
  *
  * Sweeps every typed battle whose status='active' and endDate < today, scores
  * it via lib/battleEngine.resolveBattle(), transfers the pot, and pushes a
