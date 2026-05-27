@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Activity, ChevronRight, Plus, User, X } from 'lucide-react';
+import { Activity, ChevronRight, Download, Plus, User, X } from 'lucide-react';
 import {
   useApp,
   type DayRecord, type UserProfile,
@@ -213,7 +213,17 @@ function ProfilePanel({ profile, onChange, onOpenPlan, onOpenRunPlan }: {
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-[var(--line)]">
+        <div className="flex items-center justify-end gap-3 mt-4 pt-4 border-t border-[var(--line)] flex-wrap">
+          <button
+            onClick={() => {
+              void import('@/lib/dataExport').then(m => m.downloadExport());
+              void import('@/lib/telemetry').then(m => m.trackEvent('data_exported'));
+            }}
+            className="que-btn-ghost flex items-center gap-2"
+            title="Download a JSON snapshot of all your local data"
+          >
+            <Download size={13} /> Export Data
+          </button>
           <button onClick={onOpenRunPlan} className="que-btn-ghost flex items-center gap-2">
             <Activity size={13} /> Running Plan
           </button>

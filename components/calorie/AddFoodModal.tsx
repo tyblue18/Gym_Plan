@@ -4,8 +4,11 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Plus, X, Search, Camera, ChevronRight, BookOpen, Trash2, ScanLine, Pencil,
+  Clock, TrendingUp,
 } from 'lucide-react';
 import type { FoodEntry } from '@/lib/AppContext';
+import { getRecent, getFrequent, forgetFood, type FoodUsageEntry } from '@/lib/foodUsage';
+import { trackEvent } from '@/lib/telemetry';
 
 // ── Custom / My Foods ─────────────────────────────────────────────────────────
 
@@ -102,8 +105,17 @@ function FoodDetailSheet({ product, barcode, onAdd, onBack }: {
   onBack: () => void;
 }) {
   const [servings, setServings] = useState(1);
+  // Outlier confirm: typos like 12000 kcal/100g (real OFF data has this!) are
+  // the #1 source of garbage calorie data. Require a second tap when the
+  // chosen serving exceeds a sane single-meal ceiling.
+  const [pendingHighKcal, setPendingHighKcal] = useState(false);
   const macros = perServing(product, servings);
   const servingDesc = product.serving_size ?? `${product.serving_quantity ?? 100}g`;
+  // Reset outlier confirm whenever the serving count changes (user is
+  // reconsidering — don't keep showing the warning).
+  useEffect(() => { setPendingHighKcal(false); }, [servings]);
+  const HIGH_KCAL_THRESHOLD = 3000;
+  const isHighKcal = macros.kcal > HIGH_KCAL_THRESHOLD;
 
   return (
     <div className="flex flex-col h-full">
@@ -161,18 +173,37 @@ function FoodDetailSheet({ product, barcode, onAdd, onBack }: {
         </div>
       </div>
 
+      {isHighKcal && pendingHighKcal && (
+        <div className="mb-3 rounded border border-[var(--warn)]/50 bg-[var(--warn)]/8 px-3 py-2">
+          <p className="font-mono text-[10px] text-[var(--warn)] tracking-[0.3px] leading-relaxed">
+            <strong>{macros.kcal} kcal</strong> in one entry is unusually high — most meals are 300–1,000 kcal.
+            Tap <strong>Confirm</strong> if that&apos;s right, or adjust servings / go back.
+          </p>
+        </div>
+      )}
+
       <button
         type="button"
-        onClick={() => onAdd({
-          name: product.product_name,
-          brand: product.brands,
-          ...macros,
-          servingDesc,
-          servings,
-        }, barcode)}
-        className="que-btn-primary w-full py-4 mt-auto"
+        onClick={() => {
+          if (isHighKcal && !pendingHighKcal) { setPendingHighKcal(true); return; }
+          if (isHighKcal && pendingHighKcal) {
+            trackEvent('food_outlier_confirmed', { kcal: macros.kcal });
+          }
+          onAdd({
+            name: product.product_name,
+            brand: product.brands,
+            ...macros,
+            servingDesc,
+            servings,
+          }, barcode);
+        }}
+        className={
+          isHighKcal && pendingHighKcal
+            ? 'que-btn-ghost w-full py-4 mt-auto !border-[var(--warn)] !text-[var(--warn)]'
+            : 'que-btn-primary w-full py-4 mt-auto'
+        }
       >
-        Add to Log
+        {isHighKcal && pendingHighKcal ? 'Confirm Add' : 'Add to Log'}
       </button>
     </div>
   );
@@ -413,6 +444,109 @@ function MyFoodsTab({ onSelect }: { onSelect: (p: OFFProduct) => void }) {
   );
 }
 
+// ── Quick Picks (recent + frequent shortcuts) ─────────────────────────────────
+
+/** Turn a stored FoodUsageEntry back into an OFFProduct so the existing detail
+ *  sheet (servings stepper, macro preview) works without any branching. */
+function usageToOFF(u: FoodUsageEntry): OFFProduct {
+  return {
+    code:             u.barcode,
+    product_name:     u.name,
+    brands:           u.brand,
+    serving_size:     u.servingDesc,
+    serving_quantity: 100,
+    nutriments: {
+      'energy-kcal_100g': u.kcal,
+      proteins_100g:       u.protein,
+      carbohydrates_100g:  u.carbs,
+      fat_100g:            u.fat,
+    },
+  };
+}
+
+function QuickPicksPanel({
+  refreshKey,
+  onSelect,
+}: {
+  /** Bumped after a forget action so the lists re-read localStorage. */
+  refreshKey: number;
+  onSelect:   (product: OFFProduct, barcode?: string) => void;
+}) {
+  const [tab,      setTab]      = useState<'recent' | 'frequent'>('recent');
+  const [entries,  setEntries]  = useState<FoodUsageEntry[]>([]);
+  const [refresh,  setRefresh]  = useState(0);
+
+  useEffect(() => {
+    setEntries(tab === 'recent' ? getRecent(20) : getFrequent(20));
+  }, [tab, refresh, refreshKey]);
+
+  if (entries.length === 0 && refresh === 0) {
+    // Both tabs empty — only show on the recent tab to avoid a flash.
+    if (tab === 'recent') {
+      return (
+        <div className="text-center py-8 border border-dashed border-[var(--line-2)] rounded">
+          <p className="font-mono text-[10px] text-[var(--ink-3)] tracking-[1px] uppercase">No quick picks yet</p>
+          <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[0.5px]">Search or scan a food — it&apos;ll show up here next time</p>
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex bg-[var(--bg-2)] border border-[var(--line)] rounded-sm p-1 gap-0.5">
+        {([['recent', 'Recent', Clock], ['frequent', 'Frequent', TrendingUp]] as const).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={[
+              'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-sm font-mono text-[9px] font-bold tracking-[1px] uppercase transition-all',
+              tab === id ? 'bg-[var(--accent)] text-[var(--accent-ink)]' : 'text-[var(--ink-2)] hover:text-[var(--ink-0)]',
+            ].join(' ')}
+          >
+            <Icon size={11} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {entries.length === 0 ? (
+        <p className="font-mono text-[9px] text-[var(--ink-3)] text-center py-6 tracking-[0.5px]">
+          {tab === 'recent' ? 'No recent foods yet' : 'No frequent foods yet'}
+        </p>
+      ) : (
+        <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] divide-y divide-[var(--line)]">
+          {entries.map(u => (
+            <div key={u.key} className="flex items-center gap-2 px-3 py-2.5">
+              <button
+                type="button"
+                onClick={() => onSelect(usageToOFF(u), u.barcode)}
+                className="flex-1 min-w-0 text-left"
+              >
+                <p className="font-mono text-[11px] font-semibold text-[var(--ink-0)] truncate">{u.name}</p>
+                <p className="font-mono text-[9px] text-[var(--ink-3)]">
+                  {u.brand && <span>{u.brand} · </span>}
+                  <span className="text-[var(--accent)]">{u.kcal} kcal</span>
+                  {u.protein > 0 && <span> · {u.protein}g protein</span>}
+                  {tab === 'frequent' && <span> · {u.count}×</span>}
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => { forgetFood(u.key); setRefresh(r => r + 1); }}
+                className="text-[var(--ink-3)] hover:text-[var(--danger)] transition-colors flex-shrink-0 p-1.5"
+                title="Remove from list"
+              >
+                <Trash2 size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Add food modal ────────────────────────────────────────────────────────────
 
 export function AddFoodModal({ open, onClose, onAdd }: {
@@ -420,12 +554,20 @@ export function AddFoodModal({ open, onClose, onAdd }: {
   onClose: () => void;
   onAdd: (food: Omit<FoodEntry, 'id' | 'loggedAt' | 'meal'>, barcode?: string) => void;
 }) {
-  const [mode,            setMode]           = useState<'scan' | 'search' | 'myfoods'>('scan');
+  // Default to 'search' — landing on a list of the user's frequent/recent
+  // foods is faster than camera priming for most daily use.
+  const [mode,            setMode]           = useState<'scan' | 'search' | 'myfoods'>('search');
   const [searchQuery,     setSearchQuery]    = useState('');
   const [searchResults,   setSearchResults]  = useState<OFFProduct[]>([]);
   const [searching,       setSearching]      = useState(false);
   const [manualBarcode,   setManualBarcode]  = useState('');
-  const [selectedProduct, setSelectedProduct] = useState<{ p: OFFProduct; barcode?: string } | null>(null);
+  // `source` carries which entry point the user came from so telemetry can
+  // attribute the add. 'recent' covers both Recents and Frequents (same panel).
+  const [selectedProduct, setSelectedProduct] = useState<{
+    p:        OFFProduct;
+    barcode?: string;
+    source:   'search' | 'recent' | 'myfoods' | 'scan';
+  } | null>(null);
   const [error,           setError]          = useState('');
   const [scanning,        setScanning]       = useState(false);
   const [detected,        setDetected]       = useState(false);
@@ -443,7 +585,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       import('@zxing/browser').then(mod => { zxingRef.current = mod; }).catch(() => {});
     }
     if (!open) {
-      setMode('scan'); setSearchQuery(''); setSearchResults([]);
+      setMode('search'); setSearchQuery(''); setSearchResults([]);
       setManualBarcode(''); setSelectedProduct(null); setError('');
       stopCamera();
     }
@@ -535,7 +677,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       const res  = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
       const data = await res.json() as { status: number; product?: OFFProduct };
       if (data.status === 1 && data.product?.product_name) {
-        setSelectedProduct({ p: data.product, barcode: code });
+        setSelectedProduct({ p: data.product, barcode: code, source: 'scan' });
       } else {
         setError(`No product found for barcode ${code}. Try searching by name.`);
       }
@@ -550,6 +692,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
     const query = q.trim();
     if (!query) return;
     setSearching(true); setError(''); setSearchResults([]);
+    trackEvent('food_search_run', { length: query.length });
     try {
       const res  = await fetch(`/api/food/search?q=${encodeURIComponent(query)}`);
       if (!res.ok) throw new Error('fetch_failed');
@@ -557,6 +700,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       const results = data.products ?? [];
       setSearchResults(results);
       if (results.length === 0) {
+        trackEvent('food_search_empty');
         setError('No results — try a simpler term (e.g. "chicken breast" not "grilled lemon chicken").');
       }
     } catch {
@@ -632,6 +776,14 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                         saveMyFoods([...existing, newFood]);
                       }
                     }
+                    // Source attribution — tells us which entry point is
+                    // doing the work (search vs recents vs scan vs custom).
+                    const ev =
+                      selectedProduct.source === 'scan'    ? 'food_added_scan'    :
+                      selectedProduct.source === 'recent'  ? 'food_added_recent'  :
+                      selectedProduct.source === 'myfoods' ? 'food_added_myfoods' :
+                                                              'food_added_search';
+                    trackEvent(ev);
                     onAdd(food, barcode);
                   }}
                   onBack={() => setSelectedProduct(null)}
@@ -763,7 +915,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                             <button
                               key={i}
                               type="button"
-                              onClick={() => setSelectedProduct({ p })}
+                              onClick={() => setSelectedProduct({ p, source: 'search' })}
                               className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-[var(--bg-3)] transition-colors"
                             >
                               <div className="min-w-0">
@@ -779,6 +931,17 @@ export function AddFoodModal({ open, onClose, onAdd }: {
                             </button>
                           ))}
                         </div>
+                      )}
+
+                      {/* When the search input is empty, show the user's recent
+                          and frequent foods so they can re-add in one tap
+                          without hitting USDA. Hidden the moment they start
+                          typing so search results take the prime real estate. */}
+                      {!searchQuery.trim() && !searching && (
+                        <QuickPicksPanel
+                          refreshKey={open ? 1 : 0}
+                          onSelect={(p, barcode) => setSelectedProduct({ p, barcode, source: 'recent' })}
+                        />
                       )}
                     </div>
                   )}
@@ -796,7 +959,7 @@ export function AddFoodModal({ open, onClose, onAdd }: {
 
                   {/* ── MY FOODS MODE ── */}
                   {mode === 'myfoods' && (
-                    <MyFoodsTab onSelect={p => setSelectedProduct({ p })} />
+                    <MyFoodsTab onSelect={p => setSelectedProduct({ p, source: 'myfoods' })} />
                   )}
                 </>
                 </motion.div>

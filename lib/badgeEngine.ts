@@ -467,6 +467,23 @@ export async function checkAndAwardBadges(
   };
 }
 
+/**
+ * Server-side wrapper around checkAndAwardBadges that fetches the user's
+ * settings from WorkoutData. Use this from non-sync code paths (battle
+ * resolution, cron jobs) where the caller doesn't already have settings in
+ * hand. Returns the list of newly awarded badges so the caller can push-notify
+ * or surface them in a response.
+ */
+export async function awardBadgesForUser(userId: string): Promise<AwardedBadge[]> {
+  const workoutData = await prisma.workoutData.findUnique({
+    where:  { userId },
+    select: { settings: true },
+  });
+  const settings = (workoutData?.settings ?? {}) as Record<string, unknown>;
+  const { awarded } = await checkAndAwardBadges(userId, settings);
+  return awarded;
+}
+
 /** Overrides stale icon paths stored in the DB with the canonical catalog value. */
 export function normalizeBadgeIcons<T extends { slug: string; icon: string }>(badges: T[]): T[] {
   return badges.map(b => ({

@@ -8,6 +8,8 @@ import coinAnim      from '@/public/Calorie_Coin_animation.json';
 import celebrateAnim from '@/public/Celebrate_animation.json';
 import { useApp } from '@/lib/AppContext';
 import type { FoodEntry, UserProfile } from '@/lib/AppContext';
+import { recordFood } from '@/lib/foodUsage';
+import { trackEvent } from '@/lib/telemetry';
 import { GOAL_TOLERANCE } from '@/lib/constants';
 import { computeBaseBudget, loadCoins, saveCoins, hitGoal, type CoinData } from '@/lib/calorie-utils';
 import {
@@ -672,8 +674,52 @@ export default function CalorieTracker() {
       ...(barcode && { barcode }),
     };
     persistFoods([...foods, entry]);
+    // Track usage so the Recents/Frequents lists in the food picker stay
+    // current. Fire-and-forget (synchronous localStorage write).
+    recordFood(food, barcode);
     setShowModal(false);
   }, [foods, targetMeal, persistFoods]);
+
+  /** YYYY-MM-DD for the day before the currently active day. Used to source
+   *  "copy yesterday" foods — pure string arithmetic so DST doesn't bite. */
+  const yesterdayStr = useMemo(() => {
+    const d = new Date(activeDayFocus + 'T00:00:00');
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }, [activeDayFocus]);
+
+  /** Yesterday's foods grouped by meal — used to show/hide the "Copy
+   *  yesterday's [meal]" button per section. */
+  const yesterdayFoodsByMeal = useMemo(() => {
+    const map: Record<string, FoodEntry[]> = {};
+    try {
+      const yRec  = localDB[yesterdayStr] ?? {};
+      const yArr  = JSON.parse(String(yRec.foods ?? '[]')) as FoodEntry[];
+      for (const f of yArr) {
+        const key = f.meal ?? 'breakfast';
+        (map[key] ??= []).push(f);
+      }
+    } catch { /* corrupt — show nothing */ }
+    return map;
+  }, [localDB, yesterdayStr]);
+
+  /** Clone every food from yesterday's `mealId` section into today, with fresh
+   *  IDs and timestamps. Also records each into the usage tracker so frequent
+   *  copies surface in Recents. */
+  const copyFromYesterday = useCallback((mealId: string) => {
+    const src = yesterdayFoodsByMeal[mealId];
+    if (!src || src.length === 0) return;
+    const baseTs = Date.now();
+    const cloned: FoodEntry[] = src.map((f, i) => ({
+      ...f,
+      meal:     mealId,
+      id:       `${baseTs + i}-${Math.random().toString(36).slice(2, 7)}`,
+      loggedAt: baseTs + i,
+    }));
+    persistFoods([...foods, ...cloned]);
+    for (const f of cloned) recordFood(f, f.barcode);
+    trackEvent('meal_copied_yesterday', { meal: mealId, count: cloned.length });
+  }, [foods, persistFoods, yesterdayFoodsByMeal]);
 
   const openModal = useCallback((meal: string) => {
     setTargetMeal(meal); setShowModal(true);
@@ -951,6 +997,28 @@ export default function CalorieTracker() {
                   </p>
                 )}
               </div>
+
+              {/* ── Copy-from-yesterday shortcut ──
+                  Only shown when this section is empty AND yesterday had this
+                  meal. Saves the user from re-adding habitual foods (cereal,
+                  protein shake, etc.). One tap clones the lot. */}
+              {sectionFoods.length === 0 && (yesterdayFoodsByMeal[sectionId]?.length ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => copyFromYesterday(sectionId)}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-left border-t border-[var(--line)] hover:bg-[var(--bg-2)] active:bg-[var(--bg-3)] transition-colors"
+                >
+                  <span className="w-6 h-6 rounded flex items-center justify-center bg-[var(--positive)]/15 text-[var(--positive)]">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </span>
+                  <span className="font-mono text-[11px] font-bold tracking-[0.5px] text-[var(--positive)]">
+                    Copy yesterday&apos;s {label.toLowerCase()} ({yesterdayFoodsByMeal[sectionId]?.length})
+                  </span>
+                </button>
+              )}
 
               {/* ── Add to section ── */}
               <button

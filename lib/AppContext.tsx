@@ -418,24 +418,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (remote.localDB && typeof remote.localDB === 'object') {
         const remoteDB = remote.localDB as Record<string, unknown>;
-        // Remote wins — but never overwrite days the user already modified locally
-        // since app load (those are dirty and will be pushed to cloud shortly).
+        // Per-day newer-wins merge. Previously "remote wins" — but if this
+        // device had unsynced edits from a previous session (local edit, then
+        // app closed before sync flushed), the remote pull would silently
+        // overwrite them. Now we compare _editedAt and keep the newer one.
+        // Dirty days (edited this session) are still skipped — those get
+        // pushed to cloud immediately and shouldn't be touched by the pull.
+        const pickNewer = (
+          local:  Record<string, unknown> | undefined,
+          remoteRec: Record<string, unknown>,
+        ): Record<string, unknown> => {
+          if (!local) return remoteRec;
+          const localEdited  = typeof local._editedAt  === 'string' ? new Date(local._editedAt).getTime()  : 0;
+          const remoteEdited = typeof remoteRec._editedAt === 'string' ? new Date(remoteRec._editedAt).getTime() : 0;
+          // Tie-break: remote wins on equal/missing timestamps so cron-side
+          // writes (steps, etc.) propagate to all devices.
+          return remoteEdited >= localEdited ? remoteRec : local;
+        };
         setLocalDB(prev => {
-          const next = { ...prev };
-          for (const [date, data] of Object.entries(remoteDB)) {
-            if (!dirtyDaysRef.current.has(date)) {
-              next[date] = data as DayRecord;
-            }
+          const next: Record<string, DayRecord> = { ...prev };
+          for (const [date, remoteData] of Object.entries(remoteDB)) {
+            if (dirtyDaysRef.current.has(date)) continue;
+            next[date] = pickNewer(
+              prev[date] as Record<string, unknown> | undefined,
+              remoteData as Record<string, unknown>,
+            ) as DayRecord;
           }
           return next;
         });
         try {
           const local = JSON.parse(localStorage.getItem(DB_KEY) ?? '{}') as Record<string, unknown>;
           const merged: Record<string, unknown> = { ...local };
-          for (const [date, data] of Object.entries(remoteDB)) {
-            if (!dirtyDaysRef.current.has(date)) {
-              merged[date] = data;
-            }
+          for (const [date, remoteData] of Object.entries(remoteDB)) {
+            if (dirtyDaysRef.current.has(date)) continue;
+            merged[date] = pickNewer(
+              local[date] as Record<string, unknown> | undefined,
+              remoteData as Record<string, unknown>,
+            );
           }
           localStorage.setItem(DB_KEY, JSON.stringify(merged));
         } catch { /* storage full — skip */ }
@@ -556,9 +575,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // step update) trick the conflict check into returning server data and
         // deleting the user's in-progress edits.
         const { _syncedAt: _, ...prevDay } = prev[dateStr] ?? {};
+        // Stamp _editedAt with the local edit time. The server uses this to
+        // pick the newer edit when two devices write to the same day (instead
+        // of "whoever syncs first wins"). Always Date.now() — even if the
+        // client clock is skewed, the server's 60s tolerance + ordering check
+        // keep behavior sane, and a missing _editedAt would defeat the
+        // newer-wins logic for any subsequent device.
         const next = {
           ...prev,
-          [dateStr]: { ...prevDay, ...updates },
+          [dateStr]: { ...prevDay, ...updates, _editedAt: new Date().toISOString() },
         };
         try {
           localStorage.setItem(DB_KEY, JSON.stringify(next));

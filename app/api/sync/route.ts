@@ -145,28 +145,49 @@ export async function POST(req: Request): Promise<NextResponse> {
     const now = Date.now();
 
     for (const [date, rawData] of Object.entries(body.localDB)) {
-      const incoming   = rawData as Record<string, unknown>;
-      const syncedAt   = incoming._syncedAt as string | undefined;
-      // Strip _syncedAt before storing — it's a transport field, not persisted data
+      const incoming = rawData as Record<string, unknown>;
+      const syncedAt = incoming._syncedAt as string | undefined;
+      const editedAt = incoming._editedAt as string | undefined;
+      // Strip transport fields before storing. _syncedAt is recomputed on
+      // every read; _editedAt is persisted as part of the data so multi-device
+      // newer-wins comparisons survive future syncs.
       const { _syncedAt: _, ...cleanData } = incoming;
 
       const stored = existingMap.get(date) as { date: string; updatedAt: Date; data: unknown } | undefined;
-      if (stored && syncedAt) {
-        const syncedAtMs = new Date(syncedAt).getTime();
-        // A client-supplied timestamp is only trustworthy if it parses cleanly AND
-        // doesn't claim to have seen a future row. Treat both forgery attempts
-        // ("garbage" or "2099-01-01") and legitimately stale writes the same way:
-        // server data wins, client gets the latest copy back as a conflict.
-        const untrustworthy =
-          !Number.isFinite(syncedAtMs) ||
-          syncedAtMs > now + FUTURE_TOLERANCE_MS ||
-          stored.updatedAt.getTime() > syncedAtMs;
-        if (untrustworthy) {
-          conflicts.push({
-            date,
-            data: { ...(stored.data as object), _syncedAt: stored.updatedAt.toISOString() },
-          });
-          continue;
+
+      if (stored) {
+        // Prefer edit-time chronology when the incoming write carries _editedAt.
+        // This is the multi-device case: phone edits at 10:01, syncs; laptop
+        // edits at 10:30 (without seeing phone's edit), syncs at 10:31. The
+        // old code rejected laptop because its _syncedAt was stale, dropping
+        // a newer real-world edit. Comparing _editedAt instead keeps laptop's.
+        if (editedAt) {
+          const editedAtMs   = new Date(editedAt).getTime();
+          const storedEdited = (stored.data as { _editedAt?: string })._editedAt;
+          const storedEditMs = storedEdited ? new Date(storedEdited).getTime() : 0;
+          const malformed    = !Number.isFinite(editedAtMs) || editedAtMs > now + FUTURE_TOLERANCE_MS;
+          if (malformed || editedAtMs < storedEditMs) {
+            conflicts.push({
+              date,
+              data: { ...(stored.data as object), _syncedAt: stored.updatedAt.toISOString() },
+            });
+            continue;
+          }
+          // Newer or equal edit time → accept the write.
+        } else if (syncedAt) {
+          // Legacy client without _editedAt — fall back to stale-write check.
+          const syncedAtMs = new Date(syncedAt).getTime();
+          const untrustworthy =
+            !Number.isFinite(syncedAtMs) ||
+            syncedAtMs > now + FUTURE_TOLERANCE_MS ||
+            stored.updatedAt.getTime() > syncedAtMs;
+          if (untrustworthy) {
+            conflicts.push({
+              date,
+              data: { ...(stored.data as object), _syncedAt: stored.updatedAt.toISOString() },
+            });
+            continue;
+          }
         }
       }
 

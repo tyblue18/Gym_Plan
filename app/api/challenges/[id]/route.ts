@@ -14,6 +14,7 @@ import { prisma }           from '@/lib/prisma';
 import { challengeLimit }   from '@/lib/ratelimit';
 import { challengeActionSchema } from '@/lib/validators';
 import { resolveBattle, isWindowComplete, todayUTC } from '@/lib/battleEngine';
+import { awardBadgesForUser } from '@/lib/badgeEngine';
 
 export async function POST(
   req: Request,
@@ -124,6 +125,16 @@ export async function POST(
     //    resolve immediately instead of waiting for the cron.
     if (isWindowComplete(challenge.endDate, todayUTC())) {
       const resolution = await resolveBattle(challenge.id);
+      // Award battle-count badges to the winner so they appear in-collection
+      // immediately (no need to wait for the next sync to pick them up).
+      let awardedBadges: Awaited<ReturnType<typeof awardBadgesForUser>> = [];
+      if (resolution?.winnerId) {
+        try {
+          awardedBadges = await awardBadgesForUser(resolution.winnerId);
+        } catch (e) {
+          console.error('[challenges/[id]] typed-resolve badge award failed:', e);
+        }
+      }
       return NextResponse.json({
         ok:        true,
         status:    'resolved',
@@ -132,6 +143,7 @@ export async function POST(
                    'loss',
         winnerId:  resolution?.winnerId ?? null,
         resolution,
+        awardedBadges: resolution?.winnerId === me.id ? awardedBadges : [],
       });
     }
 
@@ -199,11 +211,27 @@ export async function POST(
     throw e;
   }
 
+  // Award any battle-count badges the winner just earned. Run outside the
+  // transaction (no need to roll back the resolution if a badge write fails)
+  // and return the awarded list so the client can fire the celebration popup
+  // via the existing que-badge-earned event.
+  let awardedBadges: Awaited<ReturnType<typeof awardBadgesForUser>> = [];
+  if (winnerId) {
+    try {
+      awardedBadges = await awardBadgesForUser(winnerId);
+    } catch (e) {
+      console.error('[challenges/[id]] badge award failed:', e);
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     result: winnerId === me.id ? 'win' : winnerId === null ? 'tie' : 'loss',
     winnerId,
     challengerCount,
     challengeeCount,
+    // Only surfaced when the calling user is the winner — losers don't need
+    // to know what badges the opponent unlocked.
+    awardedBadges: winnerId === me.id ? awardedBadges : [],
   });
 }

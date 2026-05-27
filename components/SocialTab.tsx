@@ -15,6 +15,7 @@ import {
   BATTLE_CATEGORIES, type BattleCategory, type CategoryGroup,
 } from '@/lib/battle-categories';
 import type { BattleResolution, CategoryResult } from '@/lib/battleEngine';
+import { trackEvent } from '@/lib/telemetry';
 
 // Lottie + its JSON payloads are only used by the loading spinner that
 // briefly shows on first mount. Defer the library + JSON until they're
@@ -1230,6 +1231,30 @@ export default function SocialTab() {
       setChallengeError('Failed — please try again');
       return;
     }
+    // If the server awarded any battle-count badges on this resolve, fire
+    // the same que-badge-earned event the sync engine uses so the popup +
+    // badge-collection refresh trigger immediately. Safe-parse: older servers
+    // won't return the field.
+    try {
+      const body = await res.clone().json();
+      const awarded = Array.isArray(body?.awardedBadges) ? body.awardedBadges : [];
+      if (awarded.length > 0) {
+        window.dispatchEvent(new CustomEvent('que-badge-earned', { detail: awarded }));
+      }
+      // Attribute the outcome — most useful battle metric. result is one of
+      // 'win' | 'tie' | 'loss' | 'declined' from the server.
+      if (action === 'decline') {
+        trackEvent('battle_declined');
+      } else if (body?.result === 'win') {
+        trackEvent('battle_resolved_win');
+      } else if (body?.result === 'loss') {
+        trackEvent('battle_resolved_loss');
+      } else if (body?.result === 'tie') {
+        trackEvent('battle_resolved_tie');
+      } else {
+        trackEvent('battle_accepted');
+      }
+    } catch { /* response wasn't json — ignore */ }
     // Refresh in the background — accepts may resolve into the resolved list,
     // declines into cancellation, and balance may change.
     void refresh();

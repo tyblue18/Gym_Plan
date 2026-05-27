@@ -27,6 +27,8 @@ import {
 import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
 import { AutoCropImage } from '@/components/AutoCropImage';
 import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
+import { RestTimerBar } from '@/components/workout/RestTimerBar';
+import { trackEvent } from '@/lib/telemetry';
 import { queueSync, pushNow, gatherSettings } from '@/lib/syncEngine';
 import Lottie from 'lottie-react';
 import celebrateAnim from '@/public/Celebrate_animation.json';
@@ -1136,6 +1138,17 @@ export default function WorkoutLogger() {
     if (e.key === 'Enter') { e.preventDefault(); weightRefs.current[idx]?.focus(); }
   }, []);
 
+  // Outlier confirmation: if a set's weight is wildly higher than the user's
+  // current PR for this exercise (typo signal — 135 vs 1350), require a
+  // second click before logging. Reset when inputs change.
+  const [outlierPending, setOutlierPending] = useState<{ name: string; weight: number; pr: number } | null>(null);
+
+  // Rest timer state — populated whenever a lift is committed. Lives at the
+  // logger level so it survives between commits and renders the floating bar.
+  // Stored as wall-clock so it stays accurate even when the tab is backgrounded.
+  const [restTimer, setRestTimer] = useState<{ startMs: number; durationMs: number } | null>(null);
+  const DEFAULT_REST_MS = 150_000; // 2:30 — a sane default for hypertrophy sets
+
   const commitLift = useCallback(() => {
     const name = isCustomEx ? customName.trim() : selectedEx;
     if (!name || name === '__custom__') return;
@@ -1143,6 +1156,26 @@ export default function WorkoutLogger() {
       r: repsRefs.current[i]?.value.trim()   || s.r || '1',
       w: weightRefs.current[i]?.value.trim() || s.w || '',
     }));
+
+    // ── Outlier check ────────────────────────────────────────────────────────
+    // 1.3× of existing PR is a generous ceiling — a legit PR jump is usually
+    // under ~10%, so this only fires on suspected typos. We compare against
+    // prBaselineRef so corrections within the same session don't double-warn.
+    const maxWeight  = Math.max(0, ...snappedSets.map(s => parseFloat(s.w) || 0));
+    const currentPR  = prBaselineRef.current?.[name] ?? 0;
+    const isOutlier  = currentPR > 0 && maxWeight > currentPR * 1.3;
+    if (isOutlier) {
+      const matchesPending = outlierPending
+        && outlierPending.name === name
+        && outlierPending.weight === maxWeight;
+      if (!matchesPending) {
+        setOutlierPending({ name, weight: maxWeight, pr: currentPR });
+        return;
+      }
+      trackEvent('lift_outlier_confirmed', { ratio: +(maxWeight / currentPR).toFixed(2) });
+    }
+    setOutlierPending(null);
+    trackEvent('lift_logged', { sets: pendingSetsCount, hasWeight: maxWeight > 0 });
     bumpUsage(currentGroup, name);
 
     // Auto-fill secondary/tertiary from the map; custom exercises use the explicit selectors
@@ -1160,11 +1193,19 @@ export default function WorkoutLogger() {
     setExercises(next);
     setPendingSetData(Array.from({ length: pendingSetsCount }, () => ({ r: '1', w: '' })));
     if (isCustomEx) { setCustomName(''); setCustomG2(''); setCustomG3(''); }
+    // Start the rest timer fresh each commit. Replacing any existing one means
+    // "I just did another set, restart the clock" — the more useful behavior
+    // than letting a stale timer expire mid-set.
+    setRestTimer({ startMs: Date.now(), durationMs: DEFAULT_REST_MS });
   }, [
     isCustomEx, customName, customG2, customG3, selectedEx, pendingSetData,
-    currentGroup, exercises, pendingSetsCount,
+    currentGroup, exercises, pendingSetsCount, outlierPending,
     setPendingSetData, setExercises,
   ]);
+
+  // Clear the pending outlier confirm whenever the exercise or any set value
+  // changes — the user is reconsidering, don't trap them in a stale warning.
+  useEffect(() => { setOutlierPending(null); }, [selectedEx, customName, pendingSetData]);
 
   const handleWeightKeyDown = useCallback((e: React.KeyboardEvent, idx: number) => {
     if (e.key !== 'Enter') return;
@@ -1173,11 +1214,19 @@ export default function WorkoutLogger() {
     else commitLift();
   }, [pendingSetsCount, commitLift]);
 
+  // Tracks the source of a successful pre-fill so the UI can show a
+  // "Last session" hint instead of silently dropping values into the inputs.
+  // Cleared whenever pre-fill finds nothing or the user picks a new exercise.
+  const [prefillSource, setPrefillSource] = useState<{ date: string; topWeight: number; topReps: number } | null>(null);
+
   // Pre-fill sets from the most recent logged session for this exercise
   const prefillFromHistory = useCallback((name: string) => {
     if (!name) return;
     const days = Object.keys(localDB).sort().reverse().slice(0, 60); // newest 60 days
     for (const ds of days) {
+      // Skip the currently-active day — we'd just re-fill from the in-progress
+      // workout, defeating the purpose of "last session" guidance.
+      if (ds === activeDayFocus) continue;
       const raw = localDB[ds]?.exercises;
       if (!raw) continue;
       try {
@@ -1190,12 +1239,32 @@ export default function WorkoutLogger() {
             const sets = raw.map(s => ({ r: String(s.r || '1'), w: String(s.w || '') }));
             setPendingSetsCount(sets.length);
             setPendingSetData(sets);
+            // Report the heaviest set so the hint can suggest a sensible
+            // progressive-overload bump (matches the existing +Weight buttons).
+            const topSet = sets.reduce((acc, s) => {
+              const w = parseFloat(s.w) || 0;
+              return w > acc.w ? { w, r: parseInt(s.r) || 0 } : acc;
+            }, { w: 0, r: 0 });
+            setPrefillSource({ date: ds, topWeight: topSet.w, topReps: topSet.r });
             return;
           }
         }
       } catch { /* skip corrupt records */ }
     }
-  }, [localDB, setPendingSetsCount, setPendingSetData]);
+    setPrefillSource(null);
+  }, [localDB, activeDayFocus, setPendingSetsCount, setPendingSetData]);
+
+  /** "Today" / "Yesterday" / "3 days ago" / "Jan 15" for a YYYY-MM-DD date.
+   *  Used by the Last Session hint so the user sees how stale the pre-fill is. */
+  const fmtRelative = useCallback((ds: string): string => {
+    const target = new Date(ds + 'T00:00:00');
+    const today  = new Date(activeDayFocus + 'T00:00:00');
+    const diff   = Math.round((today.getTime() - target.getTime()) / 86400000);
+    if (diff === 0) return 'today';
+    if (diff === 1) return 'yesterday';
+    if (diff > 1 && diff <= 7) return `${diff} days ago`;
+    return target.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }, [activeDayFocus]);
 
   // Trigger pre-fill when the dropdown selection changes
   useEffect(() => {
@@ -1832,6 +1901,18 @@ export default function WorkoutLogger() {
         onLoad={loadPreset} onClose={() => setTemplateModal(false)}
       />
 
+      <AnimatePresence>
+        {restTimer && (
+          <RestTimerBar
+            key={restTimer.startMs}
+            startMs={restTimer.startMs}
+            durationMs={restTimer.durationMs}
+            onAdjust={delta => setRestTimer(rt => rt && { ...rt, durationMs: Math.max(15_000, rt.durationMs + delta) })}
+            onDismiss={() => setRestTimer(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Clear session confirm ── */}
       <AnimatePresence>
         {confirmClear && (
@@ -2135,12 +2216,53 @@ export default function WorkoutLogger() {
                 </div>
               </div>
 
+              {/* "Last session" hint — visible whenever pre-fill loaded
+                  values from a prior day's record. Makes the auto-fill
+                  legible instead of magical, and the +Weight buttons below
+                  give a 1-tap path to progressive overload. */}
+              {prefillSource && prefillSource.topWeight > 0 && (
+                <div className="mb-3 flex items-center gap-2 rounded border border-[var(--accent)]/30 bg-[var(--accent)]/8 px-3 py-2">
+                  <span className="font-mono text-[8px] font-bold tracking-[1.5px] uppercase text-[var(--accent)]">
+                    Last Session
+                  </span>
+                  <span className="font-mono text-[10px] text-[var(--ink-1)] tracking-[0.3px] flex-1">
+                    Top set <strong className="text-[var(--ink-0)]">{prefillSource.topWeight} lb × {prefillSource.topReps}</strong>
+                    {' · '}
+                    <span className="text-[var(--ink-3)]">{fmtRelative(prefillSource.date)}</span>
+                  </span>
+                </div>
+              )}
+
               {/* Set rows */}
               <div className="mb-3">
                 <div className="grid grid-cols-[28px_1fr_1.6fr] gap-2 mb-2">
                   <span />
                   <span className="que-label !mb-0">Reps</span>
-                  <span className="que-label !mb-0">Weight <span className="normal-case font-normal text-[var(--ink-3)]">(opt)</span></span>
+                  <span className="que-label !mb-0 flex items-center justify-between">
+                    <span>Weight <span className="normal-case font-normal text-[var(--ink-3)]">(opt)</span></span>
+                    {(() => {
+                      // Epley 1RM estimator: 1RM = w × (1 + r/30).
+                      // Most accurate in the 1–10 rep range. Shown only when
+                      // at least one set has weight + reps. Picks the best
+                      // (highest implied 1RM) of any set so multi-set entries
+                      // don't drift on the warm-up.
+                      let best = 0;
+                      for (const s of pendingSetData) {
+                        const w = parseFloat(s.w) || 0;
+                        const r = parseInt(s.r) || 0;
+                        if (w > 0 && r >= 1 && r <= 10) {
+                          const e1rm = w * (1 + r / 30);
+                          if (e1rm > best) best = e1rm;
+                        }
+                      }
+                      if (best <= 0) return null;
+                      return (
+                        <span className="font-mono text-[8px] tracking-[1px] text-[var(--accent)] normal-case">
+                          ≈ {Math.round(best)} lb 1RM
+                        </span>
+                      );
+                    })()}
+                  </span>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -2199,8 +2321,22 @@ export default function WorkoutLogger() {
                 </div>
               )}
 
-              <button onClick={commitLift} className="que-btn-primary w-full">
-                <Plus size={14} /> LOG EXERCISE
+              {outlierPending && (
+                <div className="mb-2 rounded border border-[var(--warn)]/50 bg-[var(--warn)]/8 px-3 py-2">
+                  <p className="font-mono text-[10px] text-[var(--warn)] tracking-[0.3px] leading-relaxed">
+                    <strong>{outlierPending.weight} lb</strong> is {(outlierPending.weight / outlierPending.pr).toFixed(1)}× your best ({outlierPending.pr} lb).
+                    Tap <strong>Log Exercise</strong> again to confirm — or edit the weight if it&apos;s a typo.
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={commitLift}
+                className={outlierPending
+                  ? 'que-btn-ghost w-full !border-[var(--warn)] !text-[var(--warn)]'
+                  : 'que-btn-primary w-full'}
+              >
+                <Plus size={14} /> {outlierPending ? 'CONFIRM LOG' : 'LOG EXERCISE'}
               </button>
             </div>
 

@@ -6,6 +6,8 @@ import { AppProvider }  from '@/lib/AppContext';
 import { SWRegister }          from '@/components/sw-register';
 import { ColorSchemeLoader }  from '@/components/color-scheme-loader';
 import { SyncStatus }         from '@/components/SyncStatus';
+import { ErrorBootstrap }     from '@/components/error-bootstrap';
+import { ConflictToast }      from '@/components/ConflictToast';
 import GlowMount       from '@/components/GlowMount';
 import { THEME_KEY }   from '@/lib/constants';
 import './globals.css';
@@ -93,6 +95,8 @@ export default function RootLayout({
         <ColorSchemeLoader />
         <SyncStatus />
         <SWRegister />
+        <ErrorBootstrap />
+        <ConflictToast />
 
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

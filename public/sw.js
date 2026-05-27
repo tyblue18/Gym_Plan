@@ -11,7 +11,11 @@
  *      static assets   → cache-first, revalidate in background
  */
 
-const CACHE = 'que-v3'; // bump on every deploy that changes JS/CSS
+// Bump this whenever you ship a change to sw.js itself (cache strategy,
+// route handling). The activate handler purges every cache whose name
+// doesn't match, so a deploy with a fresh version guarantees no stale
+// entries linger. JS/CSS hashes already invalidate via network-first below.
+const CACHE = 'que-v4';
 
 const PRECACHE = [
   '/',
@@ -20,13 +24,24 @@ const PRECACHE = [
   '/manifest.json',
 ];
 
-/* ── Install: cache app shell ──────────────────────────────────────── */
+/* ── Install: cache app shell ──────────────────────────────────────────
+ * NOTE: we do NOT call skipWaiting() unconditionally any more. The new SW
+ * stays in "waiting" until the client explicitly asks it to take over via
+ * the SKIP_WAITING message (see message listener below). This is what lets
+ * the in-app "New version ready — Update" prompt control the timing of the
+ * controllerchange + reload — without it, a long-running tab would silently
+ * swap workers and could produce a mid-session JS/CSS mismatch.            */
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(PRECACHE))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE).then(cache => cache.addAll(PRECACHE))
   );
+});
+
+/* ── Allow the client to promote the waiting worker on demand ─────────── */
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 /* ── Activate: evict old caches ────────────────────────────────────── */

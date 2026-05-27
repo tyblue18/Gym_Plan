@@ -31,6 +31,7 @@ import {
   drawPlanChart,
   drawProgressChart,
 } from '@/lib/metricsCharts';
+import { trackEvent } from '@/lib/telemetry';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MilestoneModal
@@ -808,6 +809,7 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
   const handleSave = useCallback(() => {
     if (!projData || !planType) return;
     const kcal = INTENSITY_KCAL[intensity];
+    const isUpdate = !!loadPlan();
     savePlanToStorage({
       type: planType, intensity, dailyKcal: kcal,
       // Snapshot the activity burn used to derive the projection so progress
@@ -815,6 +817,11 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
       creationActivityBurn: Math.round(m.activityBurn),
       startDate: todayStr,
       startWeight: projData.startWeight, goalWeight: projData.goalWeight,
+      weeksTarget: projData.weeks,
+    });
+    trackEvent(isUpdate ? 'plan_updated' : 'plan_created', {
+      type: planType,
+      intensity,
       weeksTarget: projData.weeks,
     });
     // Align profile.deficit with plan intent. Cuts use a positive deficit

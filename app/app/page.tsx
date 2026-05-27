@@ -11,6 +11,7 @@ import SocialTab         from '@/components/SocialTab';
 import { Onboarding, needsOnboarding } from '@/components/Onboarding';
 import { MorningWeightPrompt } from '@/components/MorningWeightPrompt';
 import { SyncNudge } from '@/components/SyncNudge';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useApp } from '@/lib/AppContext';
 
 type Tab = 'calendar' | 'calories' | 'metrics' | 'protocol' | 'social';
@@ -38,20 +39,40 @@ export default function WorkoutPage() {
       <AuthHeader />
 
       <main className="app-content" role="tabpanel">
+        {/* Each tab gets its own ErrorBoundary so a single component crash
+            isolates to that tab — the bottom nav and other tabs stay live.
+            The boundary itself reports to lib/errorReporter so failures
+            show up in /api/log/error → Vercel logs. */}
         {tab === 'calendar' && (
-          <div className="app-calendar-layout">
-            <CalendarScheduler />
-            <WorkoutLogger />
-          </div>
+          <ErrorBoundary label="Calendar">
+            <div className="app-calendar-layout">
+              <CalendarScheduler />
+              <WorkoutLogger />
+            </div>
+          </ErrorBoundary>
         )}
-        {tab === 'calories' && <CalorieTracker />}
-        {tab === 'metrics'  && <MetricsDashboard />}
+        {tab === 'calories' && (
+          <ErrorBoundary label="Calories">
+            <CalorieTracker />
+          </ErrorBoundary>
+        )}
+        {tab === 'metrics' && (
+          <ErrorBoundary label="Metrics">
+            <MetricsDashboard />
+          </ErrorBoundary>
+        )}
         {tab === 'protocol' && (
-          <div className="app-protocol-layout">
-            <WorkoutLogger />
-          </div>
+          <ErrorBoundary label="Protocol">
+            <div className="app-protocol-layout">
+              <WorkoutLogger />
+            </div>
+          </ErrorBoundary>
         )}
-        {tab === 'social' && <SocialTab />}
+        {tab === 'social' && (
+          <ErrorBoundary label="Social">
+            <SocialTab />
+          </ErrorBoundary>
+        )}
       </main>
 
       <nav className="app-tabs" role="tablist" aria-label="App navigation">
