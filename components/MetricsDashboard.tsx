@@ -15,6 +15,7 @@ import {
 } from '@/lib/AppContext';
 import { ActivityIcon } from '@/components/ActivityIcon';
 import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
+import { LIFT_PRS_KEY } from '@/lib/constants';
 import Lottie from 'lottie-react';
 import prData from '@/public/PR_animation.json';
 import {
@@ -627,7 +628,7 @@ function TrophyCaseCard() {
 
   const records = useMemo(() => {
     let prs: Record<string, number> = {};
-    try { prs = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); } catch { /* noop */ }
+    try { prs = JSON.parse(localStorage.getItem(LIFT_PRS_KEY) ?? '{}'); } catch { /* noop */ }
 
     const prDates: Record<string, string> = {};
     Object.entries(localDB).sort(([a], [b]) => a.localeCompare(b)).forEach(([ds, rec]) => {
@@ -712,7 +713,7 @@ function WeeklyRecapCard() {
 
     let sessions = 0, calBudgetDays = 0, liftPRsThisWeek = 0;
     let prRecs: Record<string, number> = {};
-    try { prRecs = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); } catch { /* noop */ }
+    try { prRecs = JSON.parse(localStorage.getItem(LIFT_PRS_KEY) ?? '{}'); } catch { /* noop */ }
     const prBeforeWeek: Record<string, number> = {};
 
     Object.entries(localDB).forEach(([ds, rec]) => {

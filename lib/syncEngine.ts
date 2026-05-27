@@ -25,18 +25,24 @@ let _status: SyncStatus = 'idle';
 
 const DEBOUNCE_MS = 4_000;
 
+import {
+  ATHLETE_PLAN_KEY, WORKOUT_PRESETS_KEY, TEMPLATES_KEY, EXERCISE_USAGE_KEY,
+  LAST_STREAK_KEY, LIFT_PRS_KEY, MILLION_GROUPS_KEY, MACRO_GOALS_KEY,
+  COIN_KEY, PROFILE_PHOTO_KEY, DB_KEY,
+} from '@/lib/constants';
+
 // All localStorage keys that belong in the synced "settings" blob
 const SETTINGS_KEYS = [
-  'queAthletePlan',        // cut/bulk plan
-  'queWorkoutPresets',     // saved workout presets
-  'ironmanTemplatesPool',  // custom templates
-  'queExerciseUsage',      // exercise frequency (for sorting)
-  'queLastStreak',         // calorie streak
-  'queLiftPRs',            // all-time lift maxes — read by badge engine server-side
-  'queMillionGroups',      // muscle groups that have crossed 1,000,000 lbs lifetime volume
-  'queMacroGoals',         // macro targets — sync across devices
-  'queCalorieCoins',       // coin balance — used for battle wagering later
-  'queProfilePhoto',       // profile photo URL (Vercel Blob) or base64 fallback
+  ATHLETE_PLAN_KEY,        // cut/bulk plan
+  WORKOUT_PRESETS_KEY,     // saved workout presets
+  TEMPLATES_KEY,           // custom templates
+  EXERCISE_USAGE_KEY,      // exercise frequency (for sorting)
+  LAST_STREAK_KEY,         // calorie streak
+  LIFT_PRS_KEY,            // all-time lift maxes — read by badge engine server-side
+  MILLION_GROUPS_KEY,      // muscle groups that have crossed 1,000,000 lbs lifetime volume
+  MACRO_GOALS_KEY,         // macro targets — sync across devices
+  COIN_KEY,                // coin balance — used for battle wagering later
+  PROFILE_PHOTO_KEY,       // profile photo URL (Vercel Blob) or base64 fallback
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +78,7 @@ export function restoreSettings(settings: Record<string, unknown>): void {
       localStorage.setItem(key, str);
     } catch { /* storage full */ }
   }
-  if (settings['queProfilePhoto']) {
+  if (settings[PROFILE_PHOTO_KEY]) {
     window.dispatchEvent(new Event('queProfilePhotoChanged'));
   }
 }
@@ -168,6 +174,7 @@ async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
 
     if (res.ok) {
       const json = await res.json() as {
+        syncedAt?:      string;
         conflicts?:     Array<{ date: string; data: unknown }>;
         newBadges?:     Array<{ slug: string; label: string; icon: string; category: string }>;
         revokedBadges?: Array<{ slug: string; label: string; icon: string; category: string }>;
@@ -177,10 +184,10 @@ async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
       if (json.conflicts?.length) {
         // Server won these days — write them to localStorage and notify AppContext
         try {
-          const raw = localStorage.getItem('ironmanCoreDB_v2');
+          const raw = localStorage.getItem(DB_KEY);
           const db  = (raw ? JSON.parse(raw) : {}) as Record<string, unknown>;
           for (const { date, data } of json.conflicts) db[date] = data;
-          localStorage.setItem('ironmanCoreDB_v2', JSON.stringify(db));
+          localStorage.setItem(DB_KEY, JSON.stringify(db));
           window.dispatchEvent(new CustomEvent('que-conflict', { detail: json.conflicts }));
         } catch { /* storage full — skip */ }
       }
@@ -194,21 +201,24 @@ async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
         // Server confirmed these dates — add them to queCalorieCoins.awardedDates
         // so the client never double-shows the coin animation.
         try {
-          const stored = JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null')
+          const stored = JSON.parse(localStorage.getItem(COIN_KEY) ?? 'null')
             ?? { total: 0, awardedDates: [] };
           const known = new Set<string>(stored.awardedDates);
           for (const { date } of json.newCoins) known.add(date);
-          localStorage.setItem('queCalorieCoins', JSON.stringify({ ...stored, awardedDates: Array.from(known) }));
+          localStorage.setItem(COIN_KEY, JSON.stringify({ ...stored, awardedDates: Array.from(known) }));
         } catch { /* storage full */ }
         window.dispatchEvent(new CustomEvent('que-coins-awarded', {
           detail: { newCoins: json.newCoins, walletBalance: json.walletBalance },
         }));
       }
       // Notify AppContext to stamp _syncedAt on the pushed dates so subsequent
-      // pushes in the same session don't trigger false conflicts.
+      // pushes in the same session don't trigger false conflicts. Use the
+      // server-supplied timestamp — the client's clock may be skewed, and
+      // server-side conflict detection now rejects future-dated client claims.
       if (payload.localDB && Object.keys(payload.localDB).length > 0) {
+        const syncedAt = json.syncedAt ?? new Date().toISOString();
         window.dispatchEvent(new CustomEvent('que-sync-ack', {
-          detail: { dates: Object.keys(payload.localDB), syncedAt: new Date().toISOString() },
+          detail: { dates: Object.keys(payload.localDB), syncedAt },
         }));
       }
       dispatch('ok');

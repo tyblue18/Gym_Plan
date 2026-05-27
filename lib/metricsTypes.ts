@@ -60,7 +60,9 @@ export interface AthletePlan {
   weeksTarget: number;
 }
 
-export const PLAN_KEY = 'queAthletePlan';
+import { ATHLETE_PLAN_KEY } from '@/lib/constants';
+// Re-exported under the legacy PLAN_KEY name so existing imports keep working.
+export const PLAN_KEY = ATHLETE_PLAN_KEY;
 
 export function loadPlan(): AthletePlan | null {
   try { const r = localStorage.getItem(PLAN_KEY); return r ? JSON.parse(r) : null; }

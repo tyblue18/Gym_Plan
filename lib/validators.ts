@@ -44,9 +44,20 @@ export const friendRespondSchema = z.object({
 
 // ── /api/challenges POST ──────────────────────────────────────────────────────
 
+// YYYY-MM-DD — strict shape; deeper validity (real date, not in past, etc.)
+// happens in the route handler where today's date is known.
+const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
+
 export const challengePostSchema = z.object({
-  friendId: id,
-  wager:    z.number().int().min(1).max(100_000),
+  friendId:   id,
+  wager:      z.number().int().min(1).max(100_000),
+  // ── Typed-battle fields (optional for backward compat with the classic
+  //    badge-count battles created without these set; new clients send them) ──
+  bestOf:     z.union([z.literal(1), z.literal(3), z.literal(5)]).optional(),
+  windowKind: z.enum(['day', 'week']).optional(),
+  startDate:  dateString.optional(),
+  // 1, 3, or 5 category slugs; must match bestOf length when both are present.
+  categories: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
 });
 
 // ── /api/challenges/[id] POST ─────────────────────────────────────────────────

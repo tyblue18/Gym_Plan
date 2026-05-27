@@ -10,6 +10,7 @@
 import { NextResponse }   from 'next/server';
 import { prisma }         from '@/lib/prisma';
 import { sendPushToUser } from '@/lib/push';
+import { GOAL_TOLERANCE, LAST_STREAK_KEY } from '@/lib/constants';
 
 interface DayRecord {
   calsEaten?: string | number;
@@ -25,8 +26,6 @@ type PushSubClient = {
 };
 
 const ps = () => (prisma as unknown as { pushSubscription: PushSubClient }).pushSubscription;
-
-const GOAL_TOLERANCE = 100;
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -166,7 +165,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
     const streak = (() => {
       try {
-        const raw = settings['queLastStreak'];
+        const raw = settings[LAST_STREAK_KEY];
         return typeof raw === 'number' ? raw : parseInt(String(raw ?? '0')) || 0;
       } catch { return 0; }
     })();

@@ -3,11 +3,13 @@
  * Requires the requesting user to be friends with the target.
  */
 
-import { getServerSession } from 'next-auth/next';
-import { NextResponse }     from 'next/server';
-import { authOptions }      from '@/lib/auth';
+import { getServerSession }     from 'next-auth/next';
+import { after, NextResponse }  from 'next/server';
+import { authOptions }          from '@/lib/auth';
 import { prisma }              from '@/lib/prisma';
 import { normalizeBadgeIcons } from '@/lib/badgeEngine';
+import { getBattleRecord }     from '@/lib/battleEngine';
+import { PROFILE_PHOTO_KEY }   from '@/lib/constants';
 
 export async function GET(
   _req: Request,
@@ -34,17 +36,23 @@ export async function GET(
     if (!friendship) return NextResponse.json({ error: 'Not friends' }, { status: 403 });
   }
 
-  const user = await prisma.appUser.findUnique({
-    where:   { id: userId },
-    include: {
-      badges:      { orderBy: { earnedAt: 'desc' } },
-      workoutData: { select: { settings: true } },
-      coinWallet:  { select: { balance: true } },
-    },
-  });
+  const [user, battleRecord] = await Promise.all([
+    prisma.appUser.findUnique({
+      where:   { id: userId },
+      include: {
+        badges:      { orderBy: { earnedAt: 'desc' } },
+        workoutData: { select: { settings: true } },
+        coinWallet:  { select: { balance: true } },
+      },
+    }),
+    getBattleRecord(userId),
+  ]);
   if (!user) return NextResponse.json(null, { status: 404 });
 
   const statusActive = !user.statusExpiresAt || user.statusExpiresAt > new Date();
+  if (!statusActive) after(() =>
+    prisma.appUser.update({ where: { id: user.id }, data: { status: null, statusExpiresAt: null } }).catch(() => {})
+  );
   const settings = (user.workoutData?.settings ?? {}) as Record<string, unknown>;
 
   return NextResponse.json({
@@ -56,7 +64,8 @@ export async function GET(
     showcaseBadges:  (user.showcaseBadges as string[] | null) ?? [],
     badges:          normalizeBadgeIcons(user.badges),
     badgeCount:      user.badges.length,
-    profilePhoto:    (settings['queProfilePhoto'] as string | undefined) ?? null,
+    profilePhoto:    (settings[PROFILE_PHOTO_KEY] as string | undefined) ?? null,
     coinBalance:     user.coinWallet?.balance ?? 0,
+    battleRecord,
   });
 }

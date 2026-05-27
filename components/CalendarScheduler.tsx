@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
+import { GOAL_TOLERANCE, LIFT_PRS_KEY } from '@/lib/constants';
 import {
   useApp,
   MONTHS,
@@ -357,7 +358,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
         if (w > 0) prRecs[ex.n!] = Math.max(prRecs[ex.n!] ?? 0, w);
       });
     });
-    try { localStorage.setItem('queLiftPRs', JSON.stringify(prRecs)); } catch { /* storage full */ }
+    try { localStorage.setItem(LIFT_PRS_KEY, JSON.stringify(prRecs)); } catch { /* storage full */ }
     pushNow({ settings: gatherSettings() });
   };
 
@@ -503,7 +504,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
 
   // ── PR detection ─────────────────────────────────────────────────────────
   const prRecs = useMemo((): Record<string, number> => {
-    try { return JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}') as Record<string, number>; }
+    try { return JSON.parse(localStorage.getItem(LIFT_PRS_KEY) ?? '{}') as Record<string, number>; }
     catch { return {}; }
   }, [lifts]); // re-reads after recomputePRs updates localStorage and triggers re-render via rec prop
 
@@ -564,7 +565,7 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
       const hasEx = String(rec.exercises ?? '').length > 2;
       const eaten = parseFloat(String(rec.calsEaten ?? '0'));
       const bud   = parseFloat(String(rec.budget   ?? '0'));
-      return hasEx && eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= 100;
+      return hasEx && eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= GOAL_TOLERANCE;
     };
     if (!qualifies(dateStr)) return 0;
     let streak = 1;

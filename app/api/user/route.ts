@@ -4,23 +4,31 @@
  */
 
 import { getServerSession } from 'next-auth/next';
-import { NextResponse }     from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }              from '@/lib/prisma';
 import { userPatchSchema }     from '@/lib/validators';
 import { normalizeBadgeIcons } from '@/lib/badgeEngine';
+import { getBattleRecord }     from '@/lib/battleEngine';
+import { PROFILE_PHOTO_KEY }   from '@/lib/constants';
 
 export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const user = await prisma.appUser.findUnique({
-    where:   { id: session.user.id },
-    include: { badges: { orderBy: { earnedAt: 'desc' } }, workoutData: { select: { settings: true } }, coinWallet: { select: { balance: true } } },
-  });
+  const [user, battleRecord] = await Promise.all([
+    prisma.appUser.findUnique({
+      where:   { id: session.user.id },
+      include: { badges: { orderBy: { earnedAt: 'desc' } }, workoutData: { select: { settings: true } }, coinWallet: { select: { balance: true } } },
+    }),
+    getBattleRecord(session.user.id),
+  ]);
   if (!user) return NextResponse.json(null, { status: 404 });
 
   const statusActive = !user.statusExpiresAt || user.statusExpiresAt > new Date();
+  if (!statusActive) after(() =>
+    prisma.appUser.update({ where: { id: user.id }, data: { status: null, statusExpiresAt: null } }).catch(() => {})
+  );
   const settings = (user.workoutData?.settings ?? {}) as Record<string, unknown>;
 
   return NextResponse.json({
@@ -32,8 +40,9 @@ export async function GET(): Promise<NextResponse> {
     showcaseBadges:  (user.showcaseBadges as string[] | null) ?? [],
     badges:          normalizeBadgeIcons(user.badges),
     badgeCount:      user.badges.length,
-    profilePhoto:    (settings['queProfilePhoto'] as string | undefined) ?? null,
+    profilePhoto:    (settings[PROFILE_PHOTO_KEY] as string | undefined) ?? null,
     coinBalance:     user.coinWallet?.balance ?? 0,
+    battleRecord,
   });
 }
 
@@ -75,9 +84,22 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   }
 
   // ── Showcase ──────────────────────────────────────────────────────────────
+  // Filter requested slugs to only those the user has actually earned. Without
+  // this, a client could PATCH any badge slug into their showcase via devtools
+  // and display badges they never earned.
   if (body.showcaseBadges !== undefined) {
-    const slugs = body.showcaseBadges.slice(0, 8).filter((s): s is string => typeof s === 'string');
-    update.showcaseBadges = slugs;
+    const requested = body.showcaseBadges.slice(0, 8).filter((s): s is string => typeof s === 'string');
+    if (requested.length === 0) {
+      update.showcaseBadges = [];
+    } else {
+      const owned = await prisma.badge.findMany({
+        where:  { userId: session.user.id, slug: { in: requested } },
+        select: { slug: true },
+      });
+      const ownedSet = new Set(owned.map(b => b.slug));
+      // Preserve user's chosen order; drop any slugs they don't own.
+      update.showcaseBadges = requested.filter(s => ownedSet.has(s));
+    }
   }
 
   if (Object.keys(update).length === 0) {

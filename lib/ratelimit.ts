@@ -19,3 +19,20 @@ export const foodLimit = new Ratelimit({
   limiter: Ratelimit.slidingWindow(30, '1 m'),
   prefix:  'rl:food',
 });
+
+// 20 friend-graph writes per user per minute (send / cancel / accept / decline).
+// Generous enough for legitimate use, prevents scripted spam.
+export const friendLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, '1 m'),
+  prefix:  'rl:friend',
+});
+
+// 10 challenge writes per user per minute (create / accept / decline).
+// Each create deducts coins, so abuse has cost — but a tighter limit prevents
+// spam-notification annoyance to friends.
+export const challengeLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(10, '1 m'),
+  prefix:  'rl:challenge',
+});

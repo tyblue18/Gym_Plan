@@ -16,8 +16,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
-
-const GOAL_TOLERANCE = 100;
+import { hitGoal } from '@/lib/calorie-utils';
 
 type DayRecordClient = {
   findMany: (args: unknown) => Promise<Array<{ date: string; data: unknown }>>;
@@ -25,12 +24,6 @@ type DayRecordClient = {
 
 function dr(): DayRecordClient {
   return (prisma as unknown as { dayRecord: DayRecordClient }).dayRecord;
-}
-
-function hitGoal(calsEaten: unknown, budget: unknown): boolean {
-  const eaten = parseFloat(String(calsEaten ?? '0'));
-  const bud   = parseFloat(String(budget   ?? '0'));
-  return eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= GOAL_TOLERANCE;
 }
 
 /** Coins earned on a day that ends a streak of `streak` consecutive goal days. */

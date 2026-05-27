@@ -7,6 +7,7 @@ import { SWRegister }          from '@/components/sw-register';
 import { ColorSchemeLoader }  from '@/components/color-scheme-loader';
 import { SyncStatus }         from '@/components/SyncStatus';
 import GlowMount       from '@/components/GlowMount';
+import { THEME_KEY }   from '@/lib/constants';
 import './globals.css';
 
 // ── Type pairing: athletic condensed display + clean geometric sans + technical mono ──
@@ -79,7 +80,7 @@ export default function RootLayout({
     >
       {/* Blocking script: sets data-theme before first paint to prevent flash */}
       <head>
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{if(localStorage.getItem('queTheme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})()` }} />
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{if(localStorage.getItem('${THEME_KEY}')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})()` }} />
       </head>
       <body className="font-sans antialiased">
         <AuthProvider>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
+import { LIFT_PRS_KEY } from '@/lib/constants';
 
 // ── Minimal parsers (duplicated to avoid cross-component imports) ─────────────
 type RawEx = { k?: string; n?: string; sets?: Array<{ r: string; w: string }>; s?: string; r?: string; w?: string };
@@ -110,7 +111,7 @@ export function ExerciseHistoryModal({ name, open, onClose }: {
 
   // All-time PR
   let prWeight = 0;
-  try { prWeight = name ? ((JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}') as Record<string, number>)[name] ?? 0) : 0; }
+  try { prWeight = name ? ((JSON.parse(localStorage.getItem(LIFT_PRS_KEY) ?? '{}') as Record<string, number>)[name] ?? 0) : 0; }
   catch { /* noop */ }
   const latest = history[history.length - 1];
 

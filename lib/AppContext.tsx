@@ -25,6 +25,7 @@ import React, {
   useState,
 } from 'react';
 import { queueSync, pushNow, flushPending, pullFromCloud, restoreSettings } from '@/lib/syncEngine';
+import { DB_KEY, PROFILE_KEY } from '@/lib/constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -233,13 +234,8 @@ const DEFAULT_PROFILE: UserProfile = {
   activityLevel: '1.45',
 };
 
-// Storage keys — exactly as used in the vanilla JS app
-const DB_KEY       = 'ironmanCoreDB_v2';
-const PROFILE_KEY  = 'ironmanProfileSettings_v2';
-const TEMPLATE_KEY = 'ironmanTemplatesPool';
-const USAGE_KEY    = 'queExerciseUsage';
-const STREAK_KEY   = 'queLastStreak';
-const PRESETS_KEY  = 'queWorkoutPresets';
+// Storage-key constants (DB_KEY, PROFILE_KEY) are imported from lib/constants.
+// Stateless helpers (getUsage / getWorkoutPresets / etc.) live in lib/storage.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER — safe date string
@@ -294,11 +290,6 @@ export interface AppContextValue {
   profile:    UserProfile;
   setProfile: (updates: Partial<UserProfile>) => void;
 
-  // ── 11–14. Static constants (not state, but surfaced here for convenience)
-  months:           string[];
-  presets:          Record<MuscleGroup, string[]>;
-  defaultTemplates: WorkoutTemplate[];
-
   // ── Loading gate (false during the initial localStorage hydration) ───────
   isLoaded: boolean;
 
@@ -315,20 +306,6 @@ export interface AppContextValue {
 
   /** Persist the user profile to localStorage (full or partial update). */
   persistProfile: (updates: Partial<UserProfile>) => void;
-
-  // ── Secondary-storage helpers (mirrors vanilla JS helpers) ───────────────
-
-  getUsage: () => Record<string, Record<string, number>>;
-  bumpUsage: (group: string, name: string) => void;
-
-  getTemplatePool: () => WorkoutTemplate[];
-  saveTemplatePool: (pool: WorkoutTemplate[]) => void;
-
-  getWorkoutPresets: () => WorkoutPreset[];
-  saveWorkoutPresets: (presets: WorkoutPreset[]) => void;
-
-  getLastStreak: () => number;
-  saveLastStreak: (n: number) => void;
 
   /** Most recent weight on or before dateStr (mirrors vanilla getLastKnownWeight). */
   getLastKnownWeight: (dateStr: string) => string;
@@ -646,53 +623,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [persistProfile]
   );
 
-  // ── Secondary-storage helpers (no React state — direct localStorage I/O) ──
-
-  const getUsage = useCallback(
-    (): Record<string, Record<string, number>> => {
-      try {
-        return JSON.parse(localStorage.getItem(USAGE_KEY) ?? '{}');
-      } catch { return {}; }
-    },
-    []
-  );
-
-  const bumpUsage = useCallback((group: string, name: string) => {
-    const u = (() => {
-      try { return JSON.parse(localStorage.getItem(USAGE_KEY) ?? '{}'); } catch { return {}; }
-    })();
-    if (!u[group]) u[group] = {};
-    u[group][name] = (u[group][name] ?? 0) + 1;
-    try { localStorage.setItem(USAGE_KEY, JSON.stringify(u)); } catch { /* noop */ }
-  }, []);
-
-  const getTemplatePool = useCallback((): WorkoutTemplate[] => {
-    try {
-      return JSON.parse(localStorage.getItem(TEMPLATE_KEY) ?? 'null') ?? DEFAULT_TEMPLATES;
-    } catch { return DEFAULT_TEMPLATES; }
-  }, []);
-
-  const saveTemplatePool = useCallback((pool: WorkoutTemplate[]) => {
-    try { localStorage.setItem(TEMPLATE_KEY, JSON.stringify(pool)); } catch { /* noop */ }
-  }, []);
-
-  const getWorkoutPresets = useCallback((): WorkoutPreset[] => {
-    try {
-      return JSON.parse(localStorage.getItem(PRESETS_KEY) ?? '[]');
-    } catch { return []; }
-  }, []);
-
-  const saveWorkoutPresets = useCallback((ps: WorkoutPreset[]) => {
-    try { localStorage.setItem(PRESETS_KEY, JSON.stringify(ps)); } catch { /* noop */ }
-  }, []);
-
-  const getLastStreak = useCallback((): number => {
-    return parseInt(localStorage.getItem(STREAK_KEY) ?? '-1', 10);
-  }, []);
-
-  const saveLastStreak = useCallback((n: number) => {
-    try { localStorage.setItem(STREAK_KEY, String(n)); } catch { /* noop */ }
-  }, []);
+  // Stateless localStorage helpers (getUsage, bumpUsage, getTemplatePool,
+  // saveTemplatePool, getWorkoutPresets, saveWorkoutPresets, getLastStreak,
+  // saveLastStreak) live in lib/storage.ts — they're imported directly by
+  // callers to keep this context value (and its memo deps) small.
 
   const getLastKnownWeight = useCallback(
     (dateStr: string): string => {
@@ -727,30 +661,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       profile,         setProfile,
       isLoaded,
 
-      // ── Constants ────────────────────────────────────────────────────────
-      months:           MONTHS,
-      presets:          PRESETS,
-      defaultTemplates: DEFAULT_TEMPLATES,
-
       // ── Actions ──────────────────────────────────────────────────────────
       updateDayRecord,
       getDayRecord,
       persistDB,
       persistProfile,
-
-      // ── Secondary storage helpers ─────────────────────────────────────────
-      getUsage,
-      bumpUsage,
-      getTemplatePool,
-      saveTemplatePool,
-      getWorkoutPresets,
-      saveWorkoutPresets,
-      getLastStreak,
-      saveLastStreak,
       getLastKnownWeight,
     }),
     [
-      today,
+      today, todayStr,
       localDB, activeDayFocus, currentDisplayDate,
       viewMode, currentGroup,
       lastBurn, lastBudget,
@@ -758,10 +677,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       profile, isLoaded,
       setActiveDayFocus, updateDayRecord, getDayRecord,
       persistDB, persistProfile, setProfile,
-      getUsage, bumpUsage,
-      getTemplatePool, saveTemplatePool,
-      getWorkoutPresets, saveWorkoutPresets,
-      getLastStreak, saveLastStreak,
       getLastKnownWeight,
     ]
   );

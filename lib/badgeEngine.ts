@@ -10,6 +10,10 @@
  */
 
 import { prisma }        from '@/lib/prisma';
+import { hitGoal }       from '@/lib/calorie-utils';
+import {
+  ATHLETE_PLAN_KEY, MILLION_GROUPS_KEY, LIFT_PRS_KEY,
+} from '@/lib/constants';
 import { BADGE_CATALOG } from '@/lib/badgeCatalog';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -37,12 +41,7 @@ interface BadgeDef {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/** True when a day's intake is within ±100 kcal of budget. */
-function hitGoal(calsEaten: string | undefined, budget: unknown): boolean {
-  const eaten = parseFloat(String(calsEaten ?? '0'));
-  const bud   = parseFloat(String(budget   ?? '0'));
-  return eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= 100;
-}
+// hitGoal lives in lib/calorie-utils (shared with client and other server engines).
 
 /** Returns the longest consecutive calorie-goal streak in localDB. */
 function maxStreak(localDB: Record<string, DayRecord>): number {
@@ -225,7 +224,7 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     slug: 'locked_in', label: 'Locked In', icon: '/Badges/Locked_in.png', category: 'nutrition',
     check: ({ localDB, settings }) => {
-      const plan = settings['queAthletePlan'] as {
+      const plan = settings[ATHLETE_PLAN_KEY] as {
         startDate?: string; weeksTarget?: number; goalWeight?: number; type?: string;
       } | null | undefined;
       if (!plan?.startDate || !plan.goalWeight || !plan.weeksTarget) return false;
@@ -269,7 +268,7 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     slug: 'million_lbs', label: 'Million Pounds Lifted', icon: '/Badges/Million_pounds_lifted.png', category: 'lift',
     check: ({ settings }) => {
-      const groups = settings['queMillionGroups'] as string[] | undefined;
+      const groups = settings[MILLION_GROUPS_KEY] as string[] | undefined;
       return Array.isArray(groups) && groups.length > 0;
     },
   },
@@ -393,7 +392,7 @@ export async function checkAndAwardBadges(
   settings: Record<string, unknown>,
 ): Promise<{ awarded: AwardedBadge[]; revoked: AwardedBadge[] }> {
   let liftPRs: Record<string, number> = {};
-  try { liftPRs = (settings['queLiftPRs'] ?? {}) as Record<string, number>; }
+  try { liftPRs = (settings[LIFT_PRS_KEY] ?? {}) as Record<string, number>; }
   catch { /* malformed — treat as empty */ }
 
   // Fetch full history and existing badges in parallel.

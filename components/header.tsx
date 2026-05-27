@@ -17,8 +17,15 @@ import {
 import { pushNow }         from '@/lib/syncEngine';
 import { PushPermission }  from '@/components/PushPermission';
 
-const PHOTO_KEY = 'queProfilePhoto';
-const PLAN_KEY  = 'queAthletePlan';
+import {
+  PROFILE_PHOTO_KEY as PHOTO_KEY,
+  ATHLETE_PLAN_KEY as PLAN_KEY,
+  DB_KEY,
+  PROFILE_KEY,
+  WORKOUT_PRESETS_KEY,
+  EXERCISE_USAGE_KEY,
+  LIFT_PRS_KEY,
+} from '@/lib/constants';
 
 interface PlanData {
   type: string; intensity: string; dailyKcal: number;
@@ -104,6 +111,7 @@ function UserPill({ image, name, email }: UserPillProps) {
   const [editWeight, setEditWeight]   = useState('');
   const [editDate,   setEditDate]     = useState('');
   const [startSaved, setStartSaved]   = useState(false);
+  const [uploading,  setUploading]    = useState(false);
   const pillRef      = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -154,23 +162,28 @@ function UserPill({ image, name, email }: UserPillProps) {
   const handlePhotoSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const compressed = await compressPhoto(file);
-    let url = compressed;
+    setUploading(true);
     try {
-      const res  = await fetch(compressed);
-      const blob = await res.blob();
-      const form = new FormData();
-      form.append('photo', new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
-      const data = await fetch('/api/profile/photo', { method: 'POST', body: form })
-        .then(r => r.ok ? r.json() : null) as { url?: string } | null;
-      if (data?.url) url = data.url;
-    } catch { /* blob upload failed — keep base64 fallback */ }
-    localStorage.setItem(PHOTO_KEY, url);
-    setLocalPhoto(url);
-    window.dispatchEvent(new Event('queProfilePhotoChanged'));
-    pushNow({});
-    e.target.value = '';
-    setOpen(false);
+      const compressed = await compressPhoto(file);
+      let url = compressed;
+      try {
+        const res  = await fetch(compressed);
+        const blob = await res.blob();
+        const form = new FormData();
+        form.append('photo', new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
+        const data = await fetch('/api/profile/photo', { method: 'POST', body: form })
+          .then(r => r.ok ? r.json() : null) as { url?: string } | null;
+        if (data?.url) url = data.url;
+      } catch { /* blob upload failed — keep base64 fallback */ }
+      localStorage.setItem(PHOTO_KEY, url);
+      setLocalPhoto(url);
+      window.dispatchEvent(new Event('queProfilePhotoChanged'));
+      pushNow({});
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+      setOpen(false);
+    }
   }, []);
 
   const handleAccentChange = useCallback((hex: string) => {
@@ -254,12 +267,19 @@ function UserPill({ image, name, email }: UserPillProps) {
               <div className="auth-dropdown-divider" />
 
               <button type="button" role="menuitem" className="auth-dropdown-item"
-                onClick={() => fileInputRef.current?.click()}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                  <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-                Change photo
+                onClick={() => !uploading && fileInputRef.current?.click()}
+                disabled={uploading} style={{ opacity: uploading ? 0.6 : undefined }}>
+                {uploading ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="animate-spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                )}
+                {uploading ? 'Uploading…' : 'Change photo'}
               </button>
 
               <button type="button" role="menuitem" className="auth-dropdown-item"
@@ -285,10 +305,10 @@ function UserPill({ image, name, email }: UserPillProps) {
                 onClick={() => {
                   setOpen(false);
                   try {
-                    const db       = JSON.parse(localStorage.getItem('ironmanCoreDB_v2') ?? '{}');
-                    const profile  = JSON.parse(localStorage.getItem('ironmanProfileSettings_v2') ?? '{}');
+                    const db       = JSON.parse(localStorage.getItem(DB_KEY) ?? '{}');
+                    const profile  = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? '{}');
                     const settings: Record<string, unknown> = {};
-                    ['queAthletePlan','queWorkoutPresets','queExerciseUsage','queLiftPRs'].forEach(k => {
+                    [PLAN_KEY, WORKOUT_PRESETS_KEY, EXERCISE_USAGE_KEY, LIFT_PRS_KEY].forEach(k => {
                       const v = localStorage.getItem(k);
                       if (v) try { settings[k] = JSON.parse(v); } catch { settings[k] = v; }
                     });

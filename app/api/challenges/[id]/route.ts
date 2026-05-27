@@ -11,7 +11,9 @@ import { getServerSession } from 'next-auth/next';
 import { NextResponse }     from 'next/server';
 import { authOptions }      from '@/lib/auth';
 import { prisma }           from '@/lib/prisma';
+import { challengeLimit }   from '@/lib/ratelimit';
 import { challengeActionSchema } from '@/lib/validators';
+import { resolveBattle, isWindowComplete, todayUTC } from '@/lib/battleEngine';
 
 export async function POST(
   req: Request,
@@ -20,6 +22,9 @@ export async function POST(
   const { id } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
+
+  const { success } = await challengeLimit.limit(session.user.id);
+  if (!success) return NextResponse.json({ error: 'Too many requests — slow down' }, { status: 429 });
 
   const parsed = challengeActionSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -62,7 +67,11 @@ export async function POST(
     return NextResponse.json({ ok: true, result: 'declined' });
   }
 
-  // ── Accept — deduct from challengee, resolve, award winner ───────────────
+  // ── Accept — deduct challengee's wager ───────────────────────────────────
+  // For TYPED battles: deduct, mark 'active'; resolution happens later via
+  //   resolveBattle() (cron after endDate, or inline if the window is already
+  //   complete at accept time).
+  // For CLASSIC battles: legacy badge-count comparison resolves inline.
   const challengeeWallet = await prisma.coinWallet.upsert({
     where:  { userId: me.id },
     create: { userId: me.id, balance: 0 },
@@ -75,6 +84,65 @@ export async function POST(
     );
   }
 
+  const isTyped = challenge.type === 'typed';
+
+  // ── TYPED PATH ───────────────────────────────────────────────────────────
+  if (isTyped) {
+    if (!challenge.endDate) {
+      return NextResponse.json({ error: 'Typed challenge is missing endDate' }, { status: 500 });
+    }
+
+    // 1. Deduct the challengee's wager and mark the battle active. Concurrent
+    //    accepts are blocked via the status='pending' guard on updateMany.
+    try {
+      await prisma.$transaction(async tx => {
+        const after = await tx.coinWallet.update({
+          where: { id: challengeeWallet.id },
+          data:  { balance: { decrement: challenge.wager } },
+        });
+        if (after.balance < 0) throw new Error('INSUFFICIENT_FUNDS');
+        await tx.coinTransaction.create({
+          data: { walletId: challengeeWallet.id, amount: -challenge.wager, reason: 'battle_bet', refId: challenge.id },
+        });
+        const claimed = await tx.challenge.updateMany({
+          where: { id: challenge.id, status: 'pending' },
+          data:  { status: 'active' },
+        });
+        if (claimed.count === 0) throw new Error('ALREADY_RESOLVED');
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === 'INSUFFICIENT_FUNDS') {
+        return NextResponse.json({ error: 'Not enough coins to accept this challenge' }, { status: 400 });
+      }
+      if (e instanceof Error && e.message === 'ALREADY_RESOLVED') {
+        return NextResponse.json({ error: 'Challenge already resolved' }, { status: 409 });
+      }
+      throw e;
+    }
+
+    // 2. If the window is already over (e.g. retrospective past-week battle),
+    //    resolve immediately instead of waiting for the cron.
+    if (isWindowComplete(challenge.endDate, todayUTC())) {
+      const resolution = await resolveBattle(challenge.id);
+      return NextResponse.json({
+        ok:        true,
+        status:    'resolved',
+        result:    resolution?.winnerId === me.id ? 'win' :
+                   resolution?.winnerId === null  ? 'tie' :
+                   'loss',
+        winnerId:  resolution?.winnerId ?? null,
+        resolution,
+      });
+    }
+
+    return NextResponse.json({
+      ok:      true,
+      status:  'active',
+      endDate: challenge.endDate,
+    });
+  }
+
+  // ── CLASSIC PATH (legacy badge-count comparison) ─────────────────────────
   const challengerWallet = await prisma.coinWallet.upsert({
     where:  { userId: challenge.challengerId },
     create: { userId: challenge.challengerId, balance: 0 },
@@ -114,14 +182,19 @@ export async function POST(
       }
     }
 
-    await tx.challenge.update({
-      where: { id: challenge.id },
+    // Guard against concurrent accepts: only succeed if challenge is still pending.
+    const resolved = await tx.challenge.updateMany({
+      where: { id: challenge.id, status: 'pending' },
       data:  { status: 'resolved', winnerId, resolvedAt: new Date() },
     });
+    if (resolved.count === 0) throw new Error('ALREADY_RESOLVED');
   });
   } catch (e) {
     if (e instanceof Error && e.message === 'INSUFFICIENT_FUNDS') {
       return NextResponse.json({ error: 'Not enough coins to accept this challenge' }, { status: 400 });
+    }
+    if (e instanceof Error && e.message === 'ALREADY_RESOLVED') {
+      return NextResponse.json({ error: 'Challenge already resolved' }, { status: 409 });
     }
     throw e;
   }

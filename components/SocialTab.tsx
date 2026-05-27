@@ -1,15 +1,31 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import { AnimatePresence, motion }                   from 'framer-motion';
-import { Users, UserPlus, X, Check, Swords }         from 'lucide-react';
-import Lottie                                        from 'lottie-react';
+import {
+  Users, UserPlus, X, Check, Swords, Clock,
+  Bike, Dumbbell, Utensils, AlertTriangle,
+} from 'lucide-react';
+import dynamic                                       from 'next/dynamic';
 import ProfileCard, { type PublicProfile }           from '@/components/ProfileCard';
-import anim1 from '@/public/loading1_animation.json';
-import anim2 from '@/public/loading2_animation.json';
-import anim3 from '@/public/loading3_animation.json';
+import {
+  COIN_KEY, PROFILE_PHOTO_KEY, SOCIAL_ANIM_KEY, COINS_MIGRATED_KEY,
+} from '@/lib/constants';
+import {
+  BATTLE_CATEGORIES, type BattleCategory, type CategoryGroup,
+} from '@/lib/battle-categories';
+import type { BattleResolution, CategoryResult } from '@/lib/battleEngine';
 
-const LOADING_ANIMS = [anim1, anim2, anim3];
+// Lottie + its JSON payloads are only used by the loading spinner that
+// briefly shows on first mount. Defer the library + JSON until they're
+// actually needed so the rest of the tab can hydrate sooner.
+const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
+
+const LOADING_ANIM_LOADERS: Array<() => Promise<{ default: unknown }>> = [
+  () => import('@/public/loading1_animation.json'),
+  () => import('@/public/loading2_animation.json'),
+  () => import('@/public/loading3_animation.json'),
+];
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -39,9 +55,119 @@ interface ChallengeData {
   createdAt:  string;
   challenger: { id: string; name: string | null; username: string | null };
   challengee: { id: string; name: string | null; username: string | null };
+  // Typed-battle fields — present when a typed battle was created (null on
+  // legacy badge-count battles, which still resolve instantly on accept).
+  type?:        'typed' | 'classic' | null;
+  bestOf?:      number | null;
+  windowKind?:  'day' | 'week' | null;
+  startDate?:   string | null;
+  endDate?:     string | null;
+  categories?:  string[] | null;
+  resolution?:  BattleResolution | null;
+}
+
+// ── Date helpers (client local time, matching how DayRecord.date is built) ────
+
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDaysISO(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+function daysBetween(aStr: string, bStr: string): number {
+  const [ya, ma, da] = aStr.split('-').map(Number);
+  const [yb, mb, db] = bStr.split('-').map(Number);
+  const a = new Date(ya, ma - 1, da).getTime();
+  const b = new Date(yb, mb - 1, db).getTime();
+  return Math.round((b - a) / 86_400_000);
+}
+
+function fmtMonthDay(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function fmtRange(startDate: string, endDate: string): string {
+  if (startDate === endDate) return fmtMonthDay(startDate);
+  return `${fmtMonthDay(startDate)} – ${fmtMonthDay(endDate)}`;
+}
+
+/** Human-readable status for an active battle ("Day 3 of 7", "Starts tomorrow", "Resolving…"). */
+function battleProgressLabel(startDate: string, endDate: string): string {
+  const today = localToday();
+  if (today < startDate) {
+    const n = daysBetween(today, startDate);
+    if (n === 1) return 'Starts tomorrow';
+    return `Starts in ${n} days`;
+  }
+  if (today > endDate) return 'Resolving…';
+  const total = daysBetween(startDate, endDate) + 1;
+  const dayN  = daysBetween(startDate, today) + 1;
+  if (total === 1) return 'Ends tonight';
+  return `Day ${dayN} of ${total}`;
 }
 
 // ── Challenge modal ────────────────────────────────────────────────────────────
+
+type WindowPreset = 'today' | 'tomorrow' | 'past_week' | 'next_week' | 'custom';
+
+interface WindowPresetEntry {
+  id:    WindowPreset;
+  label: string;
+  sub:   string;
+}
+
+const WINDOW_PRESETS: WindowPresetEntry[] = [
+  { id: 'past_week', label: 'Past 7 days', sub: 'retrospective' },
+  { id: 'today',     label: 'Today',       sub: 'ends tonight' },
+  { id: 'tomorrow',  label: 'Tomorrow',    sub: 'one day' },
+  { id: 'next_week', label: 'Next 7 days', sub: 'starts today' },
+  { id: 'custom',    label: 'Custom',      sub: 'pick a start date' },
+];
+
+const GROUP_META: Record<CategoryGroup, { label: string; Icon: typeof Bike; color: string }> = {
+  cardio: { label: 'Cardio', Icon: Bike,     color: '#60A5FA' },
+  lift:   { label: 'Lift',   Icon: Dumbbell, color: '#F59E0B' },
+  diet:   { label: 'Diet',   Icon: Utensils, color: '#A78BFA' },
+};
+
+/** Small uppercase section label used throughout the ChallengeModal. */
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="font-mono text-[9px] font-bold tracking-[2px] uppercase text-[var(--ink-3)]">
+      {children}
+    </p>
+  );
+}
+
+function presetToWindow(
+  preset:      WindowPreset,
+  customStart: string,
+  customKind:  'day' | 'week',
+): { startDate: string; windowKind: 'day' | 'week' } {
+  const today = localToday();
+  switch (preset) {
+    case 'today':     return { startDate: today,                 windowKind: 'day' };
+    case 'tomorrow':  return { startDate: addDaysISO(today,  1), windowKind: 'day' };
+    case 'past_week': return { startDate: addDaysISO(today, -6), windowKind: 'week' };
+    case 'next_week': return { startDate: today,                 windowKind: 'week' };
+    case 'custom':    return { startDate: customStart,           windowKind: customKind };
+  }
+}
+
+const BEST_OF_OPTIONS = [1, 3, 5] as const;
+const GROUP_ORDER: CategoryGroup[] = ['cardio', 'lift', 'diet'];
+const GROUP_LABELS: Record<CategoryGroup, string> = {
+  cardio: 'Cardio',
+  lift:   'Lift',
+  diet:   'Diet',
+};
 
 function ChallengeModal({ friend, myBalance, onClose, onSent }: {
   friend:    FriendData;
@@ -49,18 +175,62 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
   onClose:   () => void;
   onSent:    () => void;
 }) {
-  const [wager,   setWager]   = useState(Math.min(3, Math.max(1, myBalance)));
-  const [sending, setSending] = useState(false);
-  const [error,   setError]   = useState('');
-  const max = Math.max(0, myBalance);
-  const canSend = wager >= 1 && wager <= max;
+  // ── Form state ──────────────────────────────────────────────────────────
+  const [preset,        setPreset]        = useState<WindowPreset>('past_week');
+  const [customStart,   setCustomStart]   = useState(localToday());
+  const [customKind,    setCustomKind]    = useState<'day' | 'week'>('day');
+  const [bestOf,        setBestOf]        = useState<1 | 3 | 5>(1);
+  const [selectedCats,  setSelectedCats]  = useState<string[]>([]);
+  const [wager,         setWager]         = useState(Math.min(3, Math.max(1, myBalance)));
+  const [sending,       setSending]       = useState(false);
+  const [error,         setError]         = useState('');
+
+  // When bestOf shrinks, drop categories beyond the new limit.
+  useEffect(() => {
+    setSelectedCats(cur => (cur.length > bestOf ? cur.slice(0, bestOf) : cur));
+  }, [bestOf]);
+
+  const max     = Math.max(0, myBalance);
+  const win     = presetToWindow(preset, customStart, customKind);
+  const canSend =
+    wager >= 1 && wager <= max &&
+    selectedCats.length === bestOf;
+
+  // Surface any safety notes for currently-selected categories.
+  const safetyNotes = useMemo(() => {
+    const seen = new Set<string>();
+    const notes: string[] = [];
+    for (const slug of selectedCats) {
+      const cat = BATTLE_CATEGORIES.find(c => c.slug === slug);
+      if (cat?.safetyNote && !seen.has(cat.safetyNote)) {
+        seen.add(cat.safetyNote);
+        notes.push(cat.safetyNote);
+      }
+    }
+    return notes;
+  }, [selectedCats]);
+
+  const toggleCat = (slug: string) => {
+    setSelectedCats(cur => {
+      if (cur.includes(slug)) return cur.filter(s => s !== slug);
+      if (cur.length >= bestOf) return cur;     // at limit — ignore
+      return [...cur, slug];
+    });
+  };
 
   const send = async () => {
     setSending(true); setError('');
-    const res  = await fetch('/api/challenges', {
+    const res = await fetch('/api/challenges', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ friendId: friend.id, wager }),
+      body: JSON.stringify({
+        friendId:   friend.id,
+        wager,
+        bestOf,
+        windowKind: win.windowKind,
+        startDate:  win.startDate,
+        categories: selectedCats,
+      }),
     });
     const data = await res.json();
     setSending(false);
@@ -76,12 +246,13 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <motion.div
-        className="w-full md:max-w-[400px] rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
+        className="w-full md:max-w-[460px] max-h-[92dvh] flex flex-col rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
         initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
         style={{ boxShadow: '0 0 0 1px rgba(255,181,71,0.4), 0 -2px 0 0 #FFB547, 0 40px 80px rgba(0,0,0,0.7)' }}
       >
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[var(--line)]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[var(--line)] flex-shrink-0">
           <div className="flex items-center gap-2">
             <Swords size={18} style={{ color: '#FFB547' }} />
             <h3 className="font-display text-[18px] tracking-[2px] uppercase text-[var(--ink-0)]">Challenge</h3>
@@ -89,11 +260,14 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
           <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors"><X size={20} /></button>
         </div>
 
-        <div className="p-5 space-y-5">
-          {/* Opponent */}
+        {/* Scrollable body — gives the form room to breathe on mobile. */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+
+          {/* ── Opponent ──────────────────────────────────────────────────── */}
           <div className="flex items-center gap-3 rounded border border-[var(--line)] bg-[var(--bg-2)] px-4 py-3">
             <div className="w-9 h-9 rounded-full bg-[var(--bg-3)] border border-[var(--line-2)] flex items-center justify-center flex-shrink-0 overflow-hidden">
               {friend.photo ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img src={friend.photo} alt="" className="w-full h-full object-cover" />
               ) : (
                 <span className="font-display text-[14px] text-[var(--ink-2)]">
@@ -107,46 +281,611 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
             </div>
           </div>
 
-          <div className="rounded border border-[var(--line-2)] bg-[var(--bg-2)] p-3">
-            <p className="font-mono text-[9px] text-[var(--ink-2)] leading-relaxed">
-              🏅 Whoever has <strong className="text-[var(--ink-0)]">more total badges</strong> wins.<br />
-              Winner takes both wagers. Tie = refund.
-            </p>
+          {/* ── When ───────────────────────────────────────────────────── */}
+          <SectionLabel>When</SectionLabel>
+          <div className="grid grid-cols-2 gap-1.5">
+            {WINDOW_PRESETS.map(p => {
+              const active   = preset === p.id;
+              const win      = presetToWindow(p.id, customStart, customKind);
+              const endDate  = win.windowKind === 'week' ? addDaysISO(win.startDate, 6) : win.startDate;
+              const rangeStr = p.id === 'custom' ? p.sub : fmtRange(win.startDate, endDate);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPreset(p.id)}
+                  className="text-left px-3 py-2.5 rounded-md border transition-all"
+                  style={{
+                    borderColor: active ? '#FFB547'             : 'var(--line)',
+                    background:  active ? 'rgba(255,181,71,0.10)' : 'var(--bg-2)',
+                  }}
+                >
+                  <p className="font-mono text-[10px] font-bold tracking-[0.5px]"
+                    style={{ color: active ? '#FFB547' : 'var(--ink-0)' }}>
+                    {p.label}
+                  </p>
+                  <p className="font-mono text-[9px] text-[var(--ink-3)] mt-0.5 tabular-nums">{rangeStr}</p>
+                </button>
+              );
+            })}
+          </div>
+          {preset === 'custom' && (
+            <div className="flex gap-2 -mt-1">
+              <input
+                type="date"
+                className="que-input flex-1 text-[10px] py-2"
+                value={customStart}
+                onChange={e => setCustomStart(e.target.value)}
+              />
+              <div className="flex rounded-md border border-[var(--line)] overflow-hidden flex-shrink-0">
+                {(['day', 'week'] as const).map(k => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setCustomKind(k)}
+                    className="px-3 font-mono text-[9px] font-bold tracking-[0.5px] uppercase transition-colors"
+                    style={{
+                      background: customKind === k ? 'rgba(255,181,71,0.16)' : 'transparent',
+                      color:      customKind === k ? '#FFB547'               : 'var(--ink-2)',
+                    }}
+                  >
+                    {k === 'day' ? '1d' : '7d'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Format (best of) ───────────────────────────────────────── */}
+          <div>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <SectionLabel>Format</SectionLabel>
+              <span className="font-mono text-[9px] text-[var(--ink-3)]">
+                {bestOf === 1 ? 'one category' : `winner takes ${Math.ceil(bestOf / 2)}+`}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {BEST_OF_OPTIONS.map(n => {
+                const active = bestOf === n;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setBestOf(n)}
+                    className="py-2.5 rounded-md border transition-all"
+                    style={{
+                      borderColor: active ? '#FFB547'             : 'var(--line)',
+                      background:  active ? 'rgba(255,181,71,0.10)' : 'var(--bg-2)',
+                    }}
+                  >
+                    <span className="font-display text-[20px] leading-none block"
+                      style={{ color: active ? '#FFB547' : 'var(--ink-1)' }}>
+                      Bo{n}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
+          {/* ── Categories ─────────────────────────────────────────────── */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)]">Your Wager</label>
-              <span className="font-mono text-[9px] text-[var(--ink-3)]">Balance: {myBalance} 🪙</span>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <SectionLabel>
+                Categories
+              </SectionLabel>
+              <span className="font-mono text-[9px] tabular-nums font-bold"
+                style={{ color: selectedCats.length === bestOf ? 'var(--positive)' : 'var(--ink-3)' }}>
+                {selectedCats.length} / {bestOf}
+              </span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="space-y-3">
+              {GROUP_ORDER.map(group => {
+                const items = BATTLE_CATEGORIES.filter(c => c.group === group);
+                const meta  = GROUP_META[group];
+                const GroupIcon = meta.Icon;
+                return (
+                  <div key={group}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <GroupIcon size={11} style={{ color: meta.color }} />
+                      <p className="font-mono text-[9px] font-bold tracking-[1px] uppercase"
+                        style={{ color: meta.color }}>
+                        {meta.label}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {items.map(cat => {
+                        const sel   = selectedCats.includes(cat.slug);
+                        const atCap = !sel && selectedCats.length >= bestOf;
+                        return (
+                          <button
+                            key={cat.slug}
+                            type="button"
+                            onClick={() => toggleCat(cat.slug)}
+                            disabled={atCap}
+                            // min-h-9 (36px) keeps each chip comfortably tappable
+                            // on mobile without forcing them onto separate rows.
+                            className="inline-flex items-center gap-1 px-3 py-2 rounded-full border font-mono text-[10px] font-bold transition-all min-h-9 active:scale-95"
+                            style={{
+                              borderColor: sel ? meta.color                                              : 'var(--line)',
+                              background:  sel ? `${meta.color}22`                                        : 'var(--bg-2)',
+                              color:       sel ? meta.color : atCap ? 'var(--ink-3)' : 'var(--ink-1)',
+                              opacity:     atCap ? 0.4 : 1,
+                            }}
+                          >
+                            {sel && <Check size={11} strokeWidth={3} />}
+                            {cat.label}
+                            {cat.safetyNote && (
+                              <AlertTriangle size={10} style={{ color: sel ? meta.color : 'var(--warn, #FBBF24)' }} />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── How each picked category is scored ─────────────────────── */}
+          {selectedCats.length > 0 && (
+            <div className="rounded-md border border-[var(--line)] bg-[var(--bg-2)] divide-y divide-[var(--line)]">
+              {selectedCats.map(slug => {
+                const cat = BATTLE_CATEGORIES.find(c => c.slug === slug);
+                if (!cat) return null;
+                const meta = GROUP_META[cat.group];
+                return (
+                  <div key={slug} className="flex items-start gap-2 p-2.5">
+                    <span className="block w-1.5 h-1.5 rounded-full flex-shrink-0 mt-[5px]"
+                      style={{ background: meta.color }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-mono text-[10px] font-bold text-[var(--ink-1)]">{cat.label}</p>
+                      <p className="font-mono text-[9px] text-[var(--ink-3)] leading-relaxed mt-0.5">
+                        {cat.description}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Safety notes ───────────────────────────────────────────── */}
+          {safetyNotes.length > 0 && (
+            <div className="rounded-md border border-[rgba(251,191,36,0.3)] bg-[rgba(251,191,36,0.06)] p-3 space-y-1">
+              {safetyNotes.map((n, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <AlertTriangle size={11} className="flex-shrink-0 mt-[1px]" style={{ color: '#FBBF24' }} />
+                  <p className="font-mono text-[9px] text-[var(--ink-1)] leading-relaxed">{n}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Wager ──────────────────────────────────────────────────── */}
+          <div>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <SectionLabel>Wager</SectionLabel>
+              <span className="font-mono text-[9px] text-[var(--ink-3)]">
+                Balance: <span className="text-[var(--ink-1)] tabular-nums">{myBalance}</span> 🪙
+              </span>
+            </div>
+            <div className="flex items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--bg-2)] p-1">
               <button type="button" onClick={() => setWager(w => Math.max(1, w - 1))}
-                className="w-11 h-11 flex items-center justify-center rounded-sm border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-0)] text-xl hover:border-[var(--accent)] transition-all">−</button>
-              <div className="flex-1 text-center">
-                <span className="font-display tabular text-[36px] leading-none" style={{ color: '#FFB547' }}>{wager}</span>
-                <span className="font-mono text-[11px] text-[var(--ink-3)] ml-1.5">🪙</span>
+                className="w-11 h-11 flex items-center justify-center rounded text-[var(--ink-1)] text-2xl hover:bg-[var(--bg-3)] transition-colors disabled:opacity-30"
+                disabled={wager <= 1}>−</button>
+              <div className="flex-1 flex items-baseline justify-center gap-1.5">
+                <span className="font-display tabular-nums text-[32px] leading-none" style={{ color: '#FFB547' }}>{wager}</span>
+                <span className="font-mono text-[11px] text-[var(--ink-3)]">🪙</span>
               </div>
               <button type="button" onClick={() => setWager(w => Math.min(max, w + 1))}
-                className="w-11 h-11 flex items-center justify-center rounded-sm border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-0)] text-xl hover:border-[var(--accent)] transition-all">+</button>
+                className="w-11 h-11 flex items-center justify-center rounded text-[var(--ink-1)] text-2xl hover:bg-[var(--bg-3)] transition-colors disabled:opacity-30"
+                disabled={wager >= max}>+</button>
             </div>
+            <p className="font-mono text-[9px] text-[var(--ink-3)] text-center mt-1.5">
+              Pot: <span className="text-[var(--ink-1)] font-bold tabular-nums">{wager * 2}</span> 🪙 · Winner takes all
+            </p>
             {myBalance === 0 && (
-              <p className="font-mono text-[9px] text-[var(--warn)] mt-2 text-center">No coins — hit your calorie goal to earn some!</p>
+              <p className="font-mono text-[9px] text-[var(--warn,#FBBF24)] mt-2 text-center">
+                No coins — hit your calorie goal to earn some!
+              </p>
             )}
           </div>
 
-          {error && <p className="font-mono text-[9px] text-[var(--danger)]">{error}</p>}
+          {error && (
+            <div className="rounded-md border border-[rgba(248,113,113,0.3)] bg-[rgba(248,113,113,0.06)] px-3 py-2">
+              <p className="font-mono text-[10px] text-[var(--danger)]">{error}</p>
+            </div>
+          )}
+        </div>
 
-          <div className="flex gap-2">
-            <button type="button" onClick={onClose} className="flex-1 que-btn-ghost py-3.5">Cancel</button>
-            <button type="button" onClick={send} disabled={!canSend || sending}
-              className="flex-1 py-3.5 rounded font-mono text-[10px] font-bold tracking-[1px] uppercase transition-all disabled:opacity-40"
-              style={{ background: '#FFB547', color: '#07080A', boxShadow: canSend ? '0 0 0 1px #FFB547, 0 0 20px rgba(255,181,71,0.3)' : 'none' }}>
-              {sending ? '…' : `Challenge for ${wager} 🪙`}
-            </button>
+        {/* Sticky footer with the send button — safe-area padding so the
+            iOS home indicator doesn't sit on top of the action button. */}
+        <div className="flex gap-2 p-4 border-t border-[var(--line)] flex-shrink-0"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+          <button type="button" onClick={onClose} className="flex-1 que-btn-ghost py-3.5">Cancel</button>
+          <button type="button" onClick={send} disabled={!canSend || sending}
+            className="flex-1 py-3.5 rounded-md font-mono text-[10px] font-bold tracking-[1px] uppercase transition-all disabled:opacity-40 active:scale-[0.98]"
+            style={{ background: '#FFB547', color: '#07080A', boxShadow: canSend ? '0 0 0 1px #FFB547, 0 0 20px rgba(255,181,71,0.3)' : 'none' }}>
+            {sending ? '…' : `Challenge · ${wager} 🪙`}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Battle detail sheet ──────────────────────────────────────────────────────
+// Renders the per-category scoreboard for a single battle. For 'active' battles
+// the resolution doesn't exist yet (it's computed on resolve), so we just show
+// the categories, window, and progress. For 'resolved' battles we render the
+// full breakdown stored in challenge.resolution.
+
+function formatScore(score: number | null, unit: string): string {
+  if (score === null) return '—';
+  // Step counts and large kcal totals look weird with decimals.
+  const rounded = unit === 'steps' || unit === 'kcal' || unit === 'reps'
+    ? Math.round(score)
+    : Math.round(score * 10) / 10;
+  return `${rounded.toLocaleString()} ${unit}`;
+}
+
+function Avatar({ name, photo, size = 36, color }: {
+  name:  string;
+  photo: string | null;
+  size?: number;
+  color?: string;
+}) {
+  if (photo) {
+    return (
+      /* eslint-disable-next-line @next/next/no-img-element */
+      <img src={photo} alt="" className="rounded-full object-cover flex-shrink-0"
+        style={{ width: size, height: size, border: '1px solid var(--line-2)' }} />
+    );
+  }
+  return (
+    <div className="rounded-full flex items-center justify-center flex-shrink-0 font-display"
+      style={{
+        width: size, height: size,
+        background: 'var(--bg-3)',
+        color: color ?? 'var(--ink-2)',
+        border: '1px solid var(--line-2)',
+        fontSize: size * 0.42,
+      }}>
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
+function BattleDetailSheet({ challenge, myId, myName, myPhoto, opponentPhoto, onClose }: {
+  challenge:     ChallengeData;
+  myId:          string;
+  myName:        string;
+  myPhoto:       string | null;
+  opponentPhoto: string | null;
+  onClose:       () => void;
+}) {
+  const isResolved    = challenge.status === 'resolved';
+  const iAmChallenger = challenge.challenger.id === myId;
+  const opponent      = iAmChallenger ? challenge.challengee : challenge.challenger;
+  const opponentName  = opponent.name ?? (opponent.username ? `@${opponent.username}` : 'Opponent');
+
+  const progress = challenge.startDate && challenge.endDate
+    ? battleProgressLabel(challenge.startDate, challenge.endDate)
+    : null;
+
+  const overallOutcome: 'win' | 'loss' | 'tie' | null = !isResolved ? null
+    : challenge.winnerId === myId      ? 'win'
+    : challenge.winnerId === null      ? 'tie'
+    : 'loss';
+
+  const outcomeColor =
+    overallOutcome === 'win'  ? 'var(--positive)' :
+    overallOutcome === 'loss' ? 'var(--danger)'   :
+    overallOutcome === 'tie'  ? 'var(--ink-1)'    :
+    'var(--ink-2)';
+
+  // Per-category rows — from the server's resolution snapshot if resolved,
+  // otherwise built from the challenge.categories list for display only.
+  const rows: CategoryResult[] = useMemo(() => {
+    if (challenge.resolution?.perCategory?.length) return challenge.resolution.perCategory;
+    if (!challenge.categories?.length) return [];
+    return challenge.categories.map(slug => {
+      const cat = BATTLE_CATEGORIES.find(c => c.slug === slug);
+      return {
+        slug,
+        label:           cat?.label ?? slug,
+        group:           (cat?.group ?? 'cardio') as BattleCategory['group'],
+        direction:       (cat?.direction ?? 'higher') as BattleCategory['direction'],
+        unit:            cat?.unit ?? '',
+        challengerScore: null,
+        challengeeScore: null,
+        outcome:         'nodata',
+      };
+    });
+  }, [challenge.resolution, challenge.categories]);
+
+  // Group the rows so the sheet renders Cardio → Lift → Diet sections.
+  const groupedRows = useMemo(() => {
+    const out: Record<CategoryGroup, CategoryResult[]> = { cardio: [], lift: [], diet: [] };
+    for (const r of rows) out[r.group as CategoryGroup].push(r);
+    return out;
+  }, [rows]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[350] flex items-end md:items-center justify-center backdrop-blur-sm px-0 md:px-3"
+      style={{ background: 'rgba(7,8,10,0.9)' }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        className="w-full md:max-w-[480px] max-h-[92dvh] flex flex-col rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
+        initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
+        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+        style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 #FFB547, 0 40px 80px rgba(0,0,0,0.6)' }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[var(--line)] flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Swords size={16} style={{ color: '#FFB547' }} />
+            <p className="font-mono text-[9px] font-bold tracking-[2px] uppercase text-[var(--ink-3)]">
+              {isResolved ? 'Battle Result' : 'Active Battle'}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+
+          {/* ── Versus header (gradient backdrop) ──────────────────────────────── */}
+          <div className="relative px-5 pt-5 pb-4 border-b border-[var(--line)]"
+            style={{
+              background:
+                overallOutcome === 'win'  ? 'linear-gradient(180deg, rgba(74,222,128,0.10), transparent)' :
+                overallOutcome === 'loss' ? 'linear-gradient(180deg, rgba(248,113,113,0.10), transparent)' :
+                overallOutcome === 'tie'  ? 'linear-gradient(180deg, rgba(148,163,184,0.10), transparent)' :
+                'linear-gradient(180deg, rgba(255,181,71,0.08), transparent)',
+            }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col items-center gap-2 flex-1 min-w-0">
+                <Avatar name={myName || 'Y'} photo={myPhoto} size={48}
+                  color={overallOutcome === 'win' ? 'var(--positive)' : undefined} />
+                <p className="font-mono text-[10px] font-bold text-[var(--ink-0)] truncate max-w-full">You</p>
+              </div>
+              <div className="flex flex-col items-center justify-center px-2 flex-shrink-0">
+                <p className="font-display text-[14px] tracking-[3px] text-[var(--ink-3)]">VS</p>
+                {challenge.bestOf && (
+                  <p className="font-mono text-[8px] tracking-[1px] uppercase text-[var(--ink-3)] mt-0.5">
+                    Best of {challenge.bestOf}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col items-center gap-2 flex-1 min-w-0">
+                <Avatar name={opponentName} photo={opponentPhoto} size={48}
+                  color={overallOutcome === 'loss' ? 'var(--danger)' : undefined} />
+                <p className="font-mono text-[10px] font-bold text-[var(--ink-0)] truncate max-w-full">
+                  {opponent.name ?? opponent.username ?? 'Opponent'}
+                </p>
+              </div>
+            </div>
+
+            {/* Outcome / status line */}
+            {overallOutcome ? (
+              <div className="mt-4 text-center">
+                <p className="font-display text-[22px] tracking-[2.5px] uppercase leading-tight" style={{ color: outcomeColor }}>
+                  {overallOutcome === 'win'  ? 'Victory'  :
+                   overallOutcome === 'loss' ? 'Defeat'   :
+                                               'Tied'}
+                </p>
+                <p className="font-mono text-[10px] text-[var(--ink-2)] mt-1 tabular-nums">
+                  {overallOutcome === 'win'  ? <>+{challenge.wager * 2} 🪙 to your wallet</> :
+                   overallOutcome === 'loss' ? <>−{challenge.wager} 🪙 to {opponentName}</> :
+                                               <>{challenge.wager} 🪙 refunded</>}
+                </p>
+                {challenge.resolution && (
+                  <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tabular-nums">
+                    {iAmChallenger
+                      ? `${challenge.resolution.summary.challengerWins}–${challenge.resolution.summary.challengeeWins}`
+                      : `${challenge.resolution.summary.challengeeWins}–${challenge.resolution.summary.challengerWins}`}
+                    {challenge.resolution.summary.ties > 0 && ` · ${challenge.resolution.summary.ties} tied`}
+                  </p>
+                )}
+              </div>
+            ) : (
+              progress && (
+                <div className="mt-4 flex items-center justify-center gap-1.5">
+                  <Clock size={12} className="text-[var(--accent)]" />
+                  <p className="font-mono text-[11px] font-bold tracking-[0.5px] text-[var(--ink-1)]">{progress}</p>
+                </div>
+              )
+            )}
+          </div>
+
+          {/* ── Meta strip ──────────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-[var(--line)] font-mono text-[10px] text-[var(--ink-2)]">
+            {challenge.startDate && challenge.endDate && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[var(--ink-3)]">📅</span>
+                <span className="tabular-nums">{fmtRange(challenge.startDate, challenge.endDate)}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[var(--ink-3)]">🪙</span>
+              <span style={{ color: '#FFB547' }} className="font-bold tabular-nums">{challenge.wager}</span>
+              <span className="text-[var(--ink-3)]">wager</span>
+            </div>
+          </div>
+
+          {/* ── Categories — grouped ────────────────────────────────────────── */}
+          <div className="p-5 space-y-4"
+            style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            {GROUP_ORDER.map(group => {
+              const items = groupedRows[group];
+              if (items.length === 0) return null;
+              const meta = GROUP_META[group];
+              const GroupIcon = meta.Icon;
+              return (
+                <div key={group}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <GroupIcon size={12} style={{ color: meta.color }} />
+                    <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase" style={{ color: meta.color }}>
+                      {meta.label}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    {items.map(row => (
+                      <CategoryRow
+                        key={row.slug}
+                        row={row}
+                        iAmChallenger={iAmChallenger}
+                        isResolved={isResolved}
+                        groupColor={meta.color}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+/** One per-category row inside BattleDetailSheet. Shows both scores side-by-side
+ *  with the winner highlighted; "no data" cells show the category-specific
+ *  noDataLabel instead of "0". */
+function CategoryRow({ row, iAmChallenger, isResolved, groupColor }: {
+  row:            CategoryResult;
+  iAmChallenger:  boolean;
+  isResolved:     boolean;
+  groupColor:     string;
+}) {
+  const myScore  = iAmChallenger ? row.challengerScore : row.challengeeScore;
+  const oppScore = iAmChallenger ? row.challengeeScore : row.challengerScore;
+  const myWon    = isResolved && (
+    (iAmChallenger && row.outcome === 'challenger') ||
+    (!iAmChallenger && row.outcome === 'challengee')
+  );
+  const oppWon   = isResolved && (
+    (iAmChallenger && row.outcome === 'challengee') ||
+    (!iAmChallenger && row.outcome === 'challenger')
+  );
+  const tied     = isResolved && row.outcome === 'tie';
+  const nodata   = row.outcome === 'nodata';
+  const noDataLabel = BATTLE_CATEGORIES.find(c => c.slug === row.slug)?.noDataLabel ?? 'no data';
+
+  return (
+    <div className="rounded-md border border-[var(--line)] bg-[var(--bg-2)] overflow-hidden">
+      {/* Title row */}
+      <div className="flex items-center justify-between px-3 pt-2 pb-1.5">
+        <p className="font-mono text-[10px] font-bold text-[var(--ink-0)] truncate">{row.label}</p>
+        {isResolved && (
+          nodata ? (
+            <span className="font-mono text-[8px] tracking-[1px] uppercase text-[var(--ink-3)]">No data</span>
+          ) : (
+            <span className="font-mono text-[8px] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm"
+              style={{
+                color: myWon ? 'var(--positive)' : oppWon ? 'var(--danger)' : 'var(--ink-2)',
+                background:
+                  myWon  ? 'rgba(74,222,128,0.12)' :
+                  oppWon ? 'rgba(248,113,113,0.12)' :
+                           'var(--bg-3)',
+              }}>
+              {myWon ? 'Won' : oppWon ? 'Lost' : 'Tied'}
+            </span>
+          )
+        )}
+      </div>
+
+      {isResolved ? (
+        // Two-column score split. Winner side gets group-colored background.
+        <div className="grid grid-cols-[1fr_auto_1fr] items-stretch">
+          <ScoreSide
+            score={myScore}
+            unit={row.unit}
+            noDataLabel={noDataLabel}
+            won={myWon}
+            tied={tied}
+            align="right"
+            color={groupColor}
+          />
+          <div className="flex items-center px-2 text-[var(--ink-3)]">
+            <span className="font-display text-[11px] tracking-[1.5px]">vs</span>
+          </div>
+          <ScoreSide
+            score={oppScore}
+            unit={row.unit}
+            noDataLabel={noDataLabel}
+            won={oppWon}
+            tied={tied}
+            align="left"
+            color={groupColor}
+          />
+        </div>
+      ) : (
+        <p className="px-3 pb-2 font-mono text-[9px] text-[var(--ink-3)] italic">
+          Scores reveal when the battle resolves
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Small colored dots indicating which category groups are used in a battle.
+ *  Helps the user scan the BATTLES list and know at a glance what kind of
+ *  competition each row is. */
+function CategoryGroupDots({ slugs, size = 6 }: { slugs: string[] | null | undefined; size?: number }) {
+  if (!slugs?.length) return null;
+  const groups = new Set<CategoryGroup>();
+  for (const slug of slugs) {
+    const cat = BATTLE_CATEGORIES.find(c => c.slug === slug);
+    if (cat) groups.add(cat.group);
+  }
+  if (groups.size === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-[3px]">
+      {GROUP_ORDER.filter(g => groups.has(g)).map(g => (
+        <span key={g} aria-label={GROUP_META[g].label} className="rounded-full" style={{
+          width: size, height: size, background: GROUP_META[g].color,
+        }} />
+      ))}
+    </span>
+  );
+}
+
+function ScoreSide({ score, unit, noDataLabel, won, tied, align, color }: {
+  score:       number | null;
+  unit:        string;
+  noDataLabel: string;
+  won:         boolean;
+  tied:        boolean;
+  align:       'left' | 'right';
+  color:       string;
+}) {
+  const isNoData = score === null;
+  return (
+    <div
+      className="px-3 py-2 flex flex-col justify-center"
+      style={{
+        background: won ? `${color}15` : 'transparent',
+        textAlign:  align,
+      }}
+    >
+      <p className="font-display text-[18px] leading-none tabular-nums truncate"
+        style={{ color: isNoData ? 'var(--ink-3)' : won ? color : tied ? 'var(--ink-1)' : 'var(--ink-2)' }}>
+        {isNoData ? '—' : formatScore(score, unit).replace(` ${unit}`, '')}
+      </p>
+      <p className="font-mono text-[8px] tracking-[0.5px] mt-0.5"
+        style={{ color: isNoData ? 'var(--ink-3)' : 'var(--ink-3)' }}>
+        {isNoData ? noDataLabel : unit}
+      </p>
+    </div>
   );
 }
 
@@ -274,26 +1013,26 @@ export default function SocialTab() {
   const [outgoing,      setOutgoing]      = useState<PendingData[]>([]);
   const [inChallenge,   setInChallenge]   = useState<ChallengeData[]>([]);
   const [sentChallenge, setSentChallenge] = useState<ChallengeData[]>([]);
+  const [activeBattles, setActiveBattles] = useState<ChallengeData[]>([]);
   const [resolved,      setResolved]      = useState<ChallengeData[]>([]);
+  const [viewBattleId,  setViewBattleId]  = useState<string | null>(null);
   const [balance,       setBalance]       = useState<number>(() => {
     if (typeof window === 'undefined') return 0;
-    try { return (JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null') as { total?: number } | null)?.total ?? 0; }
+    try { return (JSON.parse(localStorage.getItem(COIN_KEY) ?? 'null') as { total?: number } | null)?.total ?? 0; }
     catch { return 0; }
   });
   const [addQuery,      setAddQuery]      = useState('');
   const [addStatus,     setAddStatus]     = useState<{ ok: boolean; msg: string } | null>(null);
   const [loading,       setLoading]       = useState(true);
-  const loadingAnim = useRef((() => {
-    try {
-      const idx = parseInt(localStorage.getItem('queSocialAnimIdx') ?? '0', 10) % LOADING_ANIMS.length;
-      localStorage.setItem('queSocialAnimIdx', String((idx + 1) % LOADING_ANIMS.length));
-      return LOADING_ANIMS[idx];
-    } catch { return LOADING_ANIMS[0]; }
-  })());
+  const [loadingAnim,   setLoadingAnim]   = useState<unknown>(null);
   const [viewFriendId,  setViewFriendId]  = useState<string | null>(null);
   const [challenging,   setChallenging]   = useState<FriendData | null>(null);
   const [responding,    setResponding]    = useState<string | null>(null);
   const [resolving,     setResolving]     = useState<string | null>(null);
+  const [pendingRemove,  setPendingRemove]  = useState<string | null>(null);
+  const [pendingDecline, setPendingDecline] = useState<string | null>(null);
+  const [removeError,    setRemoveError]    = useState<string | null>(null);
+  const [challengeError, setChallengeError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const [userRes, friendRes, challengeRes] = await Promise.all([
@@ -307,14 +1046,14 @@ export default function SocialTab() {
       // Supplement profilePhoto from localStorage if the DB hasn't received the
       // sync yet (e.g. photo was set while offline or before first successful push).
       if (!data.profilePhoto) {
-        const localPhoto = localStorage.getItem('queProfilePhoto');
+        const localPhoto = localStorage.getItem(PROFILE_PHOTO_KEY);
         if (localPhoto) data.profilePhoto = localPhoto;
       }
       // Client coin ledger may be ahead of the DB (coins are awarded locally
       // on each calorie goal hit; the DB only syncs via the one-time migration).
       // Show whichever balance is higher so the card matches the header counter.
       try {
-        const localCoins = JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null') as { total?: number } | null;
+        const localCoins = JSON.parse(localStorage.getItem(COIN_KEY) ?? 'null') as { total?: number } | null;
         const localTotal = localCoins?.total ?? 0;
         const dbTotal    = data.coinBalance ?? 0;
         setOwnProfile({ ...data, coinBalance: Math.max(dbTotal, localTotal) });
@@ -322,7 +1061,7 @@ export default function SocialTab() {
         setOwnProfile(data);
       }
     }
-    try { setBalance((JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null') as { total?: number } | null)?.total ?? 0); } catch { /* ignore */ }
+    try { setBalance((JSON.parse(localStorage.getItem(COIN_KEY) ?? 'null') as { total?: number } | null)?.total ?? 0); } catch { /* ignore */ }
     if (friendRes.ok) {
       const d = await friendRes.json();
       setFriends(d.friends   ?? []);
@@ -331,11 +1070,26 @@ export default function SocialTab() {
     }
     if (challengeRes.ok) {
       const d = await challengeRes.json();
-      setInChallenge(d.incoming  ?? []);
-      setSentChallenge(d.sent    ?? []);
-      setResolved(d.resolved     ?? []);
+      setInChallenge(d.incoming    ?? []);
+      setSentChallenge(d.sent      ?? []);
+      setActiveBattles(d.active    ?? []);
+      setResolved(d.resolved       ?? []);
     }
     setLoading(false);
+  }, []);
+
+  // Lazy-load one of the loading-animation JSON files (rotates per visit).
+  useEffect(() => {
+    let cancelled = false;
+    let idx = 0;
+    try {
+      idx = parseInt(localStorage.getItem(SOCIAL_ANIM_KEY) ?? '0', 10) % LOADING_ANIM_LOADERS.length;
+      localStorage.setItem(SOCIAL_ANIM_KEY, String((idx + 1) % LOADING_ANIM_LOADERS.length));
+    } catch { /* default to 0 */ }
+    LOADING_ANIM_LOADERS[idx]()
+      .then(mod => { if (!cancelled) setLoadingAnim(mod.default); })
+      .catch(() => { /* offline / chunk fail — loader just stays empty */ });
+    return () => { cancelled = true; };
   }, []);
 
   // Re-fetch when user updates their profile photo while Social tab is mounted.
@@ -361,17 +1115,17 @@ export default function SocialTab() {
 
   useEffect(() => {
     const importCoins = async () => {
-      if (typeof window === 'undefined' || localStorage.getItem('queCoinsMigrated')) return;
+      if (typeof window === 'undefined' || localStorage.getItem(COINS_MIGRATED_KEY)) return;
       try {
-        const stored = JSON.parse(localStorage.getItem('queCalorieCoins') ?? 'null');
+        const stored = JSON.parse(localStorage.getItem(COIN_KEY) ?? 'null');
         const total  = (stored?.total ?? 0) as number;
-        if (total === 0) { localStorage.setItem('queCoinsMigrated', '1'); return; }
+        if (total === 0) { localStorage.setItem(COINS_MIGRATED_KEY, '1'); return; }
         const res = await fetch('/api/wallet', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ balance: total }),
         });
-        if (res.ok) localStorage.setItem('queCoinsMigrated', '1');
+        if (res.ok) localStorage.setItem(COINS_MIGRATED_KEY, '1');
       } catch { /* retry next visit */ }
     };
     // Run coin migration and data fetch in parallel — migration doesn't affect fetch results
@@ -394,33 +1148,90 @@ export default function SocialTab() {
   };
 
   const respondFriend = async (friendshipId: string, accept: boolean) => {
+    // Snapshot for rollback
+    const prevIncoming = incoming;
+    const prevFriends  = friends;
+    const target = incoming.find(r => r.friendshipId === friendshipId);
+
+    // Optimistic update: remove from incoming, add to friends if accepting
+    setIncoming(prev => prev.filter(r => r.friendshipId !== friendshipId));
+    if (accept && target) {
+      setFriends(prev => [...prev, {
+        id:           target.id,
+        friendshipId,
+        name:         target.name,
+        username:     target.username,
+        badgeCount:   0,
+        photo:        null,
+        status:       null,
+      }]);
+    }
+
     setResponding(friendshipId);
-    await fetch('/api/friends/respond', {
+    const res = await fetch('/api/friends/respond', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ friendshipId, accept }),
     });
     setResponding(null);
+
+    if (!res.ok) {
+      // Rollback
+      setIncoming(prevIncoming);
+      setFriends(prevFriends);
+      return;
+    }
+    // Refresh in the background to get authoritative data (badge counts, photo, status)
     void refresh();
   };
 
   const removeFriend = async (friendshipId: string) => {
-    await fetch('/api/friends', {
+    if (pendingRemove !== friendshipId) { setPendingRemove(friendshipId); setRemoveError(null); return; }
+    setPendingRemove(null); setRemoveError(null);
+
+    // Snapshot + optimistic removal from whichever list it lives in
+    const prevFriends  = friends;
+    const prevOutgoing = outgoing;
+    setFriends(prev  => prev.filter(f => f.friendshipId !== friendshipId));
+    setOutgoing(prev => prev.filter(r => r.friendshipId !== friendshipId));
+
+    const res = await fetch('/api/friends', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ friendshipId }),
     });
-    void refresh();
+    if (!res.ok) {
+      setFriends(prevFriends);
+      setOutgoing(prevOutgoing);
+      setRemoveError('Failed to remove');
+      return;
+    }
+    // No refresh needed — the optimistic state already matches the server
   };
 
   const respondChallenge = async (challengeId: string, action: 'accept' | 'decline') => {
+    if (action === 'decline' && pendingDecline !== challengeId) { setPendingDecline(challengeId); setChallengeError(null); return; }
+    setPendingDecline(null); setChallengeError(null);
+
+    // Snapshot + optimistic removal from inChallenge (we'll learn the real outcome on refresh)
+    const prevInChallenge = inChallenge;
+    setInChallenge(prev => prev.filter(c => c.id !== challengeId));
+
     setResolving(challengeId);
-    await fetch(`/api/challenges/${challengeId}`, {
+    const res = await fetch(`/api/challenges/${challengeId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
     });
     setResolving(null);
+
+    if (!res.ok) {
+      setInChallenge(prevInChallenge);
+      setChallengeError('Failed — please try again');
+      return;
+    }
+    // Refresh in the background — accepts may resolve into the resolved list,
+    // declines into cancellation, and balance may change.
     void refresh();
   };
 
@@ -463,7 +1274,11 @@ export default function SocialTab() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4, ease: 'easeInOut' }}
           >
-            <Lottie animationData={loadingAnim.current} loop autoplay className="w-44 h-44" />
+            {loadingAnim ? (
+              <Lottie animationData={loadingAnim} loop autoplay className="w-44 h-44" />
+            ) : (
+              <div className="w-44 h-44" aria-hidden="true" />
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -485,43 +1300,150 @@ export default function SocialTab() {
       )}
 
       {/* ── BATTLES ──────────────────────────────────────────────────────── */}
-      {(inChallenge.length > 0 || sentChallenge.length > 0 || resolved.length > 0) && (
-        <div className="que-card mb-4">
-          <div className="px-5 pt-5 pb-3">
-            <h2 className="que-section-label">
-              <span className="dot" style={{ background: '#FFB547' }} />
-              BATTLES
-            </h2>
+      <div className="que-card mb-4">
+        <div className="px-5 pt-5 pb-3">
+          <h2 className="que-section-label">
+            <span className="dot" style={{ background: '#FFB547' }} />
+            BATTLES
+          </h2>
 
+          {challengeError && (
+            <p className="font-mono text-[9px] text-[var(--danger)] mb-2">{challengeError}</p>
+          )}
+
+          {inChallenge.length === 0 && sentChallenge.length === 0 && activeBattles.length === 0 && resolved.length === 0 ? (
+            <div className="text-center py-6 border border-dashed border-[var(--line-2)] rounded mb-2">
+              <Swords size={20} className="text-[var(--ink-3)] mx-auto mb-2" />
+              <p className="font-mono text-[10px] text-[var(--ink-2)] font-bold tracking-[1px] uppercase">No battles yet</p>
+              <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1">Challenge a friend to start competing</p>
+            </div>
+          ) : (
+            <>
+            {/* Incoming requests — you need to accept/decline */}
             {inChallenge.map(c => (
-              <div key={c.id} className="flex items-center gap-3 rounded border border-[rgba(255,181,71,0.35)] bg-[rgba(255,181,71,0.06)] px-3 py-3 mb-2">
-                <Swords size={16} style={{ color: '#FFB547', flexShrink: 0 }} />
-                <div className="flex-1 min-w-0">
-                  <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] truncate">
-                    {c.challenger.name ?? c.challenger.username ?? 'Unknown'}
-                  </p>
-                  <p className="font-mono text-[9px] text-[var(--ink-3)]">Wagering {c.wager} 🪙</p>
+              <div key={c.id} className="mb-2">
+                <div className="flex items-center gap-3 rounded-md border border-[rgba(255,181,71,0.35)] bg-[rgba(255,181,71,0.06)] px-3 py-3">
+                  <Swords size={16} style={{ color: '#FFB547', flexShrink: 0 }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] truncate">
+                        {c.challenger.name ?? c.challenger.username ?? 'Unknown'}
+                      </p>
+                      <CategoryGroupDots slugs={c.categories} />
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="font-mono text-[9px] text-[var(--ink-3)]">{c.wager} 🪙</span>
+                      {c.bestOf && (
+                        <span className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-1.5 py-[1px] rounded-sm bg-[var(--bg-3)] text-[var(--ink-2)]">
+                          Bo{c.bestOf}
+                        </span>
+                      )}
+                      {c.startDate && c.endDate && (
+                        <span className="font-mono text-[9px] text-[var(--ink-3)] tabular-nums">
+                          {fmtRange(c.startDate, c.endDate)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => respondChallenge(c.id, 'accept')} disabled={resolving === c.id}
+                    aria-label="Accept challenge"
+                    className="w-11 h-11 flex items-center justify-center rounded-md border border-[var(--positive)]/50 text-[var(--positive)] hover:bg-[var(--positive)]/15 active:bg-[var(--positive)]/25 transition-all disabled:opacity-40 flex-shrink-0">
+                    {resolving === c.id ? '…' : <Check size={18} />}
+                  </button>
+                  {pendingDecline === c.id ? (
+                    <>
+                      <button type="button" onClick={() => setPendingDecline(null)}
+                        className="px-3 h-11 flex items-center font-mono text-[10px] text-[var(--ink-3)] hover:text-[var(--ink-1)] active:text-[var(--ink-1)] transition-colors">
+                        Keep
+                      </button>
+                      <button type="button" onClick={() => respondChallenge(c.id, 'decline')} disabled={resolving === c.id}
+                        className="px-3 h-11 flex items-center font-mono text-[10px] font-bold text-[var(--danger)] hover:opacity-80 active:opacity-60 transition-all disabled:opacity-40">
+                        Decline
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => respondChallenge(c.id, 'decline')} disabled={resolving === c.id}
+                      aria-label="Decline challenge"
+                      className="w-11 h-11 flex items-center justify-center rounded-md border border-[var(--line-2)] text-[var(--ink-3)] hover:text-[var(--danger)] active:text-[var(--danger)] transition-all disabled:opacity-40 flex-shrink-0">
+                      <X size={18} />
+                    </button>
+                  )}
                 </div>
-                <button type="button" onClick={() => respondChallenge(c.id, 'accept')} disabled={resolving === c.id}
-                  className="w-9 h-9 flex items-center justify-center rounded border border-[var(--positive)]/50 text-[var(--positive)] hover:bg-[var(--positive)]/15 transition-all disabled:opacity-40">
-                  {resolving === c.id ? '…' : <Check size={15} />}
-                </button>
-                <button type="button" onClick={() => respondChallenge(c.id, 'decline')} disabled={resolving === c.id}
-                  className="w-9 h-9 flex items-center justify-center rounded border border-[var(--line-2)] text-[var(--ink-3)] hover:text-[var(--danger)] transition-all disabled:opacity-40">
-                  <X size={15} />
-                </button>
               </div>
             ))}
 
-            {sentChallenge.map(c => (
-              <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 rounded border border-[var(--line)] bg-[var(--bg-2)] mb-2">
-                <Swords size={14} className="text-[var(--ink-3)] flex-shrink-0" />
-                <p className="flex-1 font-mono text-[10px] text-[var(--ink-2)] truncate">
-                  vs @{c.challengee.username ?? 'unknown'} · {c.wager} 🪙 <span className="text-[var(--ink-3)]">· pending</span>
+            {/* Active battles — accepted, waiting for window to close */}
+            {activeBattles.length > 0 && (
+              <div className="mb-3">
+                <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mb-2">
+                  In Progress ({activeBattles.length})
                 </p>
+                <div className="space-y-1.5">
+                  {activeBattles.map(c => {
+                    const myId     = ownProfile?.id ?? '';
+                    const isSender = c.challenger.id === myId;
+                    const opponent = isSender ? c.challengee : c.challenger;
+                    const label    = c.startDate && c.endDate
+                      ? battleProgressLabel(c.startDate, c.endDate)
+                      : 'In progress';
+                    return (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => setViewBattleId(c.id)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md border border-[var(--line)] bg-[var(--bg-2)] hover:border-[var(--accent)]/40 transition-colors text-left"
+                      >
+                        <Clock size={14} className="text-[var(--accent)] flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-mono text-[10px] font-bold text-[var(--ink-1)] truncate">
+                              vs @{opponent.username ?? opponent.name ?? 'unknown'}
+                            </p>
+                            <CategoryGroupDots slugs={c.categories} />
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="font-mono text-[8px] text-[var(--accent)] font-bold tracking-[0.5px]">{label}</span>
+                            <span className="font-mono text-[8px] text-[var(--ink-3)]">·</span>
+                            <span className="font-mono text-[8px] text-[var(--ink-3)]">{c.wager} 🪙</span>
+                            {c.bestOf && (
+                              <span className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-1 py-[1px] rounded-sm bg-[var(--bg-3)] text-[var(--ink-2)]">
+                                Bo{c.bestOf}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Sent — pending challenges waiting on the friend */}
+            {sentChallenge.map(c => (
+              <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 rounded-md border border-[var(--line)] bg-[var(--bg-2)] mb-2">
+                <Swords size={14} className="text-[var(--ink-3)] flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-mono text-[10px] font-bold text-[var(--ink-2)] truncate">
+                      vs @{c.challengee.username ?? 'unknown'}
+                    </p>
+                    <CategoryGroupDots slugs={c.categories} />
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="font-mono text-[8px] text-[var(--ink-3)]">{c.wager} 🪙</span>
+                    {c.bestOf && (
+                      <span className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-1 py-[1px] rounded-sm bg-[var(--bg-3)] text-[var(--ink-2)]">
+                        Bo{c.bestOf}
+                      </span>
+                    )}
+                    <span className="font-mono text-[8px] italic text-[var(--ink-3)]">waiting…</span>
+                  </div>
+                </div>
               </div>
             ))}
 
+            {/* Recent results — tap to see the per-category breakdown */}
             {resolved.length > 0 && (
               <div className="mt-2 space-y-1.5">
                 <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mb-2">Recent Results</p>
@@ -529,8 +1451,9 @@ export default function SocialTab() {
                   const myId     = ownProfile?.id ?? '';
                   const isSender = c.challenger.id === myId;
                   const opponent = isSender ? c.challengee : c.challenger;
-                  return (
-                    <div key={c.id} className="flex items-center gap-3 px-3 py-2 rounded border border-[var(--line)] bg-[var(--bg-2)]">
+                  const clickable = c.type === 'typed' && c.status === 'resolved';
+                  const inner = (
+                    <>
                       <span className="font-mono text-[12px]">
                         {!c.winnerId ? '🤝' : c.winnerId === myId ? '🏆' : '💀'}
                       </span>
@@ -538,14 +1461,29 @@ export default function SocialTab() {
                         vs @{opponent.username ?? opponent.name ?? 'unknown'}
                       </p>
                       <ChallengeResult challenge={c} myId={myId} />
+                    </>
+                  );
+                  return clickable ? (
+                    <button
+                      type="button"
+                      key={c.id}
+                      onClick={() => setViewBattleId(c.id)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded border border-[var(--line)] bg-[var(--bg-2)] hover:border-[var(--accent)]/40 transition-colors text-left"
+                    >
+                      {inner}
+                    </button>
+                  ) : (
+                    <div key={c.id} className="flex items-center gap-3 px-3 py-2 rounded border border-[var(--line)] bg-[var(--bg-2)]">
+                      {inner}
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       {/* ── FRIENDS ──────────────────────────────────────────────────────── */}
       <div className="que-card">
@@ -588,12 +1526,14 @@ export default function SocialTab() {
                       {req.username && <p className="font-mono text-[9px] text-[var(--ink-3)]">@{req.username}</p>}
                     </div>
                     <button type="button" onClick={() => respondFriend(req.friendshipId, true)} disabled={responding === req.friendshipId}
-                      className="w-9 h-9 flex items-center justify-center rounded border border-[var(--positive)]/50 text-[var(--positive)] hover:bg-[var(--positive)]/15 transition-all disabled:opacity-40">
-                      {responding === req.friendshipId ? '…' : <Check size={15} />}
+                      aria-label="Accept friend request"
+                      className="w-11 h-11 flex items-center justify-center rounded-md border border-[var(--positive)]/50 text-[var(--positive)] hover:bg-[var(--positive)]/15 active:bg-[var(--positive)]/25 transition-all disabled:opacity-40 flex-shrink-0">
+                      {responding === req.friendshipId ? '…' : <Check size={18} />}
                     </button>
                     <button type="button" onClick={() => respondFriend(req.friendshipId, false)} disabled={responding === req.friendshipId}
-                      className="w-9 h-9 flex items-center justify-center rounded border border-[var(--line-2)] text-[var(--ink-3)] hover:text-[var(--danger)] transition-all disabled:opacity-40">
-                      <X size={15} />
+                      aria-label="Reject friend request"
+                      className="w-11 h-11 flex items-center justify-center rounded-md border border-[var(--line-2)] text-[var(--ink-3)] hover:text-[var(--danger)] active:text-[var(--danger)] transition-all disabled:opacity-40 flex-shrink-0">
+                      <X size={18} />
                     </button>
                   </div>
                 ))}
@@ -606,18 +1546,37 @@ export default function SocialTab() {
             <div className="mb-4">
               <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mb-2">Sent ({outgoing.length})</p>
               {outgoing.map(req => (
-                <div key={req.friendshipId} className="flex items-center gap-3 px-3 py-2 rounded border border-[var(--line)] bg-[var(--bg-2)] mb-1.5">
+                <div key={req.friendshipId} className="flex items-center gap-2 px-3 rounded-md border border-[var(--line)] bg-[var(--bg-2)] mb-1.5 min-h-[44px]">
                   <p className="flex-1 font-mono text-[10px] text-[var(--ink-2)] truncate">
                     @{req.username ?? 'unknown'} <span className="text-[var(--ink-3)]">· pending</span>
                   </p>
-                  <button type="button" onClick={() => removeFriend(req.friendshipId)}
-                    className="text-[var(--ink-3)] hover:text-[var(--danger)] transition-colors p-1"><X size={13} /></button>
+                  {pendingRemove === req.friendshipId ? (
+                    <>
+                      <button type="button" onClick={() => setPendingRemove(null)}
+                        className="px-3 h-10 flex items-center font-mono text-[10px] text-[var(--ink-3)] hover:text-[var(--ink-1)] active:text-[var(--ink-1)] transition-colors">
+                        Keep
+                      </button>
+                      <button type="button" onClick={() => removeFriend(req.friendshipId)}
+                        className="px-3 h-10 flex items-center font-mono text-[10px] font-bold text-[var(--danger)] hover:opacity-80 active:opacity-60 transition-opacity">
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => removeFriend(req.friendshipId)}
+                      aria-label="Cancel friend request"
+                      className="w-10 h-10 flex items-center justify-center text-[var(--ink-3)] hover:text-[var(--danger)] active:text-[var(--danger)] transition-colors">
+                      <X size={15} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
 
+        {removeError && (
+          <p className="font-mono text-[9px] text-[var(--danger)] px-5 pb-2">{removeError}</p>
+        )}
         {friends.length === 0 && !loading ? (
           <div className="px-5 pb-5">
             <div className="text-center py-8 border border-dashed border-[var(--line-2)] rounded">
@@ -655,11 +1614,31 @@ export default function SocialTab() {
                     </p>
                   )}
                 </button>
-                <button type="button" onClick={() => setChallenging(friend)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-sm border font-mono text-[9px] font-bold tracking-[0.5px] uppercase transition-all"
-                  style={{ borderColor: 'rgba(255,181,71,0.4)', color: '#FFB547' }}>
-                  <Swords size={12} /> Battle
-                </button>
+                {pendingRemove === friend.friendshipId ? (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button type="button" onClick={() => setPendingRemove(null)}
+                      className="px-3 h-11 flex items-center font-mono text-[10px] text-[var(--ink-3)] hover:text-[var(--ink-1)] active:text-[var(--ink-1)] transition-colors">
+                      Cancel
+                    </button>
+                    <button type="button" onClick={() => removeFriend(friend.friendshipId)}
+                      className="px-3 h-11 flex items-center font-mono text-[10px] font-bold text-[var(--danger)] hover:opacity-80 active:opacity-60 transition-opacity">
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button type="button" onClick={() => setChallenging(friend)}
+                      className="flex items-center gap-1.5 px-3 h-10 rounded-md border font-mono text-[10px] font-bold tracking-[0.5px] uppercase transition-all active:scale-95"
+                      style={{ borderColor: 'rgba(255,181,71,0.4)', color: '#FFB547' }}>
+                      <Swords size={13} /> Battle
+                    </button>
+                    <button type="button" onClick={() => { setPendingRemove(friend.friendshipId); setRemoveError(null); }}
+                      aria-label="Remove friend"
+                      className="w-10 h-10 flex items-center justify-center text-[var(--ink-3)] hover:text-[var(--danger)] active:text-[var(--danger)] transition-colors">
+                      <X size={15} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -694,6 +1673,29 @@ export default function SocialTab() {
             onSent={refresh}
           />
         )}
+        {viewBattleId && (() => {
+          const battle =
+            activeBattles.find(c => c.id === viewBattleId) ??
+            resolved.find(c => c.id === viewBattleId);
+          if (!battle) return null;
+          // The opponent's photo lives on the friend record (the challenge
+          // payload itself only carries id/name/username for privacy).
+          const opponentId = battle.challenger.id === ownProfile?.id
+            ? battle.challengee.id
+            : battle.challenger.id;
+          const friendRec = friends.find(f => f.id === opponentId);
+          return (
+            <BattleDetailSheet
+              key={viewBattleId}
+              challenge={battle}
+              myId={ownProfile?.id ?? ''}
+              myName={ownProfile?.name ?? ownProfile?.username ?? 'You'}
+              myPhoto={ownProfile?.profilePhoto ?? null}
+              opponentPhoto={friendRec?.photo ?? null}
+              onClose={() => setViewBattleId(null)}
+            />
+          );
+        })()}
       </AnimatePresence>
     </div>
   );

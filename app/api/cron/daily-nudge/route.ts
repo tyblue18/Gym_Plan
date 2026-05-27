@@ -10,6 +10,7 @@
 import { NextResponse }     from 'next/server';
 import { prisma }           from '@/lib/prisma';
 import { sendPushToUser }   from '@/lib/push';
+import { LAST_STREAK_KEY }  from '@/lib/constants';
 
 interface DayRecord {
   calsEaten?: string | number;
@@ -114,7 +115,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     // Parse streak from synced settings
     const streak = (() => {
       try {
-        const raw = settings['queLastStreak'];
+        const raw = settings[LAST_STREAK_KEY];
         return typeof raw === 'number' ? raw : parseInt(String(raw ?? '0')) || 0;
       } catch { return 0; }
     })();

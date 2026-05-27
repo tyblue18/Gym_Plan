@@ -4,36 +4,14 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
-import type { UserProfile } from '@/lib/AppContext';
+import { GOAL_TOLERANCE, WEIGHT_PROMPT_KEY } from '@/lib/constants';
+import { computeBaseBudget, loadCoins } from '@/lib/calorie-utils';
 
-// ── constants ─────────────────────────────────────────────────────────────────
-
-const COIN_KEY       = 'queCalorieCoins';
-const PROMPT_KEY     = 'queWeightPromptDate'; // set to today's date-string on dismiss
-const GOAL_TOLERANCE = 100;
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-function computeBaseBudget(p: UserProfile): number {
-  const kg  = (parseFloat(p.weight) || 180) / 2.20462;
-  const cm  = (parseFloat(p.height) || 70)  * 2.54;
-  const age = parseFloat(p.age) || 29;
-  const def = parseFloat(p.deficit) || 500;
-  const mul = parseFloat(p.activityLevel) || 1.55;
-  const bmr = Math.round(
-    p.sex === 'male' ? 10*kg + 6.25*cm - 5*age + 5 : 10*kg + 6.25*cm - 5*age - 161
-  );
-  return Math.max(0, Math.round(bmr * mul) - def);
-}
+// set to today's date-string on dismiss so the prompt only shows once per day
+const PROMPT_KEY = WEIGHT_PROMPT_KEY;
 
 function fmt(n: number) {
   return n.toLocaleString();
-}
-
-function loadCoins(): { total: number; awardedDates: string[] } {
-  if (typeof window === 'undefined') return { total: 0, awardedDates: [] };
-  try { return JSON.parse(localStorage.getItem(COIN_KEY) ?? 'null') ?? { total: 0, awardedDates: [] }; }
-  catch { return { total: 0, awardedDates: [] }; }
 }
 
 // ── component ─────────────────────────────────────────────────────────────────

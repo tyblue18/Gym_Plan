@@ -4,11 +4,13 @@
  * DELETE /api/friends — remove a friend or cancel a request
  */
 
-import { getServerSession }  from 'next-auth/next';
-import { NextResponse }      from 'next/server';
-import { authOptions }       from '@/lib/auth';
+import { getServerSession }       from 'next-auth/next';
+import { after, NextResponse }    from 'next/server';
+import { authOptions }            from '@/lib/auth';
 import { prisma }            from '@/lib/prisma';
 import { sendPushToUser }    from '@/lib/push';
+import { friendLimit }       from '@/lib/ratelimit';
+import { PROFILE_PHOTO_KEY } from '@/lib/constants';
 import { friendPostSchema, friendDeleteSchema } from '@/lib/validators';
 
 export async function GET(): Promise<NextResponse> {
@@ -36,6 +38,7 @@ export async function GET(): Promise<NextResponse> {
   ]);
 
   const now = new Date();
+  const expiredIds: string[] = [];
 
   function extractFriendFields(u: {
     id: string; name: string | null; username: string | null;
@@ -44,8 +47,10 @@ export async function GET(): Promise<NextResponse> {
     workoutData: { settings: unknown } | null;
   }, friendshipId: string) {
     const settings = (u.workoutData?.settings ?? {}) as Record<string, unknown>;
-    const photo    = (typeof settings['queProfilePhoto'] === 'string' ? settings['queProfilePhoto'] : null);
-    const status   = u.status && (!u.statusExpiresAt || u.statusExpiresAt > now) ? u.status : null;
+    const photo    = (typeof settings[PROFILE_PHOTO_KEY] === 'string' ? settings[PROFILE_PHOTO_KEY] : null);
+    const active   = !u.statusExpiresAt || u.statusExpiresAt > now;
+    if (!active && u.statusExpiresAt) expiredIds.push(u.id);
+    const status   = u.status && active ? u.status : null;
     return {
       id: u.id, friendshipId,
       name: u.name, username: u.username,
@@ -58,6 +63,13 @@ export async function GET(): Promise<NextResponse> {
     ...sent.filter(f => f.status === 'accepted').map(f => extractFriendFields(f.receiver, f.id)),
     ...received.filter(f => f.status === 'accepted').map(f => extractFriendFields(f.requester, f.id)),
   ];
+
+  if (expiredIds.length > 0) after(() =>
+    prisma.appUser.updateMany({
+      where: { id: { in: expiredIds }, statusExpiresAt: { lte: now } },
+      data:  { status: null, statusExpiresAt: null },
+    }).catch(() => {})
+  );
 
   const incoming = received.filter(f => f.status === 'pending').map(f => ({
     id:           f.requester.id,
@@ -79,6 +91,9 @@ export async function GET(): Promise<NextResponse> {
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
+
+  const { success } = await friendLimit.limit(session.user.id);
+  if (!success) return NextResponse.json({ error: 'Too many friend requests — slow down' }, { status: 429 });
 
   const parsed = friendPostSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Username required' }, { status: 400 });
@@ -129,6 +144,9 @@ export async function POST(req: Request): Promise<NextResponse> {
 export async function DELETE(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
+
+  const { success } = await friendLimit.limit(session.user.id);
+  if (!success) return NextResponse.json({ error: 'Too many requests — slow down' }, { status: 429 });
 
   const dparsed = friendDeleteSchema.safeParse(await req.json().catch(() => null));
   if (!dparsed.success) return NextResponse.json({ error: 'friendshipId required' }, { status: 400 });

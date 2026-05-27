@@ -6,7 +6,9 @@ import { X } from 'lucide-react';
 
 // ── Macro goals ───────────────────────────────────────────────────────────────
 
-export const MACRO_GOALS_KEY = 'queMacroGoals';
+import { MACRO_GOALS_KEY as _MACRO_GOALS_KEY } from '@/lib/constants';
+// Re-exported under the same name so callers importing from here keep working.
+export const MACRO_GOALS_KEY = _MACRO_GOALS_KEY;
 export interface MacroGoals { protein: number; carbs: number; fat: number }
 
 export function loadMacroGoals(): MacroGoals | null {

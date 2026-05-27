@@ -171,11 +171,28 @@ model Challenge {
   challengerId String
   challengeeId String
   wager        Int       @default(0)   // coins bet by each side
-  // pending | active | resolved | cancelled
+  // pending  → both wagers held, challengee hasn't responded
+  // active   → accepted, awaiting endDate before resolution
+  // resolved → winner computed, coins transferred
+  // cancelled → declined or refunded
   status       String    @default("pending")
-  categories   Json      // string[] — badge slugs being compared
+  // For typed battles: array of category slugs (length === bestOf).
+  // For legacy battles: ["all"] — resolution falls back to badge-count comparison.
+  categories   Json
   winnerId     String?
   resolvedAt   DateTime?
+
+  // ── Typed-battle fields (null on legacy badge-count battles) ─────────────
+  // 'classic' = badge-count comparison (existing behavior, instant resolve on accept)
+  // 'typed'   = per-category stat comparison with a measurement window
+  type         String?
+  bestOf       Int?      // 1 | 3 | 5 — must equal categories.length for typed battles
+  windowKind   String?   // 'day' | 'week'
+  startDate    String?   // YYYY-MM-DD — first day of the measurement window (inclusive)
+  endDate      String?   // YYYY-MM-DD — last day of the measurement window (inclusive)
+  // Per-category resolution snapshot, populated when status becomes 'resolved':
+  //   { perCategory: [{ slug, label, group, direction, unit, challengerScore, challengeeScore, winnerId|null }], summary: { challengerWins, challengeeWins, ties } }
+  resolution   Json?
 
   challenger AppUser  @relation("Challenger",      fields: [challengerId], references: [id])
   challengee AppUser  @relation("Challengee",      fields: [challengeeId], references: [id])
@@ -186,4 +203,6 @@ model Challenge {
 
   @@index([challengerId])
   @@index([challengeeId])
+  // Lets the resolve-battles cron sweep efficiently for completed windows.
+  @@index([status, endDate])
 }

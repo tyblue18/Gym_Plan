@@ -74,7 +74,7 @@ async function searchUSDA(q: string, key: string): Promise<NormalizedProduct[]> 
     `https://api.nal.usda.gov/fdc/v1/foods/search` +
     `?query=${encodeURIComponent(q)}&api_key=${key}&pageSize=30` +
     `&dataType=Foundation,SR%20Legacy,Survey%20(FNDDS)`,
-    { next: { revalidate: 300 } }
+    { next: { revalidate: 300 }, signal: AbortSignal.timeout(5000) }
   );
   if (!res.ok) throw Object.assign(new Error('usda_fail'), { status: res.status });
   const data = await res.json() as { foods?: USDAFood[] };
@@ -119,7 +119,7 @@ async function searchOFF(q: string): Promise<NormalizedProduct[]> {
     `?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1` +
     `&page_size=30&sort_by=unique_scans_n&lc=en` +
     `&fields=product_name,brands,nutriments`,
-    { next: { revalidate: 300 } }
+    { next: { revalidate: 300 }, signal: AbortSignal.timeout(5000) }
   );
   if (!res.ok) return [];
   const data = await res.json() as { products?: OFFRaw[] };

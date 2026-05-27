@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { Dumbbell, Bike, Waves, PersonStanding, Award } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
+import { LIFT_PRS_KEY, PROFILE_PHOTO_KEY } from '@/lib/constants';
 import queLogo from '@/public/Que_logo.png';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -77,14 +78,14 @@ async function getProfile(username: string) {
 
   const liftPRs = (() => {
     try {
-      const raw = settings['queLiftPRs'];
+      const raw = settings[LIFT_PRS_KEY];
       if (typeof raw === 'string') return JSON.parse(raw) as Record<string, number>;
       if (raw && typeof raw === 'object') return raw as Record<string, number>;
       return {} as Record<string, number>;
     } catch { return {} as Record<string, number>; }
   })();
 
-  const profilePhoto = (settings['queProfilePhoto'] as string | undefined) ?? null;
+  const profilePhoto = (settings[PROFILE_PHOTO_KEY] as string | undefined) ?? null;
 
   const statusActive = !user.statusExpiresAt || user.statusExpiresAt > new Date();
 

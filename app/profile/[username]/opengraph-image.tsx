@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { prisma }        from '@/lib/prisma';
+import { LIFT_PRS_KEY }  from '@/lib/constants';
 
 export const runtime     = 'nodejs';
 export const alt         = 'Que profile';
@@ -32,7 +33,7 @@ function initials(name: string | null, username: string | null): string {
 
 function topPR(settings: Record<string, unknown>): { name: string; weight: number } | null {
   try {
-    const raw = settings['queLiftPRs'];
+    const raw = settings[LIFT_PRS_KEY];
     const prs: Record<string, number> =
       typeof raw === 'string' ? JSON.parse(raw) :
       (raw && typeof raw === 'object' ? raw as Record<string, number> : {});

@@ -8,6 +8,8 @@ import coinAnim      from '@/public/Calorie_Coin_animation.json';
 import celebrateAnim from '@/public/Celebrate_animation.json';
 import { useApp } from '@/lib/AppContext';
 import type { FoodEntry, UserProfile } from '@/lib/AppContext';
+import { GOAL_TOLERANCE } from '@/lib/constants';
+import { computeBaseBudget, loadCoins, saveCoins, hitGoal, type CoinData } from '@/lib/calorie-utils';
 import {
   DonutChart, MacroBar, MacroGoalModal,
   type MacroGoals, loadMacroGoals, saveMacroGoals, getBaseline,
@@ -21,38 +23,8 @@ import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
 import { CelebrationModal, ProjectionModal } from '@/components/metrics/MetricsModals';
 
 // ── Calorie Coin system ───────────────────────────────────────────────────────
-
-const COIN_KEY = 'queCalorieCoins';
-const GOAL_TOLERANCE = 100; // ±100 kcal counts as hitting the goal
-
-interface CoinData { total: number; awardedDates: string[] }
-
-function loadCoins(): CoinData {
-  if (typeof window === 'undefined') return { total: 0, awardedDates: [] };
-  try { return JSON.parse(localStorage.getItem(COIN_KEY) ?? 'null') ?? { total: 0, awardedDates: [] }; }
-  catch { return { total: 0, awardedDates: [] }; }
-}
-function saveCoins(d: CoinData) { localStorage.setItem(COIN_KEY, JSON.stringify(d)); }
-
-function hitGoal(calsEaten: string | undefined, budget: number | undefined): boolean {
-  const eaten = parseFloat(String(calsEaten ?? '0'));
-  const bud   = parseFloat(String(budget ?? '0'));
-  return eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= GOAL_TOLERANCE;
-}
-
-function computeBaseBudget(p: UserProfile): number {
-  const kg  = (parseFloat(p.weight) || 180) / 2.20462;
-  const cm  = (parseFloat(p.height) || 70)  * 2.54;
-  const age = parseFloat(p.age) || 29;
-  const def = parseFloat(p.deficit) || 500;
-  const mul = parseFloat(p.activityLevel) || 1.55;
-  const bmr = Math.round(
-    p.sex === 'male'
-      ? 10 * kg + 6.25 * cm - 5 * age + 5
-      : 10 * kg + 6.25 * cm - 5 * age - 161
-  );
-  return Math.max(0, Math.round(bmr * mul) - def);
-}
+// computeBaseBudget, loadCoins, saveCoins, hitGoal, and the CoinData interface
+// live in lib/calorie-utils. GOAL_TOLERANCE lives in lib/constants.
 
 function streakEndingAt(
   db: Record<string, { budget?: unknown; calsEaten?: unknown }>,

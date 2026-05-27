@@ -18,6 +18,12 @@ import {
   type WorkoutPreset,
   type DayRecord,
 } from '@/lib/AppContext';
+import {
+  getUsage, bumpUsage, getWorkoutPresets, saveWorkoutPresets,
+} from '@/lib/storage';
+import {
+  GOAL_TOLERANCE, LIFT_PRS_KEY, MILLION_GROUPS_KEY, SHOWN_BADGES_KEY,
+} from '@/lib/constants';
 import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
 import { AutoCropImage } from '@/components/AutoCropImage';
 import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
@@ -867,8 +873,6 @@ export default function WorkoutLogger() {
     currentGroup, setCurrentGroup,
     pendingSetsCount, setPendingSetsCount,
     pendingSetData, setPendingSetData,
-    getUsage, bumpUsage,
-    getWorkoutPresets, saveWorkoutPresets,
     isLoaded,
   } = useApp();
 
@@ -896,25 +900,25 @@ export default function WorkoutLogger() {
   // Persisted across refreshes so badge popups never re-fire for already-earned badges.
   // Cleared per-slug only when a badge is revoked, enabling re-earn popups.
   const optimisticallyShownRef = useRef<Set<string>>((() => {
-    try { return new Set(JSON.parse(localStorage.getItem('queShownBadgePopups') ?? '[]') as string[]); }
+    try { return new Set(JSON.parse(localStorage.getItem(SHOWN_BADGES_KEY) ?? '[]') as string[]); }
     catch { return new Set<string>(); }
   })());
 
   const markShown = useCallback((slug: string) => {
     optimisticallyShownRef.current.add(slug);
     try {
-      const all = new Set(JSON.parse(localStorage.getItem('queShownBadgePopups') ?? '[]') as string[]);
+      const all = new Set(JSON.parse(localStorage.getItem(SHOWN_BADGES_KEY) ?? '[]') as string[]);
       all.add(slug);
-      localStorage.setItem('queShownBadgePopups', JSON.stringify([...all]));
+      localStorage.setItem(SHOWN_BADGES_KEY, JSON.stringify([...all]));
     } catch { /* noop */ }
   }, []);
 
   const unmarkShown = useCallback((slug: string) => {
     optimisticallyShownRef.current.delete(slug);
     try {
-      const all = new Set(JSON.parse(localStorage.getItem('queShownBadgePopups') ?? '[]') as string[]);
+      const all = new Set(JSON.parse(localStorage.getItem(SHOWN_BADGES_KEY) ?? '[]') as string[]);
       all.delete(slug);
-      localStorage.setItem('queShownBadgePopups', JSON.stringify([...all]));
+      localStorage.setItem(SHOWN_BADGES_KEY, JSON.stringify([...all]));
     } catch { /* noop */ }
   }, []);
 
@@ -976,7 +980,7 @@ export default function WorkoutLogger() {
       if (prChanged) {
         const oldPRs = prBaselineRef.current ?? {};
         prBaselineRef.current = prRecs;
-        localStorage.setItem('queLiftPRs', JSON.stringify(prRecs));
+        localStorage.setItem(LIFT_PRS_KEY, JSON.stringify(prRecs));
 
         const { earned, revokedSlugs } = diffLiftBadges(oldPRs, prRecs);
         // Clear revoked slugs so re-earning them later shows the popup again.
@@ -1027,7 +1031,7 @@ export default function WorkoutLogger() {
     setExercisesRaw(loaded);
     exerciseKeysRef.current = loaded.map((_, i) => exerciseKeysRef.current[i] ?? nextKey());
     lastOwnWriteRef.current = raw;
-    try { prBaselineRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
+    try { prBaselineRef.current = JSON.parse(localStorage.getItem(LIFT_PRS_KEY) ?? '{}'); }
     catch { prBaselineRef.current = {}; }
   }, [localDB]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1066,7 +1070,7 @@ export default function WorkoutLogger() {
     });
 
     return { primary, secondary };
-  }, [currentGroup, getUsage, isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentGroup, isLoaded]);
 
   useEffect(() => {
     setSelectedEx(exerciseOptions.primary[0] ?? '');
@@ -1159,7 +1163,7 @@ export default function WorkoutLogger() {
   }, [
     isCustomEx, customName, customG2, customG3, selectedEx, pendingSetData,
     currentGroup, exercises, pendingSetsCount,
-    bumpUsage, setPendingSetData, setExercises,
+    setPendingSetData, setExercises,
   ]);
 
   const handleWeightKeyDown = useCallback((e: React.KeyboardEvent, idx: number) => {
@@ -1311,7 +1315,7 @@ export default function WorkoutLogger() {
 
   const prBaselineRef = useRef<Record<string, number> | null>(null);
   if (!prBaselineRef.current) {
-    try { prBaselineRef.current = JSON.parse(localStorage.getItem('queLiftPRs') ?? '{}'); }
+    try { prBaselineRef.current = JSON.parse(localStorage.getItem(LIFT_PRS_KEY) ?? '{}'); }
     catch { prBaselineRef.current = {}; }
   }
   const sessionMaxRef = useRef<Record<string, number>>({});
@@ -1635,7 +1639,7 @@ export default function WorkoutLogger() {
 
   // Initialised from localStorage so popup only fires for NEW crossings.
   const knownMillionGroupsRef = useRef<Set<string>>((() => {
-    try { return new Set(JSON.parse(localStorage.getItem('queMillionGroups') ?? '[]') as string[]); }
+    try { return new Set(JSON.parse(localStorage.getItem(MILLION_GROUPS_KEY) ?? '[]') as string[]); }
     catch { return new Set<string>(); }
   })());
 
@@ -1645,7 +1649,7 @@ export default function WorkoutLogger() {
     if (newGroups.length === 0) return;
 
     for (const g of newGroups) knownMillionGroupsRef.current.add(g);
-    try { localStorage.setItem('queMillionGroups', JSON.stringify([...knownMillionGroupsRef.current])); } catch { /* noop */ }
+    try { localStorage.setItem(MILLION_GROUPS_KEY, JSON.stringify([...knownMillionGroupsRef.current])); } catch { /* noop */ }
 
     markShown('million_lbs');
     setEarnedBadges(prev => [...prev, {
@@ -1682,7 +1686,7 @@ export default function WorkoutLogger() {
         const hasEx = String(rec.exercises ?? '').length > 2;
         const eaten = parseFloat(String(rec.calsEaten ?? '0'));
         const bud   = parseFloat(String(rec.budget   ?? '0'));
-        return hasEx && eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= 100;
+        return hasEx && eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= GOAL_TOLERANCE;
       })
       .sort();
     if (days.length === 0) return 0;

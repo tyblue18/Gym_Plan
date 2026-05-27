@@ -1,7 +1,6 @@
-export const ACCENT_KEY    = 'queAccentColor';
-export const BG_KEY        = 'queBgPreset';
-export const LIGHT_BG_KEY  = 'queLightBgPreset';
-export const THEME_KEY     = 'queTheme';
+// Storage keys live in lib/constants — re-exported here so existing imports
+// from '@/lib/colorScheme' keep working.
+export { ACCENT_KEY, BG_KEY, LIGHT_BG_KEY, THEME_KEY } from '@/lib/constants';
 export type  Theme         = 'dark' | 'light';
 
 export interface AccentSwatch { label: string; hex: string; }

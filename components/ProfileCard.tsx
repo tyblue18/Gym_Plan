@@ -19,6 +19,7 @@ export interface PublicProfile {
   badgeCount:      number;
   profilePhoto:    string | null;
   coinBalance?:    number;
+  battleRecord?:   { wins: number; losses: number; ties: number };
 }
 
 export interface BadgeInfo {
@@ -63,6 +64,30 @@ function timeRemaining(iso: string): string {
   const h = Math.floor(diff / 3_600_000);
   const m = Math.floor((diff % 3_600_000) / 60_000);
   return h > 0 ? `${h}h ${m}m left` : `${m}m left`;
+}
+
+// ── Battle W-L-T strip ────────────────────────────────────────────────────────
+// Renders nothing until the user has at least one resolved battle, so new users
+// don't see a noisy "0-0-0" on their card.
+function BattleRecordChip({ record }: { record?: { wins: number; losses: number; ties: number } }) {
+  if (!record) return null;
+  const total = record.wins + record.losses + record.ties;
+  if (total === 0) return null;
+  return (
+    <div
+      className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--line-2)] bg-[var(--bg-2)]"
+      title={`${record.wins} wins · ${record.losses} losses · ${record.ties} ties`}
+    >
+      <span className="text-[9px] leading-none">⚔️</span>
+      <span className="font-mono text-[10px] font-bold tabular-nums tracking-[0.5px]">
+        <span style={{ color: 'var(--positive)' }}>{record.wins}</span>
+        <span className="text-[var(--ink-3)] mx-0.5">-</span>
+        <span style={{ color: 'var(--danger)' }}>{record.losses}</span>
+        <span className="text-[var(--ink-3)] mx-0.5">-</span>
+        <span className="text-[var(--ink-2)]">{record.ties}</span>
+      </span>
+    </div>
+  );
 }
 
 // ── Status modal ───────────────────────────────────────────────────────────────
@@ -811,7 +836,7 @@ export default function ProfileCard({
             )}
           </div>
 
-          {/* Stats chip — badges + coins */}
+          {/* Stats chip — badges + coins + battle W-L-T */}
           <div className="flex-shrink-0 flex flex-col items-end gap-1.5 pt-0.5">
             <div className="text-right">
               <p className="font-display text-[28px] leading-none" style={{ color: 'var(--accent)' }}>
@@ -828,6 +853,7 @@ export default function ProfileCard({
                 </span>
               </div>
             )}
+            <BattleRecordChip record={localProfile.battleRecord} />
           </div>
         </div>
 

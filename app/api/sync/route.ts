@@ -140,6 +140,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     const existingMap = new Map(existingRows.map((r: { date: string; updatedAt: Date; data: unknown }) => [r.date, r]));
 
     const toUpsert: Array<{ date: string; data: unknown }> = [];
+    // 60s tolerance for legitimate clock skew between client browser and server.
+    const FUTURE_TOLERANCE_MS = 60_000;
+    const now = Date.now();
 
     for (const [date, rawData] of Object.entries(body.localDB)) {
       const incoming   = rawData as Record<string, unknown>;
@@ -148,13 +151,23 @@ export async function POST(req: Request): Promise<NextResponse> {
       const { _syncedAt: _, ...cleanData } = incoming;
 
       const stored = existingMap.get(date) as { date: string; updatedAt: Date; data: unknown } | undefined;
-      if (stored && syncedAt && stored.updatedAt > new Date(syncedAt)) {
-        // Server row is newer than what the client last saw — client data is stale
-        conflicts.push({
-          date,
-          data: { ...(stored.data as object), _syncedAt: stored.updatedAt.toISOString() },
-        });
-        continue;
+      if (stored && syncedAt) {
+        const syncedAtMs = new Date(syncedAt).getTime();
+        // A client-supplied timestamp is only trustworthy if it parses cleanly AND
+        // doesn't claim to have seen a future row. Treat both forgery attempts
+        // ("garbage" or "2099-01-01") and legitimately stale writes the same way:
+        // server data wins, client gets the latest copy back as a conflict.
+        const untrustworthy =
+          !Number.isFinite(syncedAtMs) ||
+          syncedAtMs > now + FUTURE_TOLERANCE_MS ||
+          stored.updatedAt.getTime() > syncedAtMs;
+        if (untrustworthy) {
+          conflicts.push({
+            date,
+            data: { ...(stored.data as object), _syncedAt: stored.updatedAt.toISOString() },
+          });
+          continue;
+        }
       }
 
       toUpsert.push({ date, data: cleanData });
@@ -220,8 +233,14 @@ export async function POST(req: Request): Promise<NextResponse> {
   // with badges awarded synchronously in this request.
   const allNewBadges = [...newBadges, ...earnedBadges];
 
+  // Return the server's own timestamp so the client can stamp _syncedAt without
+  // relying on its (possibly skewed or maliciously forged) local clock. This is
+  // strictly >= every upsert's actual updatedAt in this request.
+  const syncedAt = new Date().toISOString();
+
   return NextResponse.json({
     ok: true,
+    syncedAt,
     ...(conflicts.length    > 0 && { conflicts }),
     ...(allNewBadges.length > 0 && { newBadges: allNewBadges }),
     ...(revokedBadges.length > 0 && { revokedBadges }),
