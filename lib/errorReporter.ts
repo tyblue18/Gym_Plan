@@ -15,6 +15,8 @@
  *  - Silent on its own failures — never throws from the reporter itself.
  */
 
+import * as Sentry from '@sentry/nextjs';
+
 const DEDUPE_WINDOW_MS = 5_000;
 const SESSION_CAP      = 50;
 
@@ -64,6 +66,18 @@ export function reportError(error: Error | unknown, ctx: ErrorContext = {}): voi
 
   // Always log to console in dev — Vercel logs the production calls.
   console.error('[reportError]', payload);
+
+  // Forward to Sentry (no-op unless NEXT_PUBLIC_SENTRY_DSN is set). This is the
+  // single client funnel, and Sentry's own GlobalHandlers are disabled in
+  // instrumentation-client.ts, so each error reaches Sentry exactly once. The
+  // dedupe + session cap above apply here too, so Sentry can't be flooded.
+  try {
+    Sentry.captureException(err, {
+      extra: { url: payload.url, source: ctx.extra?.source, ...ctx.extra },
+      tags:  ctx.boundary ? { boundary: ctx.boundary } : undefined,
+      ...(ctx.componentStack ? { contexts: { react: { componentStack: ctx.componentStack } } } : {}),
+    });
+  } catch { /* never let the reporter throw */ }
 
   // Fire-and-forget. `keepalive` lets the request survive a navigation/unload
   // so we don't lose the final error before the tab dies.

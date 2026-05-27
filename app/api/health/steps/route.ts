@@ -17,8 +17,15 @@
 
 import { NextResponse } from 'next/server';
 import { prisma }       from '@/lib/prisma';
+import { stepLimit }    from '@/lib/ratelimit';
 
 export async function POST(req: Request): Promise<NextResponse> {
+  // Rate-limit by IP first — this caps brute-forcing the token and stops the
+  // per-request DB token lookup below from being hammered by anonymous traffic.
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'anon';
+  const { success } = await stepLimit.limit(ip);
+  if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+
   const auth  = req.headers.get('Authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
 
@@ -40,25 +47,36 @@ export async function POST(req: Request): Promise<NextResponse> {
       ? body.date
       : new Date().toISOString().slice(0, 10);
 
-  // Find the user whose stepApiToken matches
+  // Find the user whose stepApiToken matches.
   const workoutData = await prisma.workoutData.findFirst({
-    where: {
-      settings: { path: ['stepApiToken'], equals: token },
-    },
+    where:  { settings: { path: ['stepApiToken'], equals: token } },
+    select: { userId: true },
   });
 
   if (!workoutData) {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
 
-  // Merge steps into the day record
-  const localDB    = (workoutData.localDB  ?? {}) as Record<string, unknown>;
-  const dayRecord  = (localDB[dateStr]     ?? {}) as Record<string, unknown>;
-  localDB[dateStr] = { ...dayRecord, steps };
+  // Write to the DayRecord row (the authoritative per-day store /api/sync reads),
+  // NOT the legacy WorkoutData.localDB blob — writing the blob got silently
+  // overridden by DayRecord rows on the next pull, so steps never propagated.
+  // Merge into the day + stamp _editedAt so the client's newer-wins merge keeps it.
+  const dr = (prisma as unknown as {
+    dayRecord: {
+      findUnique: (a: unknown) => Promise<{ data: unknown } | null>;
+      upsert:     (a: unknown) => Promise<unknown>;
+    };
+  }).dayRecord;
 
-  await prisma.workoutData.update({
-    where: { id: workoutData.id },
-    data:  { localDB: localDB as Parameters<typeof prisma.workoutData.update>[0]['data']['localDB'], syncedAt: new Date() },
+  const existing = await dr.findUnique({
+    where:  { userId_date: { userId: workoutData.userId, date: dateStr } },
+    select: { data: true },
+  });
+  const data = { ...((existing?.data ?? {}) as Record<string, unknown>), steps, _editedAt: new Date().toISOString() };
+  await dr.upsert({
+    where:  { userId_date: { userId: workoutData.userId, date: dateStr } },
+    create: { userId: workoutData.userId, date: dateStr, data },
+    update: { data },
   });
 
   return NextResponse.json({ ok: true, steps, date: dateStr });

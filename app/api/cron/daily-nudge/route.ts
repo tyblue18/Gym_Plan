@@ -19,6 +19,7 @@ import { NextResponse }    from 'next/server';
 import { prisma }          from '@/lib/prisma';
 import { sendPushToUser }  from '@/lib/push';
 import { LAST_STREAK_KEY } from '@/lib/constants';
+import { mapWithConcurrency } from '@/lib/asyncBatch';
 
 type SubClient = { findMany: (a: unknown) => Promise<Array<{ userId: string }>> };
 const ps = () => (prisma as unknown as { pushSubscription: SubClient }).pushSubscription;
@@ -67,18 +68,18 @@ export async function GET(req: Request): Promise<NextResponse> {
     byUser.set(r.userId, m);
   }
 
-  let sent = 0, skipped = 0;
-
-  for (const { userId } of subscribers) {
+  // Per-user push is pure network I/O — fan out with bounded concurrency so the
+  // run scales with the user base instead of creeping toward the 300s timeout.
+  const settled = await mapWithConcurrency(subscribers, 10, async ({ userId }) => {
     const settings = settingsByUser.get(userId) ?? {};
     const tz   = typeof settings.queTzOffset === 'number' ? settings.queTzOffset : DEFAULT_TZ_OFFSET;
     const { date, hour } = localParts(tz);
 
     // Only fire in the user's evening (~6 pm–11 pm local).
-    if (hour < 18 || hour > 23) { skipped++; continue; }
+    if (hour < 18 || hour > 23) return 'skipped' as const;
 
     const eaten = parseFloat(String(byUser.get(userId)?.[date]?.calsEaten ?? '0')) || 0;
-    if (eaten > 50) { skipped++; continue; } // already logged food today
+    if (eaten > 50) return 'skipped' as const; // already logged food today
 
     const streak = (() => {
       const raw = settings[LAST_STREAK_KEY];
@@ -92,9 +93,16 @@ export async function GET(req: Request): Promise<NextResponse> {
       url:   '/app',
       tag:   'food-log',
     });
-    sent++;
+    return 'sent' as const;
+  });
+
+  let sent = 0, skipped = 0, failed = 0;
+  for (const s of settled) {
+    if (s.status === 'rejected')      failed++;
+    else if (s.value === 'sent')      sent++;
+    else                              skipped++;
   }
 
-  console.log(`[cron/daily-nudge] evening food reminder — sent:${sent} skipped:${skipped}`);
-  return NextResponse.json({ ok: true, sent, skipped });
+  console.log(`[cron/daily-nudge] evening food reminder — sent:${sent} skipped:${skipped} failed:${failed}`);
+  return NextResponse.json({ ok: true, sent, skipped, failed });
 }

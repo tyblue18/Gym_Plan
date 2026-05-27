@@ -51,8 +51,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   // ── Mode 2: force-delete specific slugs ──────────────────────────────────────
   let force: string[] = [];
   try {
-    const body = await req.json() as { force?: string[] };
-    force = Array.isArray(body?.force) ? body.force : [];
+    const body = await req.json() as { force?: unknown };
+    // Only accept string slugs, capped at 100 — keeps a malformed/oversized
+    // body from turning into a huge deleteMany / per-row scan. Self-scoped to
+    // the session user regardless.
+    force = Array.isArray(body?.force)
+      ? body.force.filter((s): s is string => typeof s === 'string').slice(0, 100)
+      : [];
   } catch { /* no body / parse error — fall through to mode 1 */ }
 
   if (force.length > 0) {

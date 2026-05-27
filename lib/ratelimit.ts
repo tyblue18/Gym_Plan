@@ -20,6 +20,15 @@ export const foodLimit = new Ratelimit({
   prefix:  'rl:food',
 });
 
+// 20 token-based step pushes per IP per minute. Generous for legit external
+// clients (iOS Shortcut / Tasker), but stops a brute-force of the step token
+// and the per-request DB token lookup from being hammered.
+export const stepLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, '1 m'),
+  prefix:  'rl:step',
+});
+
 // 20 friend-graph writes per user per minute (send / cancel / accept / decline).
 // Generous enough for legitimate use, prevents scripted spam.
 export const friendLimit = new Ratelimit({

@@ -35,7 +35,7 @@ import RunningPlanBuilder from '@/components/running/RunningPlanBuilder';
 // ─────────────────────────────────────────────────────────────────────────────
 
 function StepSyncPanel() {
-  const { updateDayRecord, todayStr } = useApp();
+  const { updateDayRecord, todayStr, localDB } = useApp();
 
   const [gStatus, setGStatus] = useState<'checking' | 'connected' | 'disconnected' | 'error'>('checking');
   const [gSteps,  setGSteps]  = useState<number | null>(null);
@@ -65,6 +65,23 @@ function StepSyncPanel() {
       setGStatus('connected');
     } catch { setGStatus('error'); }
   }, [todayStr, updateDayRecord]);
+
+  // ── Manual step entry ───────────────────────────────────────────────────────
+  // Universal fallback that works on ANY device — including iPhone, where the web
+  // app can't reach HealthKit. Saves to today's record (which syncs everywhere)
+  // and overrides the auto-synced count for the day.
+  const storedSteps = localDB[todayStr]?.steps;
+  const [manualSteps, setManualSteps] = useState('');
+  useEffect(() => {
+    setManualSteps(storedSteps != null && storedSteps !== '' ? String(storedSteps) : '');
+  }, [storedSteps, todayStr]);
+
+  const saveManualSteps = useCallback(() => {
+    const n = parseInt(manualSteps, 10);
+    if (!Number.isFinite(n) || n < 0) return;
+    updateDayRecord(todayStr, { steps: n });
+    setGSteps(n);
+  }, [manualSteps, todayStr, updateDayRecord]);
 
   return (
     <div className="mt-4 pt-4 border-t border-[var(--line)]">
@@ -109,6 +126,34 @@ function StepSyncPanel() {
               {gStatus === 'checking' ? '…' : 'Sync now'}
             </button>
           )}
+        </div>
+
+        {/* Manual step entry — universal fallback (works on iPhone too, where the
+            web app can't reach HealthKit). Overrides the day's auto-synced count. */}
+        <div className="mt-3 pt-3 border-t border-[var(--line)]">
+          <label className="que-label">Steps today · manual</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              className="que-input flex-1"
+              placeholder="e.g. 8000"
+              value={manualSteps}
+              onChange={e => setManualSteps(e.target.value.replace(/[^0-9]/g, ''))}
+              onBlur={saveManualSteps}
+              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            />
+            <button
+              type="button"
+              onClick={saveManualSteps}
+              className="que-btn-ghost px-4 flex-shrink-0"
+            >
+              Save
+            </button>
+          </div>
+          <p className="font-mono text-[8px] text-[var(--ink-3)] mt-1 tracking-[0.3px]">
+            Read it off your phone&apos;s health app — saves to today and syncs to your other devices.
+          </p>
         </div>
       </div>
     </div>

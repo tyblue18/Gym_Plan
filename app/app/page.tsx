@@ -1,18 +1,31 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { Calendar, BarChart2, Layers, Utensils, Users } from 'lucide-react';
 import { AuthHeader }    from '@/components/header';
 import CalendarScheduler from '@/components/CalendarScheduler';
-import MetricsDashboard  from '@/components/MetricsDashboard';
 import WorkoutLogger     from '@/components/WorkoutLogger';
-import CalorieTracker    from '@/components/CalorieTracker';
-import SocialTab         from '@/components/SocialTab';
 import { Onboarding, needsOnboarding } from '@/components/Onboarding';
 import { MorningWeightPrompt } from '@/components/MorningWeightPrompt';
+import { WeeklyRecapModal } from '@/components/WeeklyRecapModal';
 import { SyncNudge } from '@/components/SyncNudge';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useApp } from '@/lib/AppContext';
+
+// Lazy-load the non-default tabs so they (and their heavy deps — charts, Lottie,
+// the barcode scanner) stay out of the initial bundle and only download when the
+// user first opens that tab. The Calendar tab (CalendarScheduler + WorkoutLogger)
+// stays eager since it's the landing tab. ssr:false because the whole dashboard
+// is client-rendered behind auth — there's nothing to server-render.
+const TabFallback = () => (
+  <div className="flex items-center justify-center py-20" role="status" aria-label="Loading">
+    <div className="w-6 h-6 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" />
+  </div>
+);
+const CalorieTracker   = dynamic(() => import('@/components/CalorieTracker'),   { ssr: false, loading: TabFallback });
+const MetricsDashboard = dynamic(() => import('@/components/MetricsDashboard'), { ssr: false, loading: TabFallback });
+const SocialTab        = dynamic(() => import('@/components/SocialTab'),        { ssr: false, loading: TabFallback });
 
 type Tab = 'calendar' | 'calories' | 'metrics' | 'protocol' | 'social';
 
@@ -96,6 +109,7 @@ export default function WorkoutPage() {
         <Onboarding onComplete={() => setOnboarding(false)} />
       )}
       {!showOnboarding && isLoaded && <MorningWeightPrompt />}
+      {!showOnboarding && isLoaded && <WeeklyRecapModal />}
     </div>
   );
 }

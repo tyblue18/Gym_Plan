@@ -14,6 +14,7 @@
 import { NextResponse }   from 'next/server';
 import { prisma }         from '@/lib/prisma';
 import { sendPushToUser } from '@/lib/push';
+import { mapWithConcurrency } from '@/lib/asyncBatch';
 
 type SubClient = { findMany: (a: unknown) => Promise<Array<{ userId: string }>> };
 const ps = () => (prisma as unknown as { pushSubscription: SubClient }).pushSubscription;
@@ -66,19 +67,18 @@ export async function GET(req: Request): Promise<NextResponse> {
     byUser.set(r.userId, m);
   }
 
-  let sent = 0, skipped = 0;
-
-  for (const { userId } of subscribers) {
+  // Per-user push is pure network I/O — fan out with bounded concurrency.
+  const settled = await mapWithConcurrency(subscribers, 10, async ({ userId }) => {
     const settings = settingsByUser.get(userId) ?? {};
     const tz   = typeof settings.queTzOffset === 'number' ? settings.queTzOffset : DEFAULT_TZ_OFFSET;
     const { date, hour } = localParts(tz);
 
     // Only ping during the user's morning so distant timezones don't get a 3am alert.
-    if (hour < 4 || hour > 12) { skipped++; continue; }
+    if (hour < 4 || hour > 12) return 'skipped' as const;
 
     const day    = byUser.get(userId)?.[date];
     const logged = day?.weight !== undefined && parseFloat(String(day.weight)) > 0;
-    if (logged) { skipped++; continue; }
+    if (logged) return 'skipped' as const;
 
     await sendPushToUser(userId, {
       title: 'Morning weigh-in ⚖️',
@@ -86,9 +86,16 @@ export async function GET(req: Request): Promise<NextResponse> {
       url:   '/app',
       tag:   'weigh-in',
     });
-    sent++;
+    return 'sent' as const;
+  });
+
+  let sent = 0, skipped = 0, failed = 0;
+  for (const s of settled) {
+    if (s.status === 'rejected') failed++;
+    else if (s.value === 'sent') sent++;
+    else                         skipped++;
   }
 
-  console.log(`[cron/weigh-in-reminder] sent:${sent} skipped:${skipped}`);
-  return NextResponse.json({ ok: true, sent, skipped });
+  console.log(`[cron/weigh-in-reminder] sent:${sent} skipped:${skipped} failed:${failed}`);
+  return NextResponse.json({ ok: true, sent, skipped, failed });
 }

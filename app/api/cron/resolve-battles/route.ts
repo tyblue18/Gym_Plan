@@ -19,6 +19,7 @@ import { sendPushToUser }     from '@/lib/push';
 import { resolveBattle, todayUTC } from '@/lib/battleEngine';
 import { awardBadgesForUser } from '@/lib/badgeEngine';
 import type { AwardedBadge }  from '@/lib/badgeEngine';
+import { mapWithConcurrency } from '@/lib/asyncBatch';
 
 const redis = new Redis({
   url:   process.env.KV_REST_API_URL!,
@@ -82,79 +83,74 @@ export async function GET(req: Request): Promise<NextResponse> {
     take: 200,
   });
 
+  // Resolve battles with modest concurrency (5): each does a coin-transfer
+  // transaction + winner badge eval (DB-bound, serialised by Prisma's pool) plus
+  // fire-and-forget pushes. Kept lower than the push crons to avoid wallet
+  // contention and thrashing the small connection pool. resolveBattle is
+  // idempotent (status='active' guard), so concurrent runs are safe.
+  const settled = await mapWithConcurrency(due, 5, async (c) => {
+    const resolution = await resolveBattle(c.id);
+    if (!resolution) return 'skipped' as const;   // already resolved, or invalid shape
+
+    const challengerName = displayName(c.challenger);
+    const challengeeName = displayName(c.challengee);
+    const pot            = c.wager * 2;
+
+    // Award any newly-earned badges to the winner (battle_first/5/10/20). Run
+    // inline so we can name the badge in the push; errors are swallowed so a
+    // badge failure doesn't fail the whole battle.
+    const winnerId = resolution.winnerId;
+    let battleBadgeNote = '';
+    if (winnerId) {
+      try {
+        const awarded = await awardBadgesForUser(winnerId);
+        if (awarded.length > 0) await queuePendingBadges(winnerId, awarded);
+        const battleBadge = awarded.find(b => b.slug.startsWith('battle_'));
+        if (battleBadge) battleBadgeNote = ` Earned “${battleBadge.label}”.`;
+      } catch (e) {
+        console.error(`[cron/resolve-battles] badge award failed for ${winnerId}:`, e);
+      }
+    }
+
+    // Pushes are fire-and-forget — a push failure can't fail the battle.
+    if (resolution.winnerId === c.challengerId) {
+      sendPushToUser(c.challengerId, {
+        title: `You won! 🏆`,
+        body:  `Beat ${challengeeName} — ${pot} 🪙 added to your wallet.${battleBadgeNote}`,
+        url:   '/',
+      }).catch(() => {});
+      sendPushToUser(c.challengeeId, {
+        title: `Battle lost`,
+        body:  `${challengerName} won the battle. Better luck next time.`,
+        url:   '/',
+      }).catch(() => {});
+    } else if (resolution.winnerId === c.challengeeId) {
+      sendPushToUser(c.challengeeId, {
+        title: `You won! 🏆`,
+        body:  `Beat ${challengerName} — ${pot} 🪙 added to your wallet.${battleBadgeNote}`,
+        url:   '/',
+      }).catch(() => {});
+      sendPushToUser(c.challengerId, {
+        title: `Battle lost`,
+        body:  `${challengeeName} won the battle. Better luck next time.`,
+        url:   '/',
+      }).catch(() => {});
+    } else {
+      // Tie: both refunded their wager
+      const tieBody = `Battle ended in a tie — ${c.wager} 🪙 refunded.`;
+      sendPushToUser(c.challengerId, { title: 'Battle tied 🤝', body: tieBody, url: '/' }).catch(() => {});
+      sendPushToUser(c.challengeeId, { title: 'Battle tied 🤝', body: tieBody, url: '/' }).catch(() => {});
+    }
+    return 'resolved' as const;
+  });
+
   let resolved = 0;
   let failed   = 0;
-
-  for (const c of due) {
-    try {
-      const resolution = await resolveBattle(c.id);
-      if (!resolution) {                       // already resolved, or invalid shape
-        continue;
-      }
-      resolved++;
-
-      // Push both participants. Don't await — fire-and-forget per-user so a
-      // single push failure can't block other notifications in the loop.
-      const challengerName = displayName(c.challenger);
-      const challengeeName = displayName(c.challengee);
-      const pot            = c.wager * 2;
-
-      // Award any newly-earned badges to the winner (battle_first/5/10/20).
-      // Run inline so we can include the badge name in the push notification.
-      // Awaited but errors are swallowed — a badge failure shouldn't block
-      // sibling notifications or other battles in the loop.
-      const winnerId = resolution.winnerId;
-      let battleBadgeNote = '';
-      if (winnerId) {
-        try {
-          const awarded = await awardBadgesForUser(winnerId);
-          if (awarded.length > 0) {
-            // Queue for next sync so the user gets the celebration popup even
-            // if they have no push subscription. Without this, the badge would
-            // silently appear in their collection.
-            await queuePendingBadges(winnerId, awarded);
-          }
-          const battleBadge = awarded.find(b => b.slug.startsWith('battle_'));
-          if (battleBadge) battleBadgeNote = ` Earned “${battleBadge.label}”.`;
-        } catch (e) {
-          console.error(`[cron/resolve-battles] badge award failed for ${winnerId}:`, e);
-        }
-      }
-
-      if (resolution.winnerId === c.challengerId) {
-        sendPushToUser(c.challengerId, {
-          title: `You won! 🏆`,
-          body:  `Beat ${challengeeName} — ${pot} 🪙 added to your wallet.${battleBadgeNote}`,
-          url:   '/',
-        }).catch(() => {});
-        sendPushToUser(c.challengeeId, {
-          title: `Battle lost`,
-          body:  `${challengerName} won the battle. Better luck next time.`,
-          url:   '/',
-        }).catch(() => {});
-      } else if (resolution.winnerId === c.challengeeId) {
-        sendPushToUser(c.challengeeId, {
-          title: `You won! 🏆`,
-          body:  `Beat ${challengerName} — ${pot} 🪙 added to your wallet.${battleBadgeNote}`,
-          url:   '/',
-        }).catch(() => {});
-        sendPushToUser(c.challengerId, {
-          title: `Battle lost`,
-          body:  `${challengeeName} won the battle. Better luck next time.`,
-          url:   '/',
-        }).catch(() => {});
-      } else {
-        // Tie: both refunded their wager
-        const tieBody = `Battle ended in a tie — ${c.wager} 🪙 refunded.`;
-        sendPushToUser(c.challengerId, { title: 'Battle tied 🤝', body: tieBody, url: '/' }).catch(() => {});
-        sendPushToUser(c.challengeeId, { title: 'Battle tied 🤝', body: tieBody, url: '/' }).catch(() => {});
-      }
-    } catch (e) {
-      failed++;
-      console.error(`[cron/resolve-battles] failed for ${c.id}:`, e);
-    }
+  for (const s of settled) {
+    if (s.status === 'rejected') { failed++; console.error('[cron/resolve-battles] failed:', s.reason); }
+    else if (s.value === 'resolved') resolved++;
   }
 
-  console.log(`[cron/resolve-battles] ${today} — resolved:${resolved} failed:${failed} pending:${due.length}`);
+  console.log(`[cron/resolve-battles] ${today} — resolved:${resolved} failed:${failed} scanned:${due.length}`);
   return NextResponse.json({ ok: true, date: today, resolved, failed, scanned: due.length });
 }

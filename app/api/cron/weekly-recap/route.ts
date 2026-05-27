@@ -1,9 +1,11 @@
 /**
  * GET /api/cron/weekly-recap
  *
- * Scheduled at 14:00 UTC every Sunday (9 am ET / 6 am PT).
- * Sends a personalized weekly summary push to every subscribed user:
- * workouts logged, calorie goal hit rate, and streak.
+ * Scheduled at 23:00 UTC every Sunday (= 7 pm US Eastern). Sends a teaser push
+ * that drives the user into the app, where WeeklyRecapModal renders the full
+ * "Week in Review" (PRs, cardio highlights, plan progress, etc.). A local-hour
+ * gate keeps the push to the user's Sunday evening; the in-app modal is the
+ * timezone-proof delivery and shows for everyone once it's 7 pm their time.
  * Protected by CRON_SECRET.
  */
 
@@ -11,6 +13,7 @@ import { NextResponse }   from 'next/server';
 import { prisma }         from '@/lib/prisma';
 import { sendPushToUser } from '@/lib/push';
 import { GOAL_TOLERANCE, LAST_STREAK_KEY } from '@/lib/constants';
+import { mapWithConcurrency } from '@/lib/asyncBatch';
 
 interface DayRecord {
   calsEaten?: string | number;
@@ -36,11 +39,18 @@ function dateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Returns the 7 date strings Mon–Sun ending yesterday (the completed week). */
+// US-Eastern default for users who haven't synced a timezone yet; local = UTC − offset.
+const DEFAULT_TZ_OFFSET = 240;
+function localHour(tzOffsetMin: number): number {
+  return new Date(Date.now() - tzOffsetMin * 60_000).getUTCHours();
+}
+
+/** The 7 date strings Mon–Sun for the week ending TODAY (the recap Sunday) —
+ *  matches the window WeeklyRecapModal computes on the client. */
 function weekDates(): string[] {
   const dates: string[] = [];
   const d = new Date();
-  for (let i = 7; i >= 1; i--) {
+  for (let i = 6; i >= 0; i--) {
     const day = new Date(d);
     day.setUTCDate(d.getUTCDate() - i);
     dates.push(dateStr(day));
@@ -124,9 +134,9 @@ function buildRecap(
     parts.push(`🔥 ${streak}-day streak`);
   }
 
-  const body = parts.length > 0
-    ? parts.join(' · ')
-    : 'Check your metrics to see how you did.';
+  // Teaser only — the full breakdown lives in the in-app recap. Always end with
+  // a CTA so the notification drives the user to open it.
+  const body = (parts.length > 0 ? `${parts.join(' · ')} — ` : '') + 'tap to see your full week ▸';
 
   return { title, body };
 }
@@ -173,11 +183,17 @@ export async function GET(req: Request): Promise<NextResponse> {
     daysByUser.set(r.userId, m);
   }
 
-  let sent = 0;
-
-  for (const { userId } of subscribers) {
+  // Per-user push is pure network I/O — fan out with bounded concurrency.
+  const settled = await mapWithConcurrency(subscribers, 10, async ({ userId }) => {
     const settings = settingsByUser.get(userId) ?? {};
     const localDB  = daysByUser.get(userId) ?? {};
+
+    // Only push during the user's Sunday evening. At 23:00 UTC this covers all
+    // US timezones (ET 7pm → PT 4pm); far-east zones (already Monday) are
+    // skipped — the in-app recap still greets them at 7 pm their time.
+    const tz   = typeof settings.queTzOffset === 'number' ? settings.queTzOffset : DEFAULT_TZ_OFFSET;
+    const hour = localHour(tz);
+    if (hour < 16 || hour > 23) return 'skipped' as const;
 
     const streak = (() => {
       try {
@@ -190,9 +206,16 @@ export async function GET(req: Request): Promise<NextResponse> {
     const msg   = buildRecap(stats, streak);
 
     await sendPushToUser(userId, { ...msg, url: '/app', tag: 'weekly-recap' });
-    sent++;
+    return 'sent' as const;
+  });
+
+  let sent = 0, skipped = 0, failed = 0;
+  for (const s of settled) {
+    if (s.status === 'rejected') failed++;
+    else if (s.value === 'sent') sent++;
+    else                         skipped++;
   }
 
-  console.log(`[cron/weekly-recap] week of ${dates[0]} — sent:${sent}`);
-  return NextResponse.json({ ok: true, week: dates[0], sent });
+  console.log(`[cron/weekly-recap] week of ${dates[0]} — sent:${sent} skipped:${skipped} failed:${failed}`);
+  return NextResponse.json({ ok: true, week: dates[0], sent, skipped, failed });
 }

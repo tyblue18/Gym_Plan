@@ -36,15 +36,31 @@ const nextConfig = {
   },
 
   async headers() {
-    // Never let the CDN/browser serve a stale service worker script — the SW
-    // update check must always see fresh bytes, otherwise new deploys are never
-    // detected and the "New version" prompt won't appear.
     return [
       {
+        // Never let the CDN/browser serve a stale service worker script — the SW
+        // update check must always see fresh bytes, otherwise new deploys are
+        // never detected and the "New version" prompt won't appear.
         source: '/sw.js',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
           { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+      {
+        // Baseline security headers on every response. Intentionally NO
+        // Content-Security-Policy yet — a strict CSP needs nonces for Next's
+        // inline scripts + the blocking theme script and must be tested on a
+        // preview deploy before shipping, or it silently breaks the app.
+        // `camera=(self)` is required so the barcode scanner's getUserMedia works.
+        source: '/(.*)',
+        headers: [
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          { key: 'X-Content-Type-Options',    value: 'nosniff' },
+          { key: 'X-Frame-Options',           value: 'SAMEORIGIN' },
+          { key: 'Referrer-Policy',           value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy',        value: 'camera=(self), microphone=(), geolocation=()' },
+          { key: 'X-DNS-Prefetch-Control',    value: 'on' },
         ],
       },
     ];
