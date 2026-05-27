@@ -48,6 +48,7 @@ export default function PrivacyPage() {
       <P>We rely on a small set of trusted providers to run the app. They process data only to provide their service to us:</P>
       <Ul>
         <li><strong>Vercel</strong> — hosting, image storage, and anonymous analytics.</li>
+        <li><strong>PostHog</strong> — product analytics (which features get used, and where new users drop off) so we can improve the app. We do not record your screen. No data is sold or used for advertising.</li>
         <li><strong>Neon</strong> — our PostgreSQL database.</li>
         <li><strong>Upstash</strong> — rate-limiting and caching.</li>
         <li><strong>Google &amp; GitHub</strong> — sign-in (OAuth).</li>

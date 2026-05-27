@@ -13,6 +13,7 @@
  */
 
 import { track } from '@vercel/analytics';
+import { phCapture } from '@/lib/analytics-posthog';
 
 /**
  * Union of every event the app is allowed to emit. Adding a new event is
@@ -47,7 +48,16 @@ export type TelemetryEvent =
   | 'battle_resolved_tie'
   // Engagement
   | 'data_exported'               // user clicked Export Data
-  | 'badge_popup_shown';          // badge celebration popup actually rendered
+  | 'badge_popup_shown'           // badge celebration popup actually rendered
+  // Activation / retention funnel
+  | 'app_opened'                  // authenticated app shell mounted this session
+  | 'onboarding_completed'        // finished the first-run wizard
+  | 'first_workout_logged'        // user's first-ever lift (derived from lift_logged)
+  | 'first_food_logged'           // user's first-ever food add (derived from food_added_*)
+  | 'returning_user'              // opened the app on a calendar day after first-seen
+  // Invite growth loop
+  | 'invite_shared'               // user shared/copied their invite link
+  | 'invite_redeemed';            // a followed invite link was successfully redeemed
 
 interface TelemetryProperties {
   /** Free-form integers / strings. Don't put PII here — categorical only.
@@ -61,6 +71,14 @@ interface TelemetryProperties {
  */
 export function trackEvent(event: TelemetryEvent, props?: TelemetryProperties): void {
   if (typeof window === 'undefined') return;
+
+  // Derive activation milestones from existing action events so we don't need
+  // fragile hooks inside WorkoutLogger / CalorieTracker. trackOnce de-dupes via
+  // localStorage, so each fires at most once per device. (Recurses into
+  // trackEvent with a non-action name, so no infinite loop.)
+  if (event === 'lift_logged')            trackOnce('first_workout_logged');
+  else if (event.startsWith('food_added_')) trackOnce('first_food_logged');
+
   if (process.env.NODE_ENV !== 'production') {
     // eslint-disable-next-line no-console
     console.debug('[telemetry:dev]', event, props ?? '');
@@ -68,5 +86,20 @@ export function trackEvent(event: TelemetryEvent, props?: TelemetryProperties): 
   }
   try {
     track(event, props);
+    phCapture(event, props ?? undefined);
   } catch { /* analytics failure must never bubble */ }
+}
+
+/**
+ * Fire an event at most once per device, ever (deduped via localStorage).
+ * Used for "first time X" activation milestones.
+ */
+export function trackOnce(event: TelemetryEvent, props?: TelemetryProperties): void {
+  if (typeof window === 'undefined') return;
+  const key = `que_fired_${event}`;
+  try {
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+  } catch { /* storage blocked — fall through and just send */ }
+  trackEvent(event, props);
 }

@@ -35,6 +35,17 @@ const nextConfig = {
     ],
   },
 
+  // Reverse-proxy PostHog analytics through our own origin so ad/privacy
+  // blockers that block posthog.com can't drop funnel events. The client is
+  // configured with api_host '/ingest' (see lib/analytics-posthog.ts).
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      { source: '/ingest/static/:path*', destination: 'https://us-assets.i.posthog.com/static/:path*' },
+      { source: '/ingest/:path*',        destination: 'https://us.i.posthog.com/:path*' },
+    ];
+  },
+
   async headers() {
     return [
       {

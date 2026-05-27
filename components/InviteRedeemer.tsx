@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { INVITE_CODE_KEY, normalizeInviteCode } from '@/lib/invite';
+import { trackEvent } from '@/lib/telemetry';
 
 /**
  * Mounted inside the authenticated app shell. If the user followed an invite
@@ -56,6 +57,7 @@ export function InviteRedeemer() {
         if (data?.ok || data?.clear || res.ok) localStorage.removeItem(INVITE_CODE_KEY);
 
         if (data?.ok) {
+          trackEvent('invite_redeemed');
           const who = data.inviter ? `You're now friends with ${data.inviter}` : "You're connected";
           setToast(`${who}! ${data.coins ? `+${data.coins} coins 🪙` : ''}`.trim());
           setTimeout(() => setToast(null), 5000);

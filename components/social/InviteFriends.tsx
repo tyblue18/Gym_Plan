@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Share2, Copy, Check, QrCode, Gift } from 'lucide-react';
 import { buildInviteUrl, INVITE_REWARD_INVITER } from '@/lib/invite';
+import { trackEvent } from '@/lib/telemetry';
 
 /**
  * Invite card shown in the Social tab. Builds the user's invite link
@@ -32,6 +33,7 @@ export function InviteFriends({
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      trackEvent('invite_shared', { method: 'copy' });
     } catch { /* clipboard blocked — ignore */ }
   }, [url]);
 
@@ -44,6 +46,7 @@ export function InviteFriends({
           text:  "I track my workouts and calories on Que — join me and let's compete.",
           url,
         });
+        trackEvent('invite_shared', { method: 'native' });
       } catch { /* user dismissed the share sheet */ }
     } else {
       await copy();

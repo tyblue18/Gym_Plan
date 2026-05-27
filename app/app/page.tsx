@@ -11,9 +11,11 @@ import { MorningWeightPrompt } from '@/components/MorningWeightPrompt';
 import { WeeklyRecapModal } from '@/components/WeeklyRecapModal';
 import { InviteRedeemer } from '@/components/InviteRedeemer';
 import { BadgeCelebration } from '@/components/BadgeCelebration';
+import { FunnelTracker } from '@/components/FunnelTracker';
 import { SyncNudge } from '@/components/SyncNudge';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useApp } from '@/lib/AppContext';
+import { trackEvent } from '@/lib/telemetry';
 
 // Lazy-load the non-default tabs so they (and their heavy deps — charts, Lottie,
 // the barcode scanner) stay out of the initial bundle and only download when the
@@ -54,6 +56,7 @@ export default function WorkoutPage() {
       <AuthHeader />
       <InviteRedeemer />
       <BadgeCelebration />
+      <FunnelTracker />
 
       <main className="app-content" role="tabpanel">
         {/* Each tab gets its own ErrorBoundary so a single component crash
@@ -110,7 +113,7 @@ export default function WorkoutPage() {
 
       <SyncNudge />
       {showOnboarding && (
-        <Onboarding onComplete={() => setOnboarding(false)} />
+        <Onboarding onComplete={() => { trackEvent('onboarding_completed'); setOnboarding(false); }} />
       )}
       {!showOnboarding && isLoaded && <MorningWeightPrompt />}
       {!showOnboarding && isLoaded && <WeeklyRecapModal />}

@@ -8,6 +8,11 @@
  * both would double-capture every uncaught error.
  */
 import * as Sentry from '@sentry/nextjs';
+import { initPostHog } from '@/lib/analytics-posthog';
+
+// Product analytics — funnel + retention. Inert unless NEXT_PUBLIC_POSTHOG_KEY
+// is set; prod-only. Reverse-proxied via /ingest (next.config.mjs).
+initPostHog();
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
