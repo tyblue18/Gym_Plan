@@ -1235,16 +1235,18 @@ export default function WorkoutLogger() {
         if (match) {
           const raw = normalizeSets(match);
           if (raw.length > 0) {
-            // Ensure r and w are always strings (SetData stores r as number in older records)
-            const sets = raw.map(s => ({ r: String(s.r || '1'), w: String(s.w || '') }));
+            // The "Last Session" hint reflects what the user ACTUALLY did last
+            // time (real reps), computed from the unmodified history.
+            const topSet = raw.reduce((acc, s) => {
+              const w = parseFloat(String(s.w)) || 0;
+              return w > acc.w ? { w, r: parseInt(String(s.r)) || 0 } : acc;
+            }, { w: 0, r: 0 });
+            // Pre-fill the WEIGHTS from last session, but reset every rep count
+            // to 1 on purpose: the user should consciously enter today's reps
+            // rather than silently carrying stale numbers forward.
+            const sets = raw.map(s => ({ r: '1', w: String(s.w || '') }));
             setPendingSetsCount(sets.length);
             setPendingSetData(sets);
-            // Report the heaviest set so the hint can suggest a sensible
-            // progressive-overload bump (matches the existing +Weight buttons).
-            const topSet = sets.reduce((acc, s) => {
-              const w = parseFloat(s.w) || 0;
-              return w > acc.w ? { w, r: parseInt(s.r) || 0 } : acc;
-            }, { w: 0, r: 0 });
             setPrefillSource({ date: ds, topWeight: topSet.w, topReps: topSet.r });
             return;
           }

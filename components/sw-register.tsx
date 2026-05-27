@@ -23,15 +23,23 @@ export function SWRegister() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
+    let registration: ServiceWorkerRegistration | null = null;
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    // Show the prompt for a waiting worker — but only when an old SW already
+    // controls the page. A first-ever install has no controller and must not prompt.
+    const offerWaiting = (reg: ServiceWorkerRegistration) => {
+      if (reg.waiting && navigator.serviceWorker.controller) {
+        setPendingWorker(reg.waiting);
+      }
+    };
+
     const handleLoad = () => {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/' })
         .then(reg => {
-          // If a worker is already waiting when we register (e.g. user
-          // dismissed the prompt and refreshed manually), surface it again.
-          if (reg.waiting && navigator.serviceWorker.controller) {
-            setPendingWorker(reg.waiting);
-          }
+          registration = reg;
+          offerWaiting(reg);
           reg.addEventListener('updatefound', () => {
             const installing = reg.installing;
             if (!installing) return;
@@ -43,8 +51,8 @@ export function SWRegister() {
               }
             });
           });
-          // Poll for updates while the tab is open.
-          setInterval(() => reg.update().catch(() => {}), 60_000);
+          // Poll for updates while the tab stays open.
+          intervalId = setInterval(() => reg.update().catch(() => {}), 60_000);
         })
         .catch(err => {
           console.error('[SW] Registration failed:', err);
@@ -60,8 +68,25 @@ export function SWRegister() {
       });
     };
 
+    // A mobile PWA is resumed, not reloaded, so the page-load update check never
+    // reruns and the 60s timer is throttled while backgrounded. Re-check on every
+    // foreground so a version shipped while the app was closed is caught promptly
+    // — this is the main reason the update prompt was missed on mobile.
+    const onForeground = () => {
+      if (document.visibilityState !== 'visible' || !registration) return;
+      registration.update().catch(() => {});
+      offerWaiting(registration);
+    };
+    document.addEventListener('visibilitychange', onForeground);
+
     if (document.readyState === 'complete') handleLoad();
     else window.addEventListener('load', handleLoad);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onForeground);
+      window.removeEventListener('load', handleLoad);
+      if (intervalId) clearInterval(intervalId);
+    };
   }, []);
 
   const applyUpdate = () => {
