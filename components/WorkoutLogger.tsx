@@ -1810,22 +1810,11 @@ export default function WorkoutLogger() {
     prevMaxCombinedStreakRef.current = maxCombinedStreak;
   }, [maxCombinedStreak]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for badges awarded by the sync engine (server confirmation).
-  // Skips any badge already shown optimistically; clears tracking so re-earn works.
-  useEffect(() => {
-    function onBadgeEarned(e: Event) {
-      const badges = (e as CustomEvent<EarnedBadge[]>).detail;
-      if (!badges?.length) return;
-      const toShow = badges.filter(b => !optimisticallyShownRef.current.has(b.slug));
-      for (const b of badges) unmarkShown(b.slug);
-      if (toShow.length > 0) {
-        setEarnedBadges(prev => [...prev, ...toShow]);
-        navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
-      }
-    }
-    window.addEventListener('que-badge-earned', onBadgeEarned);
-    return () => window.removeEventListener('que-badge-earned', onBadgeEarned);
-  }, []);
+  // Server-confirmed badge popups (que-badge-earned) are handled by the
+  // always-mounted <BadgeCelebration> host so they fire on any tab — not just
+  // when this component is mounted. The optimistic on-tab popups below still
+  // render here via setEarnedBadges; the shared queShownBadgePopups dedup set
+  // keeps the host from re-showing anything already celebrated optimistically.
 
   const loadRecurringWorkout = useCallback((preset: WorkoutPreset) => {
     const newEntries = parseEx(preset.exercises);

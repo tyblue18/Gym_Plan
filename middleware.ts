@@ -20,9 +20,14 @@ export default async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   const { pathname } = req.nextUrl;
 
-  // Authenticated users hitting the landing page → skip it, go straight to the app
+  // Authenticated users hitting the landing page → skip it, go straight to the app.
+  // Carry an ?invite= code through so existing users who follow a friend's link
+  // still get auto-connected (the app reads it post-redirect).
   if (pathname === '/' && token) {
-    return NextResponse.redirect(new URL('/app', req.url));
+    const dest   = new URL('/app', req.url);
+    const invite = req.nextUrl.searchParams.get('invite');
+    if (invite) dest.searchParams.set('invite', invite);
+    return NextResponse.redirect(dest);
   }
 
   // /app routes are protected — send unauthenticated users to sign-in

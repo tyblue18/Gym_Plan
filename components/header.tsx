@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import Image from 'next/image';
+import Link from 'next/link';
 import {
   applyAccent, applyBg, applyTheme,
   ACCENT_KEY, BG_KEY, LIGHT_BG_KEY, THEME_KEY,
@@ -101,7 +102,7 @@ function UserPill({ image, name, email }: UserPillProps) {
   const displayName = name ?? email ?? 'Athlete';
   const [localPhoto, setLocalPhoto]   = useState<string | null>(null);
   const [open, setOpen]               = useState(false);
-  const [view, setView]               = useState<'menu' | 'scheme' | 'start'>('menu');
+  const [view, setView]               = useState<'menu' | 'settings' | 'scheme' | 'start'>('menu');
   const [accentHex, setAccentHex]     = useState('#4FC3F7');
   const [bgLabel, setBgLabel]         = useState('Charcoal');
   const [theme, setTheme]             = useState<Theme>('dark');
@@ -256,13 +257,73 @@ function UserPill({ image, name, email }: UserPillProps) {
       </button>
 
       {open && (
-        <div className={`auth-dropdown${view !== 'menu' ? ' auth-dropdown--wide' : ''}`} role="menu">
+        <div className={`auth-dropdown${view === 'scheme' || view === 'start' ? ' auth-dropdown--wide' : ''}`} role="menu">
 
           {view === 'menu' ? (
             <>
               <div className="px-3 py-2">
                 <PushPermission />
               </div>
+
+              <div className="auth-dropdown-divider" />
+
+              <button type="button" role="menuitem" className="auth-dropdown-item"
+                onClick={() => setView('settings')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                Settings
+              </button>
+
+              {username && (
+                <button type="button" role="menuitem" className="auth-dropdown-item"
+                  onClick={async () => {
+                    const url = `${window.location.origin}/profile/${username}`;
+                    if (navigator.share) {
+                      try { await navigator.share({ title: 'My Que Profile', url }); }
+                      catch { /* dismissed */ }
+                    } else {
+                      await navigator.clipboard.writeText(url);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }
+                  }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                  </svg>
+                  {copied ? 'Link copied!' : 'Share profile'}
+                </button>
+              )}
+
+              <Link href="/about" role="menuitem" className="auth-dropdown-item"
+                onClick={() => setOpen(false)}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                </svg>
+                About &amp; Support
+              </Link>
+
+              <div className="auth-dropdown-divider" />
+
+              <button type="button" role="menuitem" className="auth-dropdown-item auth-dropdown-item--danger"
+                onClick={() => { setOpen(false); signOut({ callbackUrl: '/' }); }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                Sign out
+              </button>
+            </>
+          ) : view === 'settings' ? (
+            <>
+              <button type="button" className="auth-scheme-back" onClick={() => setView('menu')}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Settings
+              </button>
 
               <div className="auth-dropdown-divider" />
 
@@ -326,42 +387,10 @@ function UserPill({ image, name, email }: UserPillProps) {
                 </svg>
                 Export data
               </button>
-
-              {username && (
-                <button type="button" role="menuitem" className="auth-dropdown-item"
-                  onClick={async () => {
-                    const url = `${window.location.origin}/profile/${username}`;
-                    if (navigator.share) {
-                      try { await navigator.share({ title: 'My Que Profile', url }); }
-                      catch { /* dismissed */ }
-                    } else {
-                      await navigator.clipboard.writeText(url);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    }
-                  }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                  </svg>
-                  {copied ? 'Link copied!' : 'Share profile'}
-                </button>
-              )}
-
-              <div className="auth-dropdown-divider" />
-
-              <button type="button" role="menuitem" className="auth-dropdown-item auth-dropdown-item--danger"
-                onClick={() => { setOpen(false); signOut({ callbackUrl: '/' }); }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                  <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-                </svg>
-                Sign out
-              </button>
             </>
           ) : view === 'start' ? (
             <>
-              <button type="button" className="auth-scheme-back" onClick={() => { setView('menu'); setStartSaved(false); }}>
+              <button type="button" className="auth-scheme-back" onClick={() => { setView('settings'); setStartSaved(false); }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="15 18 9 12 15 6"/>
                 </svg>
@@ -422,7 +451,7 @@ function UserPill({ image, name, email }: UserPillProps) {
             </>
           ) : (
             <>
-              <button type="button" className="auth-scheme-back" onClick={() => setView('menu')}>
+              <button type="button" className="auth-scheme-back" onClick={() => setView('settings')}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polyline points="15 18 9 12 15 6"/>
                 </svg>

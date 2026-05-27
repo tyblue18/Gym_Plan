@@ -109,4 +109,10 @@ export const BADGE_CATALOG: CatalogEntry[] = [
   { slug: 'battle_5',     label: '5 Battle Wins',    icon: '/Badges/5_battle_win.png',     category: 'nutrition', howToGet: 'Win 5 friendship battles' },
   { slug: 'battle_10',    label: '10 Battle Wins',   icon: '/Badges/10_battle_win.png',    category: 'nutrition', howToGet: 'Win 10 friendship battles' },
   { slug: 'battle_20',    label: '20 Battle Wins',   icon: '/Badges/20_battle_win.png',    category: 'nutrition', howToGet: 'Win 20 friendship battles' },
+
+  // ── Referrals ───────────────────────────────────────────────────────────────────
+  { slug: 'recruit_1',  label: 'Helping Hand', icon: '/Badges/First_recruit_badge.png', category: 'nutrition', howToGet: 'Invite a friend who joins Que with your link' },
+  { slug: 'recruit_3',  label: 'Full Support', icon: '/Badges/3_recruit_badge.png',     category: 'nutrition', howToGet: 'Bring 3 friends to Que with your link' },
+  { slug: 'recruit_5',  label: 'Life Force',   icon: '/Badges/5_recruit_badge.png',     category: 'nutrition', howToGet: 'Bring 5 friends to Que with your link' },
+  { slug: 'recruit_10', label: 'Golden Star',  icon: '/Badges/10_recruit_badge.png',    category: 'nutrition', howToGet: 'Bring 10 friends to Que with your link' },
 ];

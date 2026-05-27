@@ -18,13 +18,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority:     0.7,
     }));
 
-  return [
-    {
-      url:             `${BASE}/`,
-      lastModified:    new Date(),
-      changeFrequency: 'monthly',
-      priority:        1.0,
-    },
-    ...profiles,
+  const now = new Date();
+  const staticPages: MetadataRoute.Sitemap = [
+    { url: `${BASE}/`,        lastModified: now, changeFrequency: 'monthly', priority: 1.0 },
+    { url: `${BASE}/about`,   lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
+    { url: `${BASE}/privacy`, lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
+    { url: `${BASE}/terms`,   lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
   ];
+
+  return [...staticPages, ...profiles];
 }

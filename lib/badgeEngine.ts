@@ -31,6 +31,8 @@ interface BadgeCheckData {
   settings:   Record<string, unknown>;
   /** Count of resolved Challenge rows where this user was the winner. */
   battleWins: number;
+  /** Count of successful invites (referral_sent CoinTransactions). */
+  referralCount: number;
 }
 
 interface BadgeDef {
@@ -383,6 +385,26 @@ const BADGE_DEFS: BadgeDef[] = [
     slug: 'battle_20', label: '20 Battle Wins', icon: '/Badges/20_battle_win.png', category: 'nutrition',
     check: ({ battleWins }) => battleWins >= 20,
   },
+
+  // ── Referrals (invite a friend) ────────────────────────────────────────────
+  // Counted from `referral_sent` CoinTransactions. 'nutrition' so they're never
+  // revoked — a converted invite is a permanent achievement.
+  {
+    slug: 'recruit_1', label: 'Helping Hand', icon: '/Badges/First_recruit_badge.png', category: 'nutrition',
+    check: ({ referralCount }) => referralCount >= 1,
+  },
+  {
+    slug: 'recruit_3', label: 'Full Support', icon: '/Badges/3_recruit_badge.png', category: 'nutrition',
+    check: ({ referralCount }) => referralCount >= 3,
+  },
+  {
+    slug: 'recruit_5', label: 'Life Force', icon: '/Badges/5_recruit_badge.png', category: 'nutrition',
+    check: ({ referralCount }) => referralCount >= 5,
+  },
+  {
+    slug: 'recruit_10', label: 'Golden Star', icon: '/Badges/10_recruit_badge.png', category: 'nutrition',
+    check: ({ referralCount }) => referralCount >= 10,
+  },
 ];
 
 // ── Public API ─────────────────────────────────────────────────────────────────
@@ -420,21 +442,22 @@ export async function checkAndAwardBadges(
   try { liftPRs = (settings[LIFT_PRS_KEY] ?? {}) as Record<string, number>; }
   catch { /* malformed — treat as empty */ }
 
-  // Fetch full history, existing badges, and battle wins in parallel.
-  const [existing, dayRows, battleWins] = await Promise.all([
+  // Fetch full history, existing badges, battle wins, and referral count in parallel.
+  const [existing, dayRows, battleWins, referralCount] = await Promise.all([
     prisma.badge.findMany({
       where:  { userId },
       select: { slug: true, label: true, icon: true, category: true },
     }),
     dayRecordTable.findMany({ where: { userId }, select: { date: true, data: true } }),
     prisma.challenge.count({ where: { winnerId: userId, status: 'resolved' } }),
+    prisma.coinTransaction.count({ where: { reason: 'referral_sent', wallet: { userId } } }),
   ]);
 
   const localDB: Record<string, DayRecord> = Object.fromEntries(
     dayRows.map(r => [r.date, r.data as DayRecord])
   );
 
-  const data: BadgeCheckData = { liftPRs, localDB, settings, battleWins };
+  const data: BadgeCheckData = { liftPRs, localDB, settings, battleWins, referralCount };
   const earnedMap = new Map(existing.map(b => [b.slug, b]));
 
   const toAward  = BADGE_DEFS.filter(def => !earnedMap.has(def.slug) && def.check(data));

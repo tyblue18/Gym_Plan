@@ -75,6 +75,14 @@ export const userPatchSchema = z.object({
   showcaseBadges: z.array(z.string().max(100)).max(8).optional(),
 });
 
+// ── /api/invite/redeem POST ───────────────────────────────────────────────────
+
+export const inviteRedeemSchema = z.object({
+  // The inviter's username. Length-bounded here; full username-shape validation
+  // (and the self/dedupe checks) happen in the route + lib/invite normaliser.
+  code: z.string().min(1).max(40),
+});
+
 // ── /api/wallet POST (coin import) ────────────────────────────────────────────
 
 export const walletImportSchema = z.object({

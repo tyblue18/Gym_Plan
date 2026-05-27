@@ -16,12 +16,13 @@ export async function GET(): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json(null, { status: 401 });
 
-  const [user, battleRecord] = await Promise.all([
+  const [user, battleRecord, referralCount] = await Promise.all([
     prisma.appUser.findUnique({
       where:   { id: session.user.id },
       include: { badges: { orderBy: { earnedAt: 'desc' } }, workoutData: { select: { settings: true } }, coinWallet: { select: { balance: true } } },
     }),
     getBattleRecord(session.user.id),
+    prisma.coinTransaction.count({ where: { reason: 'referral_sent', wallet: { userId: session.user.id } } }),
   ]);
   if (!user) return NextResponse.json(null, { status: 404 });
 
@@ -43,6 +44,7 @@ export async function GET(): Promise<NextResponse> {
     profilePhoto:    (settings[PROFILE_PHOTO_KEY] as string | undefined) ?? null,
     coinBalance:     user.coinWallet?.balance ?? 0,
     battleRecord,
+    referralCount,
   });
 }
 

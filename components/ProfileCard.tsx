@@ -20,6 +20,7 @@ export interface PublicProfile {
   profilePhoto:    string | null;
   coinBalance?:    number;
   battleRecord?:   { wins: number; losses: number; ties: number };
+  referralCount?:  number;          // own profile only — friends brought in via invite
 }
 
 export interface BadgeInfo {

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import queLogo from '@/public/Que_logo.png';
 import { InstallCTA } from '@/components/landing/InstallCTA';
+import { InviteBanner } from '@/components/landing/InviteBanner';
 
 const FEATURES = [
   {
@@ -49,6 +50,9 @@ const STATS = [
 export default function LandingPage() {
   return (
     <div className="lp-shell">
+      {/* ── Invite banner (only renders for ?invite=… visitors) ── */}
+      <InviteBanner />
+
       {/* ── Ambient background ── */}
       <div className="lp-bg-glow" aria-hidden="true" />
 
@@ -137,6 +141,9 @@ export default function LandingPage() {
       {/* ── Footer ── */}
       <footer className="lp-footer">
         <span>© {new Date().getFullYear()} Que</span>
+        <Link href="/about" className="lp-footer-link">About</Link>
+        <Link href="/privacy" className="lp-footer-link">Privacy</Link>
+        <Link href="/terms" className="lp-footer-link">Terms</Link>
         <Link href="/app" className="lp-footer-link">Open app</Link>
       </footer>
     </div>

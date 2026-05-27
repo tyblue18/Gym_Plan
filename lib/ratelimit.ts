@@ -54,3 +54,12 @@ export const challengeLimit = new Ratelimit({
   limiter: Ratelimit.slidingWindow(10, '1 m'),
   prefix:  'rl:challenge',
 });
+
+// 5 invite redemptions per user per minute. A real client fires this once on
+// first auth after following an invite link; the tight cap stops a script from
+// probing usernames or hammering the redeem path.
+export const inviteLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(5, '1 m'),
+  prefix:  'rl:invite',
+});

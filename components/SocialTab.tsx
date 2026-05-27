@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import dynamic                                       from 'next/dynamic';
 import ProfileCard, { type PublicProfile }           from '@/components/ProfileCard';
+import { InviteFriends }                              from '@/components/social/InviteFriends';
 import {
   COIN_KEY, PROFILE_PHOTO_KEY, SOCIAL_ANIM_KEY, COINS_MIGRATED_KEY,
 } from '@/lib/constants';
@@ -1509,6 +1510,11 @@ export default function SocialTab() {
           )}
         </div>
       </div>
+
+      {/* ── INVITE FRIENDS ───────────────────────────────────────────────── */}
+      {hasUsername && ownProfile?.username && (
+        <InviteFriends username={ownProfile.username} referralCount={ownProfile.referralCount ?? 0} />
+      )}
 
       {/* ── FRIENDS ──────────────────────────────────────────────────────── */}
       <div className="que-card">
