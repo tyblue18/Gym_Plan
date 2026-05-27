@@ -156,11 +156,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       const stored = existingMap.get(date) as { date: string; updatedAt: Date; data: unknown } | undefined;
 
       if (stored) {
-        // Prefer edit-time chronology when the incoming write carries _editedAt.
-        // This is the multi-device case: phone edits at 10:01, syncs; laptop
-        // edits at 10:30 (without seeing phone's edit), syncs at 10:31. The
-        // old code rejected laptop because its _syncedAt was stale, dropping
-        // a newer real-world edit. Comparing _editedAt instead keeps laptop's.
+        // Prefer edit-time chronology when the incoming write carries
+        // _editedAt. Multi-device case: phone edits at 10:01 then syncs;
+        // laptop edits the same day at 10:30 (hasn't pulled phone's edit)
+        // then syncs at 10:31. _editedAt comparison keeps the laptop write
+        // because it's chronologically newer — _syncedAt would reject it
+        // since the laptop's last pull was older than the phone's push.
         if (editedAt) {
           const editedAtMs   = new Date(editedAt).getTime();
           const storedEdited = (stored.data as { _editedAt?: string })._editedAt;

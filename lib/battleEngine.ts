@@ -84,8 +84,8 @@ function scoreCategory(
     outcome = cmp === 1 ? 'challenger' : cmp === -1 ? 'challengee' : 'tie';
   }
 
-  // (challengerId / challengeeId aren't strictly needed in the result row,
-  // but having them in scope helps debug logs and future per-user formatting.)
+  // Kept in scope (not in the result row) so debug logs can attribute scores
+  // by user without re-plumbing the IDs through caller chains.
   void challengerId; void challengeeId;
 
   return {

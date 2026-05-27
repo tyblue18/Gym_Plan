@@ -394,7 +394,9 @@ export interface AwardedBadge {
   category: string;
 }
 
-// DayRecord table cast — model was added after initial Prisma client generation
+// Narrow Prisma cast — the generated client doesn't expose dayRecord at the
+// top level here (different Prisma generation target than the route handlers),
+// so we accept the unknown shape and re-type the one method we use.
 type DayRecordRow = { date: string; data: unknown };
 const dayRecordTable = (prisma as unknown as {
   dayRecord: { findMany: (args: unknown) => Promise<DayRecordRow[]> };

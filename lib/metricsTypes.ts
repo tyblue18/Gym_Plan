@@ -91,8 +91,9 @@ export function savePlanToStorage(p: AthletePlan) {
  * projection used at plan creation, so progress tracking compares against the
  * same rate the user was shown.
  *
- * Plans created before creationActivityBurn was tracked return their raw
- * dailyKcal — same as the pre-fix behavior, so old plans aren't disrupted.
+ * Legacy plans without creationActivityBurn (introduced after the field was
+ * added) fall back to raw dailyKcal — the cardio adjustment is unavailable
+ * since we never captured the burn at creation time.
  */
 export function getEffectiveDailyKcal(plan: AthletePlan): number {
   const cardioAdjust = (plan.creationActivityBurn ?? 0) * 0.4;

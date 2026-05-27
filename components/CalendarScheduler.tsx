@@ -737,10 +737,10 @@ function TodaysWorkoutSummary({ dateStr, rec }: { dateStr: string; rec: DayRecor
                                       onClick={() => !isEditing && startEdit(e.arrIdx, si, String(s.r || '1'), s.w || '')}
                                     >
                                       {isEditing ? (
-                                        // Container onBlur only commits when focus leaves
-                                        // the entire chip — not when moving between inputs.
-                                        // This fixes mobile: tapping the weight field no longer
-                                        // blurs-and-commits before it can receive focus.
+                                        // Container-level onBlur commits only when focus leaves
+                                        // the chip entirely — not when moving between the reps
+                                        // and weight inputs. Without this, mobile blur-commits
+                                        // a tap on the weight field before it can receive focus.
                                         <span
                                           className="inline-flex items-center gap-1"
                                           onBlur={ev => {

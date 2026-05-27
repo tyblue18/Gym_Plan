@@ -173,12 +173,12 @@ function ProfilePanel({ profile, onChange, onOpenPlan, onOpenRunPlan }: {
           </div>
 
           <div>
-            {/* Label and displayed value adapt to the sign of profile.deficit.
-                Fix D stores a bulk plan's surplus as a negative deficit so the
-                budget formula stays unchanged — we hide that sign from the
-                user here and label the field accordingly. The onChange
-                preserves the current sign so editing a bulk surplus doesn't
-                accidentally flip it into a cut deficit. */}
+            {/* Bulk plans persist their surplus as a negative profile.deficit
+                so the single budget formula handles both directions. The
+                input hides that sign — labels itself "Surplus" when negative
+                and shows the absolute value. onChange preserves the current
+                sign so editing inside one mode can't flip cut↔bulk. To
+                change direction, use the PlanModal. */}
             {(() => {
               const rawDef    = parseNum(profile.deficit);
               const isSurplus = rawDef < 0;
@@ -404,10 +404,10 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
 
           {calsEaten === 0 && (
             <p className="mt-3 font-mono text-[11px] text-[var(--ink-3)] tracking-[1px]">
-              {/* m.deficit goes negative for active bulk plans (Fix D stores
-                  surplus as a signed deficit). Render the operator separately
-                  so the formula reads as "tdee + 500 + eatBack = budget" for a
-                  bulk instead of the visually confusing "tdee − -500 + …". */}
+              {/* m.deficit is negative on an active bulk plan (surplus
+                  encoded as a signed deficit). Render the operator separately
+                  so the formula reads "tdee + 500 + eatBack" for a bulk
+                  instead of the visually broken "tdee − -500". */}
               {`${fmt(m.tdee)} ${m.deficit < 0 ? '+' : '−'} ${fmt(Math.abs(m.deficit))}${m.eatBack > 0 ? ` + ${fmt(m.eatBack)}` : ''} = ${fmt(m.budget)} kcal`}
             </p>
           )}
@@ -420,9 +420,9 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
             { label: '× Activity Multiplier',  value: `× ${m.multiplier}`,             indent: true,  bold: false },
             { label: '= Maintenance (TDEE)',   value: `${fmt(m.tdee)} kcal`,           indent: false, bold: true  },
             null,
-            // When a bulk plan is active, profile.deficit is negative (Fix D
-            // stores surplus as signed deficit). Flip the row to read as a
-            // surplus instead of "− Deficit: −-500".
+            // Bulk plans store their surplus as a negative profile.deficit
+            // so the single budget formula works for both directions. Flip
+            // the row label so it reads "+ Surplus" instead of "− Deficit: −-500".
             m.deficit < 0
               ? { label: '+ Surplus Goal', value: `+${fmt(Math.abs(m.deficit))} kcal`, indent: false, bold: false, green: true }
               : { label: '− Deficit Goal', value: `−${fmt(m.deficit)} kcal`,           indent: false, bold: false, red:   true },
@@ -1177,12 +1177,10 @@ export default function MetricsDashboard() {
     setTodayCalsRaw(String(rec.calsEaten ?? ''));
   }, [isLoaded, activeDayFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync cardio from localDB on every change to the active day's record. This
-  // fixes the stale-budget bug where logging cardio through the BudgetCard
-  // quick-log writes to localDB but the cardio state here didn't refresh,
-  // leaving m.budget computed from pre-log cardio. Cardio has no direct user
-  // input in this component, so re-firing on every localDB change is safe
-  // (no race with in-progress typing).
+  // Cardio has no direct text input in this component — the quick-log modal
+  // in CalorieBudgetCard writes straight to localDB. Re-deriving on every
+  // active-day record change keeps m.budget in sync without racing the
+  // user's typing (no typing path exists for cardio here).
   const activeDayRec = localDB[activeDayFocus];
   useEffect(() => {
     if (!isLoaded) return;
