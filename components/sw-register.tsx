@@ -78,27 +78,31 @@ export function SWRegister() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
           transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed left-1/2 -translate-x-1/2 z-[80] flex items-center gap-3 max-w-[92vw] rounded-lg border bg-[var(--bg-1)] px-4 py-2.5"
+          className="fixed left-1/2 -translate-x-1/2 z-[120] flex items-center gap-2.5 w-[calc(100vw-20px)] max-w-[440px] rounded-xl border bg-[var(--bg-1)] px-3.5 py-3"
           style={{
-            bottom:      'calc(20px + env(safe-area-inset-bottom))',
+            // Sit ABOVE the bottom tab nav (which is z-100 and occupies the
+            // bottom of the viewport). z-120 keeps the toast on top, and the
+            // offset clears the nav height + the device safe-area inset so it's
+            // never tucked behind the bar on mobile.
+            bottom:      'calc(76px + env(safe-area-inset-bottom))',
             borderColor: 'var(--positive)',
             boxShadow:   '0 0 0 1px var(--positive-12), 0 18px 40px rgba(0,0,0,0.55)',
           }}
         >
-          <span className="font-mono text-[10px] text-[var(--ink-1)] tracking-[0.3px]">
-            <strong className="text-[var(--positive)]">New version</strong> ready — refresh for the latest.
+          <span className="flex-1 min-w-0 font-mono text-[11px] leading-snug text-[var(--ink-1)] tracking-[0.2px]">
+            <strong className="text-[var(--positive)]">New version</strong> of Que is ready.
           </span>
           <button
             type="button"
             onClick={applyUpdate}
-            className="font-mono text-[9px] font-bold tracking-[1px] uppercase rounded-sm px-2.5 py-1.5 bg-[var(--positive)] text-[var(--accent-ink)] hover:opacity-90 transition-opacity"
+            className="shrink-0 font-mono text-[10px] font-bold tracking-[1px] uppercase rounded-md px-3.5 py-2 bg-[var(--positive)] text-[var(--accent-ink)] hover:opacity-90 active:scale-95 transition"
           >
             Update
           </button>
           <button
             type="button"
             onClick={() => setPendingWorker(null)}
-            className="font-mono text-[9px] tracking-[1px] uppercase text-[var(--ink-3)] hover:text-[var(--ink-1)] transition-colors"
+            className="shrink-0 font-mono text-[10px] tracking-[1px] uppercase text-[var(--ink-3)] hover:text-[var(--ink-1)] transition-colors px-1.5 py-2"
             title="Dismiss until next deploy"
           >
             Later
