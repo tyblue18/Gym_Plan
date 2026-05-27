@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Check } from 'lucide-react';
 
 /**
  * Registers the service worker and surfaces an "Update available" prompt
@@ -19,6 +20,26 @@ import { AnimatePresence, motion } from 'framer-motion';
  */
 export function SWRegister() {
   const [pendingWorker, setPendingWorker] = useState<ServiceWorker | null>(null);
+  // Shows a brief "Updated" confirmation when the running build is newer than
+  // the last one this device saw — a reliable signal regardless of whether the
+  // SW updated via the prompt or silently between sessions.
+  const [justUpdated, setJustUpdated] = useState(false);
+
+  useEffect(() => {
+    const current = Number(process.env.NEXT_PUBLIC_BUILD_TIME);
+    if (!Number.isFinite(current) || current <= 0) return; // dev / not set
+    let stored = 0;
+    try { stored = Number(localStorage.getItem('queBuildTime')) || 0; } catch { /* ignore */ }
+    if (current > stored) {
+      try { localStorage.setItem('queBuildTime', String(current)); } catch { /* ignore */ }
+      // Only celebrate an actual upgrade, not the very first visit.
+      if (stored > 0) {
+        setJustUpdated(true);
+        const t = setTimeout(() => setJustUpdated(false), 4500);
+        return () => clearTimeout(t);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
@@ -131,6 +152,34 @@ export function SWRegister() {
             title="Dismiss until next deploy"
           >
             Later
+          </button>
+        </motion.div>
+      )}
+
+      {justUpdated && !pendingWorker && (
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 40 }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          className="fixed left-1/2 -translate-x-1/2 z-[120] flex items-center gap-2 w-[calc(100vw-20px)] max-w-[360px] rounded-xl border bg-[var(--bg-1)] px-3.5 py-3"
+          style={{
+            bottom:      'calc(76px + env(safe-area-inset-bottom))',
+            borderColor: 'var(--positive)',
+            boxShadow:   '0 0 0 1px var(--positive-12), 0 18px 40px rgba(0,0,0,0.55)',
+          }}
+        >
+          <Check size={15} className="shrink-0 text-[var(--positive)]" />
+          <span className="flex-1 min-w-0 font-mono text-[11px] leading-snug text-[var(--ink-1)] tracking-[0.2px]">
+            Updated to the latest version.
+          </span>
+          <button
+            type="button"
+            onClick={() => setJustUpdated(false)}
+            className="shrink-0 font-mono text-[10px] tracking-[1px] uppercase text-[var(--ink-3)] hover:text-[var(--ink-1)] transition-colors px-1.5 py-2"
+            aria-label="Dismiss"
+          >
+            ✕
           </button>
         </motion.div>
       )}

@@ -1,5 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Build timestamp, baked into the client bundle at build time. The client
+  // compares it to the last value it saw and shows an "Updated" confirmation
+  // when it increases — a reliable signal that survives the service-worker
+  // lifecycle (which silently swaps versions between mobile sessions).
+  env: {
+    NEXT_PUBLIC_BUILD_TIME: String(Date.now()),
+  },
+
   // REMOVED: output: 'export'
   //    NextAuth API routes require a Node.js server runtime.
   //    Static export (output: 'export') compiles to plain HTML/JS and
