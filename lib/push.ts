@@ -30,13 +30,24 @@ export interface PushPayload {
   url?:  string;
 }
 
-export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+/** Outcome of a send attempt — lets callers (e.g. the test endpoint) report
+ *  exactly why a push did or didn't go out instead of failing silently. */
+export interface PushSendResult {
+  configured: boolean;  // VAPID keys present on the server
+  total:      number;   // subscriptions found for the user
+  sent:       number;   // pushes the push service accepted
+  failed:     number;   // pushes that errored (expired subs are pruned)
+}
+
+export async function sendPushToUser(userId: string, payload: PushPayload): Promise<PushSendResult> {
   ensureVapid();
-  if (!vapidSet) return;
+  if (!vapidSet) return { configured: false, total: 0, sent: 0, failed: 0 };
 
   const subs = await ps().findMany({ where: { userId } });
-  if (subs.length === 0) return;
+  if (subs.length === 0) return { configured: true, total: 0, sent: 0, failed: 0 };
 
+  let sent = 0;
+  let failed = 0;
   await Promise.allSettled(
     subs.map(async sub => {
       try {
@@ -44,7 +55,9 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           JSON.stringify(payload),
         );
+        sent++;
       } catch (err: unknown) {
+        failed++;
         const status = (err as { statusCode?: number }).statusCode;
         if (status === 410 || status === 404) {
           await ps().delete({ where: { id: sub.id } }).catch(() => {});
@@ -52,4 +65,5 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
       }
     })
   );
+  return { configured: true, total: subs.length, sent, failed };
 }

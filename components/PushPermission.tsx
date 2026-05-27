@@ -14,13 +14,27 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 
 async function registerSubscription(reg: ServiceWorkerRegistration): Promise<boolean> {
   try {
-    // Get existing subscription or create a new one
+    if (!VAPID_KEY) return false;
+    const want = urlBase64ToUint8Array(VAPID_KEY);
+
     let sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      // A subscription created with a DIFFERENT VAPID public key can never
+      // receive pushes (the server signs with the matching private key). This
+      // happens after the server key is rotated/corrected. Detect the mismatch
+      // and drop the stale subscription so we resubscribe with the current key.
+      const curBuf = sub.options?.applicationServerKey;
+      const cur    = curBuf ? new Uint8Array(curBuf as ArrayBuffer) : new Uint8Array();
+      const matches = cur.length === want.length && cur.every((b, i) => b === want[i]);
+      if (!matches) {
+        try { await sub.unsubscribe(); } catch { /* ignore */ }
+        sub = null;
+      }
+    }
     if (!sub) {
-      if (!VAPID_KEY) return false;
       sub = await reg.pushManager.subscribe({
         userVisibleOnly:      true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_KEY),
+        applicationServerKey: want,
       });
     }
     // Always upsert to server — handles re-installs, server-side loss, key rotation
@@ -72,6 +86,8 @@ export function PushPermission() {
   // subscription on the server — surfaces the failure instead of falsely
   // showing "Notifications on".
   const [error,   setError]   = useState(false);
+  // Transient feedback for the "Send test" button so it isn't a silent no-op.
+  const [testMsg, setTestMsg] = useState('');
   const [unsupportedMsg, setUnsupportedMsg] = useState('Install as app for notifications');
   const didRegister = useRef(false);
 
@@ -137,12 +153,11 @@ export function PushPermission() {
           Notifications on
         </span>
         <button
-          onClick={async () => {
-            await fetch('/api/push/test', { method: 'POST', credentials: 'include' });
-          }}
-          className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-2 py-1 rounded border border-[var(--line-2)] text-[var(--ink-3)] hover:text-[var(--ink-1)] hover:border-[var(--line)] transition-colors"
+          onClick={sendTest}
+          disabled={testMsg === 'Sending…'}
+          className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-2 py-1 rounded border border-[var(--line-2)] text-[var(--ink-3)] hover:text-[var(--ink-1)] hover:border-[var(--line)] transition-colors disabled:opacity-40"
         >
-          Send test
+          {testMsg || 'Send test'}
         </button>
       </div>
     );
@@ -173,6 +188,7 @@ export function PushPermission() {
   // Re-attempt the server subscription after a failure (permission already granted).
   async function retry() {
     setLoading(true);
+    setTestMsg('');
     try {
       const reg = await swReady();
       const ok  = reg ? await registerSubscription(reg) : false;
@@ -180,6 +196,33 @@ export function PushPermission() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Fire a test push and report the real outcome instead of failing silently.
+  // A missing subscription flips to the retry state; other failures show why.
+  async function sendTest() {
+    setTestMsg('Sending…');
+    try {
+      const res = await fetch('/api/push/test', { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        setTestMsg('Sent ✓');
+      } else {
+        const reason = await res.json().then(d => d?.reason).catch(() => null);
+        if (reason === 'no_subscription') {
+          // The browser thinks it's subscribed but the server has nothing — drop
+          // into the retry flow so the user can re-register.
+          setError(true);
+        } else if (reason === 'not_configured') {
+          setTestMsg('Server not set up');
+        } else {
+          setTestMsg('Send failed');
+        }
+      }
+    } catch {
+      setTestMsg('Send failed');
+    }
+    // Clear transient messages after a few seconds so the button resets.
+    setTimeout(() => setTestMsg(''), 4000);
   }
 
   return (
