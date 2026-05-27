@@ -17,6 +17,9 @@ Sentry.init({
   environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? process.env.NODE_ENV,
   tracesSampleRate: 0.1,
   sendDefaultPii: false,
+  // Route events through our own /monitoring path (server forwards to Sentry)
+  // so ad/privacy blockers that block the sentry.io domain can't drop them.
+  tunnel: '/monitoring',
   integrations: integrations => integrations.filter(i => i.name !== 'GlobalHandlers'),
 });
 

@@ -29,6 +29,15 @@ export const stepLimit = new Ratelimit({
   prefix:  'rl:step',
 });
 
+// 30 Sentry tunnel envelopes per IP per minute. Errors are rare in normal use
+// (and the client SDK dedupes), so this is plenty — it exists to stop forged
+// envelopes from flooding (and exhausting) the Sentry project quota.
+export const monitoringLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(30, '1 m'),
+  prefix:  'rl:monitoring',
+});
+
 // 20 friend-graph writes per user per minute (send / cancel / accept / decline).
 // Generous enough for legitimate use, prevents scripted spam.
 export const friendLimit = new Ratelimit({
