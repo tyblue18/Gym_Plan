@@ -611,9 +611,8 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
           const weeklyRate = plan.type === 'cut'
             ? -(effKcal * 7 / 3500)
             :  (effKcal * 7 / 3500);
-          // Anchor projection at the resolved baseline (first weigh-in near start
-          // if available) so this tile stays consistent with the chart in
-          // PlanProgressModal and the Change stat there.
+          // Anchor projection at the plan's locked start weight so this tile stays
+          // consistent with the chart and Change stat in PlanProgressModal.
           const baseline   = getPlanBaseline(plan, localDB);
           const projNow      = baseline + weeklyRate * weeksSince;
           const weeksLeft    = Math.max(0, plan.weeksTarget - weeksSince);

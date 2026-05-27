@@ -12,7 +12,6 @@ import {
   type UserProfile,
 } from '@/lib/AppContext';
 import {
-  type AthletePlan,
   type BudgetMetrics,
   type PlanIntensity,
   INTENSITY_KCAL,
@@ -242,7 +241,7 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
   const {
     weightEntries, chartPts, weeksSince, planWeeklyRate,
     expectedChange, firstWeight, actualChange, actualWeeklyRate, status,
-    projectedTotalWeeks, compliance, kcalAdjust, baselineDivergence,
+    projectedTotalWeeks, compliance, kcalAdjust,
   } = useMemo(() => {
     if (!plan) return {
       weightEntries: [], chartPts: [], weeksSince: 0, planWeeklyRate: 0,
@@ -250,7 +249,6 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
       status: 'no-data' as const, projectedTotalWeeks: null,
       compliance: null as ReturnType<typeof getPlanCompliance> | null,
       kcalAdjust: null as { kcal: number; weeksLeft: number; reached: boolean } | null,
-      baselineDivergence: null as { projAtPlanEnd: number; gap: number } | null,
     };
 
     const entries = (Object.entries(localDB) as [string, DayRecord][])
@@ -268,10 +266,9 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
       week: (new Date(e.date + 'T00:00:00').getTime() - planStartMs) / (7 * 86400000),
     })).filter(p => p.week >= 0);
 
-    // Resolve the plan's true starting weight (first weigh-in near start if it
-    // exists, else plan.startWeight). Shared with the chart, MilestoneModal,
-    // CelebrationModal, and ProjectionModal so "change since start" is
-    // computed identically everywhere.
+    // The plan's starting weight — locked at creation (see getPlanBaseline).
+    // Shared with the chart, MilestoneModal, CelebrationModal, and
+    // ProjectionModal so "change since start" is computed identically everywhere.
     const baseWeight  = getPlanBaseline(plan, localDB);
 
     const eff         = getEffectiveDailyKcal(plan);
@@ -284,9 +281,7 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
     // the user hasn't logged anything since starting the plan.
     const windowEntries = entries.filter(e => e.date >= plan.startDate);
     const latest        = windowEntries.length > 0 ? windowEntries[windowEntries.length - 1] : null;
-    // Compare against the resolved baseline, not the planned start. Lets a
-    // user whose first weigh-in differs from plan.startWeight see correct
-    // ahead/on-track/behind status.
+    // Compare against the locked start weight so "change since start" is stable.
     const actChange     = latest ? latest.weight - baseWeight : null;
 
     // Smoothed weight: mean of the last 3 in-window weigh-ins (or fewer if
@@ -318,18 +313,6 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
     let projWks: number | null = null;
     if (actRate !== null && Math.abs(actRate) > 0.01) {
       projWks = Math.max(0, wks + (plan.goalWeight - (smoothedWeight ?? baseWeight)) / actRate);
-    }
-
-    // Baseline divergence: if the resolved baseline (first weigh-in) differs
-    // from plan.startWeight, the chart's perfect-pace line — anchored at the
-    // baseline — ends at a different weight than the goal at week N. Surface
-    // this so the user knows the goal won't be hit at the plan rate just from
-    // baseline shift (independent of their actual compliance).
-    let baselineDivergence: { projAtPlanEnd: number; gap: number } | null = null;
-    if (Math.abs(baseWeight - plan.startWeight) > 0.5) {
-      const projAtPlanEnd = baseWeight + rate * plan.weeksTarget;
-      const gap           = plan.goalWeight - projAtPlanEnd; // signed
-      if (Math.abs(gap) > 0.5) baselineDivergence = { projAtPlanEnd, gap };
     }
 
     // Per-day calorie-compliance metrics (real balance vs. true maintenance).
@@ -373,7 +356,7 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
       firstWeight: baseWeight,
       actualChange: actChange, actualWeeklyRate: actRate,
       status: st, projectedTotalWeeks: projWks,
-      compliance: comp, kcalAdjust: adj, baselineDivergence,
+      compliance: comp, kcalAdjust: adj,
     };
   }, [plan, localDB, profile, open, planVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -485,29 +468,6 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
                       <span className="font-mono text-[11px] font-bold tracking-[0.5px]" style={{ color: r.color }}>{r.value}</span>
                     </div>
                   ))}
-                </div>
-              )}
-
-              {/* Baseline divergence — shown when the resolved baseline differs
-                  meaningfully from plan.startWeight, so the perfect-pace line
-                  doesn't actually hit the goal at week N. Independent of user
-                  compliance: it's a fixed offset from where the user started
-                  vs. where the plan assumed. */}
-              {baselineDivergence && plan && (
-                <div className="rounded border border-[var(--ink-3)]/30 bg-[var(--bg-2)] px-4 py-3">
-                  <p className="font-mono text-[9px] font-bold tracking-[2px] text-[var(--ink-3)] uppercase mb-1.5">
-                    Baseline shifted
-                  </p>
-                  <p className="font-mono text-[11px] text-[var(--ink-0)] tracking-[0.3px] leading-relaxed">
-                    Your first weigh-in was {firstWeight.toFixed(1)} lb, not the {plan.startWeight.toFixed(1)} lb entered at plan creation. At the plan rate from your actual baseline, you&apos;ll be at{' '}
-                    <span className="font-bold text-[var(--accent)]">{baselineDivergence.projAtPlanEnd.toFixed(1)} lb</span>{' '}
-                    at week {plan.weeksTarget} — {Math.abs(baselineDivergence.gap).toFixed(1)} lb {baselineDivergence.gap > 0
-                      ? (plan.type === 'cut' ? 'short of' : 'past')
-                      : (plan.type === 'cut' ? 'past'      : 'short of')} the {plan.goalWeight.toFixed(1)} lb goal.
-                  </p>
-                  <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tracking-[0.3px]">
-                    See the recommended adjustment below to hit the original goal in time.
-                  </p>
                 </div>
               )}
 
@@ -809,13 +769,17 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
   const handleSave = useCallback(() => {
     if (!projData || !planType) return;
     const kcal = INTENSITY_KCAL[intensity];
-    const isUpdate = !!loadPlan();
+    const existing = loadPlan();
+    const isUpdate = !!existing;
     savePlanToStorage({
       type: planType, intensity, dailyKcal: kcal,
       // Snapshot the activity burn used to derive the projection so progress
       // tracking can apply the same cardio adjustment via getEffectiveDailyKcal().
       creationActivityBurn: Math.round(m.activityBurn),
-      startDate: todayStr,
+      // Preserve the original start date when updating — editing the plan (e.g.
+      // changing intensity or goal) must not reset the plan window and wipe the
+      // progress measured so far. Only a brand-new plan starts "today".
+      startDate: existing?.startDate ?? todayStr,
       startWeight: projData.startWeight, goalWeight: projData.goalWeight,
       weeksTarget: projData.weeks,
     });

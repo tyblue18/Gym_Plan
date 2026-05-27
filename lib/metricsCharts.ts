@@ -279,8 +279,9 @@ export function drawProgressChart(
   ctx.clearRect(0, 0, W, H);
 
   const totalWks  = plan.weeksTarget;
-  // Anchor the projection at the user's actual first-logged weight if they
-  // weighed in near the plan start; otherwise fall back to plan.startWeight.
+  // Anchor the projection at the plan's locked start weight. Callers pass it
+  // via getPlanBaseline (which returns plan.startWeight); the ?? only guards a
+  // missing argument.
   const startWt   = firstLoggedWeight ?? plan.startWeight;
   const goalWt    = plan.goalWeight;
   // Use the plan's *effective* rate (cardio-adjusted) so the projection line

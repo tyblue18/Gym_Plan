@@ -103,26 +103,21 @@ export function getEffectiveDailyKcal(plan: AthletePlan): number {
 }
 
 /**
- * Resolves the plan's true starting weight.
+ * The plan's starting weight — the single reference point for every
+ * "change since start" calculation (progress tracking, chart anchoring,
+ * Recent Weigh-ins delta).
  *
- * If the user logged a weight within ~1.5 days of plan.startDate, that
- * weigh-in is treated as the authoritative baseline — they were estimating
- * when they typed plan.startWeight, and the actual scale reading supersedes
- * the estimate. Otherwise falls back to plan.startWeight.
+ * Captured ONCE at plan creation (from the value the user entered, which the
+ * modal pre-fills with today's weigh-in if present, else profile weight) and
+ * stored on plan.startWeight. It is intentionally STABLE: later daily weigh-ins
+ * move "Current"/"Change" but never the Start, so logging your morning weight
+ * can't retroactively redefine where you began. To change it, edit the plan.
  *
- * Used by progress tracking, chart anchoring, and Recent Weigh-ins delta
- * so every "change since start" calculation uses the same reference point.
+ * (Kept as a function — rather than reading plan.startWeight inline at call
+ * sites — so all consumers route through one definition. The localDB argument
+ * is no longer needed but is retained so existing call sites keep compiling.)
  */
-export function getPlanBaseline(plan: AthletePlan, localDB: LocalDB): number {
-  const planStartMs = new Date(plan.startDate + 'T00:00:00').getTime();
-  const sortedDays  = Object.keys(localDB).filter(d => d >= plan.startDate).sort();
-  for (const ds of sortedDays) {
-    const w = parseNum(String(localDB[ds]?.weight ?? '0'));
-    if (w <= 0) continue;
-    const week = (new Date(ds + 'T00:00:00').getTime() - planStartMs) / (7 * 86400000);
-    if (week > 0.2) break;        // first log is too far past start to override
-    return w;
-  }
+export function getPlanBaseline(plan: AthletePlan, _localDB?: LocalDB): number {
   return plan.startWeight;
 }
 
