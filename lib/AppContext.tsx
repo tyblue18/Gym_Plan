@@ -492,6 +492,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCurrentDisplayDate(new Date(y, m - 1, d));
   }, []);
 
+  // ── Keep "today" honest on long-lived sessions ─────────────────────────────
+  //    today/todayStr are derived once at mount (above). A mobile PWA is frozen
+  //    and resumed rather than remounted, so without this the app's notion of
+  //    "today" stays pinned to the day the tab was first opened — which breaks
+  //    the morning prompt, streak windows, the calendar's "today" marker, and any
+  //    "yesterday" recap. On every foreground we recompute the local date; if it
+  //    rolled over we advance today, and we only move the user's calendar focus
+  //    when they were already sitting on the old "today" — so we never yank
+  //    someone out of a past day they navigated to on purpose. Refs keep the
+  //    listener stable while always reading the latest values.
+  const todayStrRef         = useRef(todayStr);
+  todayStrRef.current       = todayStr;
+  const activeDayFocusRef   = useRef(activeDayFocus);
+  activeDayFocusRef.current = activeDayFocus;
+
+  useEffect(() => {
+    const refreshToday = () => {
+      if (document.visibilityState !== 'visible') return;
+      const n  = new Date();
+      const ns = toDateStr(n);
+      if (ns === todayStrRef.current) return;        // same calendar day — nothing to do
+      const wasOnToday = activeDayFocusRef.current === todayStrRef.current;
+      setTodayInternal(n);
+      if (wasOnToday) {
+        setActiveDayFocusRaw(ns);
+        setCurrentDisplayDate(new Date(n.getFullYear(), n.getMonth(), n.getDate()));
+      }
+    };
+    document.addEventListener('visibilitychange', refreshToday);
+    return () => document.removeEventListener('visibilitychange', refreshToday);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Merge server-won days back into React state when the sync engine detects a conflict.
   useEffect(() => {
     const handler = (e: Event) => {

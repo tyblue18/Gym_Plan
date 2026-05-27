@@ -47,6 +47,7 @@ export const THEME_KEY         = 'queTheme';
 
 // Misc client state (single-use today, centralized so they're discoverable)
 export const SHOWN_BADGES_KEY   = 'queShownBadgePopups';
-export const WEIGHT_PROMPT_KEY  = 'queWeightPromptDate';
+export const WEIGHT_PROMPT_KEY  = 'queWeightPromptDate';   // legacy gate — cleaned up on load
+export const WEIGHT_SKIP_KEY    = 'queWeightSkipDate';     // YYYY-MM-DD the morning prompt was explicitly skipped
 export const SOCIAL_ANIM_KEY    = 'queSocialAnimIdx';
 export const COINS_MIGRATED_KEY = 'queCoinsMigrated';

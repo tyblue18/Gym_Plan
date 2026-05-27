@@ -4,12 +4,9 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
-import { GOAL_TOLERANCE, WEIGHT_PROMPT_KEY } from '@/lib/constants';
+import { GOAL_TOLERANCE, WEIGHT_PROMPT_KEY, WEIGHT_SKIP_KEY } from '@/lib/constants';
 import { computeBaseBudget, loadCoins } from '@/lib/calorie-utils';
 import { toDateStr } from '@/lib/metricsTypes';
-
-// set to today's date-string on dismiss so the prompt only shows once per day
-const PROMPT_KEY = WEIGHT_PROMPT_KEY;
 
 function fmt(n: number) {
   return n.toLocaleString();
@@ -22,16 +19,15 @@ export function MorningWeightPrompt() {
 
   // Live "today" — AppContext derives today/todayStr once at mount and never
   // refreshes them. On a mobile PWA the page is frozen and resumed (not remounted),
-  // so that value goes stale across midnight — which broke this prompt both ways:
-  // it stopped firing on a genuinely new day, and it reshowed on a 5-min loop because
-  // the dismiss key never matched the stale comparison date. We keep our own clock
-  // and refresh it (setNow) whenever we actually open the prompt.
+  // so that value goes stale across midnight and the prompt would stop firing on a
+  // genuinely new day. We keep our own clock here, computed fresh at decision time,
+  // and refresh it (setNow) whenever we actually open the prompt so the recap below
+  // reflects the real current day.
   const [now, setNow] = useState<Date>(() => new Date());
   const today = now;
 
   const [open,   setOpen]   = useState(false);
   const [weight, setWeight] = useState('');
-  const dismissedAtRef          = useRef(0);
   const inputRef                = useRef<HTMLInputElement>(null);
   const getLastKnownWeightRef   = useRef(getLastKnownWeight);
   getLastKnownWeightRef.current = getLastKnownWeight;
@@ -47,19 +43,19 @@ export function MorningWeightPrompt() {
     ].join('-');
   }, [today]);
 
-  // Decide whether to open the prompt. Always compares against a freshly-computed
-  // date string (never a value captured at render/mount), so a long-lived PWA still
-  // recognises that the day has rolled over. Weight presence is NOT a blocker — the
-  // prompt is the UI for logging weight, so it shows regardless of whether weight
-  // already arrived via cloud sync. Held in a ref so the stable event listeners
-  // below always invoke the latest implementation without re-subscribing.
+  // Decide whether to open the prompt. The gate is DATA-DRIVEN, not an opaque
+  // once-shown flag: show the morning prompt for the live current day unless the
+  // user has already weighed in today (via this prompt, the Metrics tab, or a
+  // synced device) OR explicitly skipped it today. This self-heals across days and
+  // devices — there is no flag that can wedge and silently hide the prompt forever.
+  // Everything is computed from a freshly-read date so a long-lived (frozen/resumed)
+  // mobile PWA still recognises the day has rolled over. Held in a ref so the stable
+  // listeners below always call the latest closure (fresh localDB) without re-subscribing.
   const tryShow = useRef<() => void>(() => {});
   tryShow.current = () => {
     const liveStr = toDateStr(new Date());
-    // Already dismissed/handled today.
-    if (localStorage.getItem(PROMPT_KEY) === liveStr) return;
-    // Just dismissed moments ago — don't nag on a quick app-switch round-trip.
-    if (dismissedAtRef.current > 0 && Date.now() - dismissedAtRef.current < 5 * 60_000) return;
+    if (localDB[liveStr]?.weight) return;                      // already weighed in today
+    if (localStorage.getItem(WEIGHT_SKIP_KEY) === liveStr) return; // explicitly skipped today
     setNow(new Date()); // refresh recap/streak/greeting to the real current day
     const last = getLastKnownWeightRef.current(liveStr);
     if (last) setWeight(last);
@@ -67,8 +63,9 @@ export function MorningWeightPrompt() {
   };
 
   useEffect(() => {
-    // Clean up old keys from previous code versions so they don't interfere.
+    // Retire keys from previous prompt logic so a wedged value can't keep hiding it.
     localStorage.removeItem('queLastRecapDate');
+    localStorage.removeItem(WEIGHT_PROMPT_KEY);
 
     // Show after a short delay so the app shell settles before the modal appears.
     const timer = setTimeout(() => tryShow.current(), 500);
@@ -93,12 +90,13 @@ export function MorningWeightPrompt() {
     if (didEnter) {
       updateDayRecord(liveStr, { weight });
       persistProfile({ weight });
+      // Logging weight makes localDB[liveStr].weight truthy, which suppresses the
+      // prompt on its own — no skip flag needed.
+    } else {
+      // Explicit skip: silence it for today only. A fresh day clears this naturally
+      // because the stored date no longer matches the live date.
+      localStorage.setItem(WEIGHT_SKIP_KEY, liveStr);
     }
-    // Mark as dismissed for today so the prompt doesn't reappear until tomorrow.
-    // Use the live date (not a captured render value) so this key always matches
-    // what tryShow() compares against — otherwise the prompt loops on foreground.
-    localStorage.setItem(PROMPT_KEY, liveStr);
-    dismissedAtRef.current = Date.now();
     setOpen(false);
   };
 
