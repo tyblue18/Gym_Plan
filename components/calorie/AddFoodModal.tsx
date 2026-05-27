@@ -84,6 +84,27 @@ export interface OFFProduct {
   nutriments: OFFNutriments;
 }
 
+/**
+ * Validate a scanned barcode's check digit so a misread is rejected before we
+ * waste a lookup on it. UPC-A (12) and EAN-13 (13) use the standard
+ * right-to-left ×3/×1 weighting; other lengths (EAN-8, UPC-E, ITF-14) use
+ * varying schemes, so we accept those on shape alone rather than risk a false
+ * rejection of a valid code.
+ */
+export function isValidBarcode(code: string): boolean {
+  if (!/^\d+$/.test(code)) return false;
+  if (code.length === 12 || code.length === 13) {
+    const digits = code.split('').map(Number);
+    const check  = digits.pop()!;
+    let sum = 0;
+    for (let i = digits.length - 1, w = 3; i >= 0; i--, w = w === 3 ? 1 : 3) {
+      sum += digits[i] * w;
+    }
+    return (10 - (sum % 10)) % 10 === check;
+  }
+  return code.length === 8 || code.length === 14;
+}
+
 export function perServing(p: OFFProduct, servings: number): Pick<FoodEntry, 'kcal'|'protein'|'carbs'|'fat'> {
   const n   = p.nutriments;
   const g   = parseFloat(String(p.serving_quantity ?? '100')) || 100;
@@ -607,11 +628,21 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       const reader = new BrowserMultiFormatReader();
       let handled = false;
 
+      // ── Reliability gate ──────────────────────────────────────────────────
+      // 1. Reject anything that fails its EAN/UPC check digit (a garbled read).
+      // 2. Require the SAME valid code on two consecutive detections before
+      //    accepting — one bad frame can't win. Shared across the ZXing and
+      //    BarcodeDetector paths below so they reinforce each other.
+      let lastCode = '';
+      let confirms = 0;
       // ZXing handles camera open, video setup, and play() retry on canplay.
       // This is the approach that works on iOS/Android — do not replace it.
-      // Shared handler — flashes green, freezes the frame for 450 ms, then transitions
+      // On a confirmed read: flash green, freeze the frame for 450 ms, then transition.
       const onFound = (code: string, stopFn: () => void) => {
         if (handled) return;
+        if (!isValidBarcode(code)) return;       // misread — ignore this frame
+        if (code === lastCode) { confirms++; } else { lastCode = code; confirms = 1; }
+        if (confirms < 2) return;                 // need a second matching read
         handled = true;
         setDetected(true);
         setTimeout(() => {
@@ -624,13 +655,29 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       };
 
       const controls = await reader.decodeFromConstraints(
-        { video: { facingMode: 'environment' } },
+        // Ask for a high-res rear camera so small barcodes resolve sharply.
+        { video: {
+          facingMode: { ideal: 'environment' },
+          width:  { ideal: 1920 },
+          height: { ideal: 1080 },
+        } },
         videoRef.current,
         (result, _err, ctrl) => {
           if (result) onFound(result.getText(), () => ctrl.stop());
         },
       );
       controlsRef.current = controls;
+
+      // Best-effort continuous autofocus — sharper frames = far better decode
+      // rates. Silently ignored on devices/browsers that don't support it.
+      try {
+        const stream = videoRef.current.srcObject as MediaStream | null;
+        const track  = stream?.getVideoTracks?.()[0];
+        // focusMode isn't in the TS MediaTrackConstraints type yet.
+        await track?.applyConstraints?.(
+          { advanced: [{ focusMode: 'continuous' }] } as unknown as MediaTrackConstraints
+        );
+      } catch { /* unsupported — fine */ }
 
       // If BarcodeDetector is available, run it alongside for better detection.
       // First to find a barcode wins; handled flag prevents double-lookup.
@@ -673,14 +720,24 @@ export function AddFoodModal({ open, onClose, onAdd }: {
   const lookupBarcode = async (code: string) => {
     setError('');
     setSearching(true);
+    // Try the scanned code, then the UPC-A ↔ EAN-13 leading-zero variants —
+    // OFF stores most US products under their 13-digit EAN, so a 12-digit UPC-A
+    // scan often only matches once a leading zero is added (and vice versa).
+    const candidates = [code];
+    if (code.length === 12)                     candidates.push('0' + code);
+    if (code.length === 13 && code[0] === '0')  candidates.push(code.slice(1));
+    const fields = 'product_name,brands,serving_size,serving_quantity,nutriments,code';
     try {
-      const res  = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-      const data = await res.json() as { status: number; product?: OFFProduct };
-      if (data.status === 1 && data.product?.product_name) {
-        setSelectedProduct({ p: data.product, barcode: code, source: 'scan' });
-      } else {
-        setError(`No product found for barcode ${code}. Try searching by name.`);
+      for (const c of candidates) {
+        const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${c}.json?fields=${fields}`);
+        if (!res.ok) continue;
+        const data = await res.json() as { status?: number; product?: OFFProduct };
+        if (data.status === 1 && data.product?.product_name) {
+          setSelectedProduct({ p: data.product, barcode: c, source: 'scan' });
+          return;
+        }
       }
+      setError(`No product found for barcode ${code}. Try searching by name.`);
     } catch {
       setError('Network error. Check your connection.');
     } finally {

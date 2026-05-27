@@ -1,20 +1,22 @@
 /**
  * GET /api/food/search?q=chicken+breast
  *
- * Strategy (most-accurate → most-available):
- *   1. USDA FoodData Central  — lab-analysed, per-100g data. Needs api_key for
- *      reliable usage (free: fdc.nal.usda.gov/api-key-signup.html → USDA_API_KEY
- *      in Vercel env vars; DEMO_KEY is limited to 30 req/hr per IP).
- *   2. Open Food Facts (text) — automatic fallback when USDA is rate-limited or
- *      returns nothing. No key, no rate limit, 3 M+ products worldwide.
+ * Queries USDA FoodData Central AND Open Food Facts in PARALLEL, then merges,
+ * de-dupes, and RANKS the combined set by relevance to the query before
+ * returning the top results. This fixes the two big problems with the old
+ * either/or approach:
+ *   - whole foods (USDA, lab-analysed) and common branded items (OFF) now
+ *     appear together in one list
+ *   - the closest name match is surfaced first instead of the source's raw order
  *
- * Both sources are normalised to identical shape so the client needs no changes.
+ * USDA needs USDA_API_KEY for reliable usage (DEMO_KEY is 30 req/hr per IP).
+ * Results are cached in Redis for 24h. Both sources are normalised to one shape.
  */
 
-import { NextResponse }    from 'next/server';
-import { foodLimit }      from '@/lib/ratelimit';
-import { Redis }          from '@upstash/redis';
-import { foodSearchSchema } from '@/lib/validators';
+import { NextResponse }      from 'next/server';
+import { foodLimit }         from '@/lib/ratelimit';
+import { Redis }             from '@upstash/redis';
+import { foodSearchSchema }  from '@/lib/validators';
 
 const redis = new Redis({
   url:   process.env.KV_REST_API_URL!,
@@ -36,12 +38,50 @@ interface NormalizedProduct {
 }
 
 // ── Plausibility guard ────────────────────────────────────────────────────────
-
+// Reject garbage (0 / absurd kcal, negative macros) but tolerate the legitimate
+// gap between Atwater macro math and the label kcal: fiber, sugar alcohols, and
+// rounding routinely push real foods past a tight absolute threshold. We allow
+// the larger of 50 kcal or 25% of the energy value.
 function plausible(kcal: number, protein: number, carbs: number, fat: number): boolean {
   if (kcal <= 0 || kcal > 900) return false;
   if (protein < 0 || carbs < 0 || fat < 0) return false;
   const macro = protein * 4 + carbs * 4 + fat * 9;
-  return macro === 0 || Math.abs(macro - kcal) < 35;
+  if (macro === 0) return true; // no macro data — trust the kcal value
+  const tolerance = Math.max(50, kcal * 0.25);
+  return Math.abs(macro - kcal) <= tolerance;
+}
+
+// ── Relevance ranking ──────────────────────────────────────────────────────────
+
+function queryWords(q: string): string[] {
+  return q.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+}
+
+/** Higher = more relevant. Rewards exact/prefix/substring matches and full word
+ *  coverage; penalises long verbose descriptions so concise generic names win. */
+function scoreResult(p: NormalizedProduct, q: string, qWords: string[]): number {
+  const name = p.product_name.toLowerCase();
+  let s = 0;
+  if (name === q)            s += 100;
+  else if (name.startsWith(q)) s += 60;
+  else if (name.includes(q)) s += 30;
+
+  const present = qWords.filter(w => name.includes(w)).length;
+  s += present * 12;
+  if (qWords.length > 0 && present === qWords.length) s += 25; // all terms present
+
+  // Prefer concise names (a verbose clinical description is rarely what's wanted).
+  s -= Math.min(18, Math.floor(name.length / 14));
+  // USDA whole-food entries are lab-accurate — small tiebreaker bump.
+  if (p.source === 'usda') s += 4;
+  return s;
+}
+
+/** Group near-duplicate names (e.g. USDA + OFF both have "chicken breast"). */
+function dedupeKey(p: NormalizedProduct): string {
+  const name  = p.product_name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const brand = (p.brands ?? '').toLowerCase().trim();
+  return `${name}|${brand}`;
 }
 
 // ── USDA FoodData Central ─────────────────────────────────────────────────────
@@ -89,14 +129,9 @@ interface OFFRaw {
   nutriments?: Record<string, number>;
 }
 
-function normalizeOFF(p: OFFRaw, q: string): NormalizedProduct | null {
+function normalizeOFF(p: OFFRaw): NormalizedProduct | null {
   const name = p.product_name?.trim();
   if (!name) return null;
-  // Keep only results whose name contains at least one query word (relevance guard)
-  const words = q.toLowerCase().split(/\s+/);
-  const nameLower = name.toLowerCase();
-  if (!words.some(w => w.length > 2 && nameLower.includes(w))) return null;
-
   const n     = p.nutriments ?? {};
   const kcal  = Math.round(n['energy-kcal_100g'] ?? 0);
   const prot  = Math.round((n['proteins_100g']       ?? 0) * 10) / 10;
@@ -124,7 +159,7 @@ async function searchOFF(q: string): Promise<NormalizedProduct[]> {
   if (!res.ok) return [];
   const data = await res.json() as { products?: OFFRaw[] };
   return (data.products ?? [])
-    .map(p => normalizeOFF(p, q))
+    .map(normalizeOFF)
     .filter((p): p is NormalizedProduct => p !== null);
 }
 
@@ -134,43 +169,47 @@ export async function GET(req: Request): Promise<NextResponse> {
   const qRaw = new URL(req.url).searchParams.get('q')?.trim();
   const qParsed = foodSearchSchema.safeParse({ q: qRaw });
   if (!qParsed.success) return NextResponse.json({ products: [] });
-  const q = qParsed.data.q;
+  const q = qParsed.data.q.toLowerCase();
 
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'anon';
   const { success } = await foodLimit.limit(ip);
   if (!success) return NextResponse.json({ products: [], error: 'Rate limited' }, { status: 429 });
 
-  // ── Cache check (24 h TTL) ─────────────────────────────────────────────────
-  const cacheKey = `food:${q.toLowerCase()}`;
+  const cacheKey = `food:v2:${q}`;
   const cached   = await redis.get<{ products: NormalizedProduct[]; source: string }>(cacheKey);
   if (cached) return NextResponse.json({ ...cached, cached: true });
 
-  const apiKey = process.env.USDA_API_KEY ?? 'DEMO_KEY';
+  const apiKey  = process.env.USDA_API_KEY ?? 'DEMO_KEY';
+  const qWords  = queryWords(q);
 
-  // Try USDA first (better accuracy for raw/generic foods)
-  let products: NormalizedProduct[] = [];
-  let source: 'usda' | 'off' | 'none' = 'none';
+  // Query BOTH sources in parallel; either failing just yields the other's hits.
+  const [usdaRes, offRes] = await Promise.allSettled([
+    searchUSDA(q, apiKey),
+    searchOFF(q),
+  ]);
+  const usda = usdaRes.status === 'fulfilled' ? usdaRes.value : [];
+  const off  = offRes.status  === 'fulfilled' ? offRes.value  : [];
 
-  try {
-    const usda = await searchUSDA(q, apiKey);
-    if (usda.length > 0) { products = usda; source = 'usda'; }
-  } catch {
-    // USDA unavailable or rate-limited — fall through to OFF
+  // Merge, keep only results that contain at least one query word (relevance
+  // floor), rank by score, then de-dupe keeping the highest-ranked of each name.
+  const ranked = [...usda, ...off]
+    .filter(p => qWords.length === 0 || qWords.some(w => p.product_name.toLowerCase().includes(w)))
+    .map(p => ({ p, score: scoreResult(p, q, qWords) }))
+    .sort((a, b) => b.score - a.score);
+
+  const seen: Set<string> = new Set();
+  const products: NormalizedProduct[] = [];
+  for (const { p } of ranked) {
+    const key = dedupeKey(p);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    products.push(p);
+    if (products.length >= 12) break;
   }
 
-  // Fall back to Open Food Facts if USDA gave nothing
-  if (products.length === 0) {
-    try {
-      const off = await searchOFF(q);
-      if (off.length > 0) { products = off; source = 'off'; }
-    } catch {
-      // Both failed
-    }
-  }
+  const source = usda.length && off.length ? 'merged' : usda.length ? 'usda' : off.length ? 'off' : 'none';
+  const result = { products, source };
 
-  const result = { products: products.slice(0, 12), source };
-
-  // Cache successful results — skip if both sources failed
   if (products.length > 0) {
     await redis.setex(cacheKey, 86_400, result);
   }
