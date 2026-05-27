@@ -628,21 +628,18 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       const reader = new BrowserMultiFormatReader();
       let handled = false;
 
-      // ── Reliability gate ──────────────────────────────────────────────────
-      // 1. Reject anything that fails its EAN/UPC check digit (a garbled read).
-      // 2. Require the SAME valid code on two consecutive detections before
-      //    accepting — one bad frame can't win. Shared across the ZXing and
-      //    BarcodeDetector paths below so they reinforce each other.
-      let lastCode = '';
-      let confirms = 0;
+      // ── Misread gate ──────────────────────────────────────────────────────
+      // Reject any frame that fails its EAN/UPC check digit so a garbled read is
+      // never looked up; keep scanning until a valid code appears. Fed by both
+      // the ZXing and BarcodeDetector paths below. (Accept on the first VALID
+      // read — BarcodeDetector self-stops after one detection, so anything
+      // stricter than that would never complete on Android.)
       // ZXing handles camera open, video setup, and play() retry on canplay.
       // This is the approach that works on iOS/Android — do not replace it.
-      // On a confirmed read: flash green, freeze the frame for 450 ms, then transition.
+      // On a valid read: flash green, freeze the frame for 450 ms, then transition.
       const onFound = (code: string, stopFn: () => void) => {
         if (handled) return;
-        if (!isValidBarcode(code)) return;       // misread — ignore this frame
-        if (code === lastCode) { confirms++; } else { lastCode = code; confirms = 1; }
-        if (confirms < 2) return;                 // need a second matching read
+        if (!isValidBarcode(code)) return;       // misread — ignore, keep scanning
         handled = true;
         setDetected(true);
         setTimeout(() => {
@@ -668,19 +665,22 @@ export function AddFoodModal({ open, onClose, onAdd }: {
       );
       controlsRef.current = controls;
 
-      // Best-effort continuous autofocus — sharper frames = far better decode
-      // rates. Silently ignored on devices/browsers that don't support it.
+      // Best-effort continuous autofocus — sharper frames = better decode rates.
+      // Fire-and-forget so it never blocks or interferes with detection; silently
+      // ignored on devices/browsers that don't support the constraint.
       try {
         const stream = videoRef.current.srcObject as MediaStream | null;
         const track  = stream?.getVideoTracks?.()[0];
         // focusMode isn't in the TS MediaTrackConstraints type yet.
-        await track?.applyConstraints?.(
+        void track?.applyConstraints?.(
           { advanced: [{ focusMode: 'continuous' }] } as unknown as MediaTrackConstraints
-        );
+        ).catch(() => {});
       } catch { /* unsupported — fine */ }
 
-      // If BarcodeDetector is available, run it alongside for better detection.
-      // First to find a barcode wins; handled flag prevents double-lookup.
+      // If BarcodeDetector is available, run it alongside ZXing for faster
+      // detection. It keeps scanning until onFound ACCEPTS a valid code (sets
+      // `handled`) — it must not stop on a checksum-invalid read, or a single
+      // bad frame would end the scan with nothing accepted.
       if ('BarcodeDetector' in window && videoRef.current) {
         const video = videoRef.current;
         const origStop = controls.stop.bind(controls);
@@ -699,14 +699,10 @@ export function AddFoodModal({ open, onClose, onAdd }: {
               try {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const codes: any[] = await detector.detect(video);
-                if (codes.length > 0) {
-                  bdActive = false;
-                  onFound(codes[0].rawValue, origStop);
-                  return;
-                }
+                if (codes.length > 0) onFound(codes[0].rawValue, origStop);
               } catch { /* no barcode this frame */ }
             }
-            requestAnimationFrame(tick);
+            if (!handled) requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
         } catch { /* BarcodeDetector init failed — ZXing still detecting */ }
