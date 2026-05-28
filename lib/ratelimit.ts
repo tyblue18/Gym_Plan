@@ -70,3 +70,11 @@ export const groupLimit = new Ratelimit({
   limiter: Ratelimit.slidingWindow(20, '1 m'),
   prefix:  'rl:group',
 });
+
+// 40 feed writes per user per minute (share posts, likes, comments). Likes can
+// be tapped quickly, so this is more generous than other write limits.
+export const feedLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(40, '1 m'),
+  prefix:  'rl:feed',
+});

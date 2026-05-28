@@ -486,6 +486,81 @@ export async function resolveTeamBattle(battleId: string): Promise<ResolvedBattl
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LIVE STANDINGS — read-only mid-battle leaderboard (no DB writes, no payout)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TeamsStanding {
+  mode: 'teams';
+  started: boolean;
+  windowEnd: string;
+  team0Wins: number;
+  team1Wins: number;
+  perCategory: Array<{ slug: string; label: string; unit: string; team0Score: number | null; team1Score: number | null; leader: 0 | 1 | null }>;
+}
+export interface FFAStanding {
+  mode: 'ffa';
+  started: boolean;
+  windowEnd: string;
+  leaderboard: Array<{ userId: string; categoryWins: number }>;
+  perCategory: Array<{ slug: string; label: string; unit: string; scores: Array<{ userId: string; score: number | null }>; leaderId: string | null }>;
+}
+export type Standings = TeamsStanding | FFAStanding;
+
+/** Current standings for a battle over the elapsed window [start, min(today,end)]. */
+export async function computeStandings(battleId: string): Promise<Standings | null> {
+  const tb = await prisma.teamBattle.findUnique({
+    where:   { id: battleId },
+    include: { participants: { select: { userId: true, team: true } } },
+  });
+  if (!tb) return null;
+  const slugs = Array.isArray(tb.categories) ? (tb.categories as string[]) : [];
+
+  const today = todayUTC();
+  const upper = tb.endDate < today ? tb.endDate : today;     // count only days that have happened
+  const started = tb.startDate <= upper;
+
+  const rowsByUser = new Map<string, DayRow[]>();
+  if (started) {
+    await Promise.all(tb.participants.map(async p => {
+      rowsByUser.set(p.userId, await loadWindow(p.userId, tb.startDate, upper));
+    }));
+  }
+  const rowsOf = (uid: string) => rowsByUser.get(uid) ?? [];
+
+  if (tb.mode === 'ffa') {
+    const wins: Record<string, number> = {};
+    for (const p of tb.participants) wins[p.userId] = 0;
+    const perCategory: FFAStanding['perCategory'] = [];
+    for (const slug of slugs) {
+      const cat = getCategory(slug); if (!cat) continue;
+      const r = scoreCategoryFFA(cat, tb.participants.map(p => ({ userId: p.userId, rows: rowsOf(p.userId) })));
+      if (started && r.winnerId) wins[r.winnerId]++;
+      perCategory.push({ slug: cat.slug, label: cat.label, unit: cat.unit, scores: r.scores, leaderId: started ? r.winnerId : null });
+    }
+    const leaderboard = Object.entries(wins).map(([userId, categoryWins]) => ({ userId, categoryWins })).sort((a, b) => b.categoryWins - a.categoryWins);
+    return { mode: 'ffa', started, windowEnd: upper, leaderboard, perCategory };
+  }
+
+  const team0 = tb.participants.filter(p => p.team === 0).map(p => rowsOf(p.userId));
+  const team1 = tb.participants.filter(p => p.team === 1).map(p => rowsOf(p.userId));
+  let team0Wins = 0, team1Wins = 0;
+  const perCategory: TeamsStanding['perCategory'] = [];
+  for (const slug of slugs) {
+    const cat = getCategory(slug); if (!cat) continue;
+    const s0 = teamScore(cat, team0);
+    const s1 = teamScore(cat, team1);
+    let leader: 0 | 1 | null = null;
+    if (s0 === null && s1 === null) leader = null;
+    else if (s0 === null) leader = 1;
+    else if (s1 === null) leader = 0;
+    else { const c = compare(s0, s1, cat.direction); leader = c === 1 ? 0 : c === -1 ? 1 : null; }
+    if (started) { if (leader === 0) team0Wins++; else if (leader === 1) team1Wins++; }
+    perCategory.push({ slug: cat.slug, label: cat.label, unit: cat.unit, team0Score: s0, team1Score: s1, leader: started ? leader : null });
+  }
+  return { mode: 'teams', started, windowEnd: upper, team0Wins, team1Wins, perCategory };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HELPERS used by the API routes
 // ─────────────────────────────────────────────────────────────────────────────
 

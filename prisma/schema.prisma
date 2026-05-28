@@ -36,6 +36,9 @@ model AppUser {
   groupMemberships GroupMember[] @relation("GroupMembership")
   teamBattlesCreated TeamBattle[]            @relation("TeamBattleCreator")
   teamBattleParts    TeamBattleParticipant[] @relation("TeamBattleParticipant")
+  groupPosts       GroupPost[]   @relation("PostAuthor")
+  postLikes        PostLike[]    @relation("PostLiker")
+  postComments     PostComment[] @relation("PostCommenter")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -50,6 +53,7 @@ model Group {
   owner   AppUser       @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members GroupMember[]
   teamBattles TeamBattle[]
+  posts   GroupPost[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -289,4 +293,53 @@ model Challenge {
   @@index([challengeeId])
   // Lets the resolve-battles cron sweep efficiently for completed windows.
   @@index([status, endDate])
+}
+
+// ── Group activity feed (Strava-style) ──────────────────────────────────────
+// A member manually shares a logged workout/cardio to a group. The payload is a
+// snapshot so the post stays intact even if the source day is later edited.
+model GroupPost {
+  id      String  @id @default(cuid())
+  groupId String
+  userId  String
+  date    String  // YYYY-MM-DD of the shared workout
+  payload Json     // { exercises, runDist, runTime, bikeDist, bikeTime, swimDist, swimTime, burn }
+  note    String?  // optional caption
+
+  group    Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     AppUser       @relation("PostAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  likes    PostLike[]
+  comments PostComment[]
+
+  createdAt DateTime @default(now())
+
+  @@index([groupId, createdAt])
+  @@index([userId])
+}
+
+model PostLike {
+  id     String @id @default(cuid())
+  postId String
+  userId String
+  post   GroupPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user   AppUser   @relation("PostLiker", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([postId])
+}
+
+model PostComment {
+  id     String @id @default(cuid())
+  postId String
+  userId String
+  text   String
+  post   GroupPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user   AppUser   @relation("PostCommenter", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
+  @@index([userId])
 }

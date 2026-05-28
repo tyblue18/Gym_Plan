@@ -15,11 +15,14 @@
 // route handling). The activate handler purges every cache whose name
 // doesn't match, so a deploy with a fresh version guarantees no stale
 // entries linger. JS/CSS hashes already invalidate via network-first below.
-const CACHE = 'que-v6';
+const CACHE = 'que-v7';
 
+// Only list assets that definitely exist. NOTE: '/index.html' was removed —
+// it existed under the old static export (output:'export') but 404s on the
+// App Router, which made cache.addAll() reject and the SW fail to install,
+// leaving a previous SW stuck serving a stale build.
 const PRECACHE = [
   '/',
-  '/index.html',
   '/Que_logo.png',
   '/badge.png',
   '/notification-icon.png',
@@ -35,7 +38,11 @@ const PRECACHE = [
  * swap workers and could produce a mid-session JS/CSS mismatch.            */
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(PRECACHE))
+    // Resilient precache: a single missing asset must NEVER abort the install.
+    // A failed install leaves the previous SW in control serving stale content
+    // (exactly the trap the old static-export '/index.html' caused). allSettled
+    // lets every reachable asset cache while ignoring any that 404.
+    caches.open(CACHE).then(cache => Promise.allSettled(PRECACHE.map(u => cache.add(u))))
   );
 });
 
@@ -118,7 +125,8 @@ self.addEventListener('fetch', event => {
           }
           return response;
         })
-        .catch(() => caches.match('/') || caches.match(request))
+        // Offline fallback: the cached page if we have it, else the landing shell.
+        .catch(() => caches.match(request).then(r => r || caches.match('/')))
     );
     return;
   }

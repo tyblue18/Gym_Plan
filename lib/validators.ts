@@ -112,6 +112,19 @@ export const teamBattleActionSchema = z.object({
   action: z.enum(['accept', 'decline', 'cancel']),
 });
 
+// ── /api/posts (group feed) ─────────────────────────────────────────────────
+
+export const postCreateSchema = z.object({
+  groupIds: z.array(id).min(1).max(20),
+  date:     dateString,
+  payload:  jsonObject,          // workout snapshot, stored as-is
+  note:     z.string().max(280).optional(),
+});
+
+export const commentCreateSchema = z.object({
+  text: z.string().min(1).max(280),
+});
+
 // ── /api/groups ───────────────────────────────────────────────────────────────
 
 export const groupCreateSchema = z.object({

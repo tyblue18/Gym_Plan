@@ -81,6 +81,70 @@ function PlayersRows({ b }: { b: BattleData }) {
   return (<><TeamRow b={b} team={0} /><TeamRow b={b} team={1} /></>);
 }
 
+// ── Live standings (active battles) ─────────────────────────────────────────
+
+type StandingsData =
+  | { mode: 'teams'; started: boolean; team0Wins: number; team1Wins: number;
+      perCategory: Array<{ slug: string; label: string; unit: string; team0Score: number | null; team1Score: number | null; leader: 0 | 1 | null }> }
+  | { mode: 'ffa'; started: boolean; leaderboard: Array<{ userId: string; categoryWins: number }>;
+      perCategory: Array<{ slug: string; label: string; unit: string; scores: Array<{ userId: string; score: number | null }>; leaderId: string | null }> };
+
+function StandingsView({ battleId, battle }: { battleId: string; battle: BattleData }) {
+  const [data, setData] = useState<StandingsData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/team-battles/${battleId}/standings`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: StandingsData | null) => { if (!cancelled) { setData(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [battleId]);
+
+  const nameOf   = (uid: string) => { const p = battle.participants.find(x => x.id === uid); return p ? NAME(p) : '—'; };
+  const fmtScore = (s: number | null, unit: string) => (s === null ? '—' : `${Math.round(s * 10) / 10} ${unit}`);
+
+  if (loading)        return <p className="font-mono text-[9px] text-[var(--ink-3)] mt-2">Loading standings…</p>;
+  if (!data)          return <p className="font-mono text-[9px] text-[var(--ink-3)] mt-2">No standings yet.</p>;
+  if (!data.started)  return <p className="font-mono text-[9px] text-[var(--ink-3)] mt-2">Hasn&apos;t started yet — standings update once the window begins.</p>;
+
+  return (
+    <div className="mt-2 pt-2 border-t border-[rgba(255,181,71,0.2)] space-y-2">
+      {data.mode === 'teams' ? (
+        <>
+          <p className="font-mono text-[10px] font-bold text-[var(--ink-0)]">
+            Team A <span style={{ color: '#FFB547' }}>{data.team0Wins}</span> – <span style={{ color: '#4FC3F7' }}>{data.team1Wins}</span> Team B
+          </p>
+          <div className="space-y-1">
+            {data.perCategory.map(c => (
+              <div key={c.slug} className="flex items-center justify-between font-mono text-[9px]">
+                <span className="text-[var(--ink-3)] truncate mr-2">{c.label}</span>
+                <span className="flex-shrink-0">
+                  <span style={{ color: c.leader === 0 ? '#FFB547' : 'var(--ink-2)', fontWeight: c.leader === 0 ? 700 : 400 }}>{fmtScore(c.team0Score, c.unit)}</span>
+                  <span className="text-[var(--ink-3)]"> · </span>
+                  <span style={{ color: c.leader === 1 ? '#4FC3F7' : 'var(--ink-2)', fontWeight: c.leader === 1 ? 700 : 400 }}>{fmtScore(c.team1Score, c.unit)}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-1">
+          {data.leaderboard.map((row, i) => (
+            <div key={row.userId} className="flex items-center justify-between font-mono text-[9px]">
+              <span className={i === 0 ? 'text-[var(--ink-0)] font-bold' : 'text-[var(--ink-1)]'}>
+                {i + 1}. {nameOf(row.userId)}
+              </span>
+              <span style={{ color: i === 0 ? '#FFB547' : 'var(--ink-3)' }}>{row.categoryWins} {row.categoryWins === 1 ? 'win' : 'wins'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Team Battles section of the Social tab. Create 2v2…NvN battles from a group,
  * accept/decline invites, and see active + resolved battles. Uses the same typed
@@ -92,6 +156,7 @@ export function TeamBattles({ meId }: { meId: string }) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createGroupId, setCreateGroupId] = useState<string | null>(null);
+  const [openStandings, setOpenStandings] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -200,7 +265,14 @@ export function TeamBattles({ meId }: { meId: string }) {
               <div key={b.id} className="rounded-md border border-[var(--accent)]/30 bg-[var(--accent-12)] px-3 py-2.5">
                 <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] mb-1">{b.groupName} · live</p>
                 <div className="space-y-1 mb-1"><PlayersRows b={b} /></div>
-                <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf} · ends {b.endDate}</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf} · ends {fmtMDY(b.endDate)}</span>
+                  <button type="button" onClick={() => setOpenStandings(openStandings === b.id ? null : b.id)}
+                    className="font-mono text-[9px] font-bold tracking-[0.5px] uppercase" style={{ color: '#FFB547' }}>
+                    {openStandings === b.id ? 'Hide' : 'Standings'}
+                  </button>
+                </div>
+                {openStandings === b.id && <StandingsView battleId={b.id} battle={b} />}
               </div>
             ))}
 
@@ -265,12 +337,12 @@ function addDaysISO(iso: string, days: number): string {
   dt.setUTCDate(dt.getUTCDate() + days);
   return dt.toISOString().slice(0, 10);
 }
+function fmtMDY(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${m}/${d}/${y}`;
+}
 function fmtRange(start: string, end: string): string {
-  const fmt = (s: string) => {
-    const [y, m, d] = s.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  };
-  return start === end ? fmt(start) : `${fmt(start)} – ${fmt(end)}`;
+  return start === end ? fmtMDY(start) : `${fmtMDY(start)} – ${fmtMDY(end)}`;
 }
 
 function CreateTeamBattle({ meId, groups, initialGroupId, busy, onClose, onCreated, setBusy }: {

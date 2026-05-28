@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Plus, X, Trash2, UserPlus, LogOut, Check, Swords } from 'lucide-react';
+import { Users, Plus, X, Trash2, UserPlus, LogOut, Check, Swords, ChevronRight } from 'lucide-react';
+import { GroupFeed } from '@/components/social/GroupFeed';
 
 /** Opens the Team Battles create flow pre-selected to a group (TeamBattles listens). */
 function startBattle(groupId: string) {
@@ -45,6 +46,7 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState('');
   const [actionError, setActionError] = useState('');
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -102,9 +104,7 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
             <Plus size={12} /> New group
           </button>
         </div>
-        <p className="font-mono text-[10px] text-[var(--ink-2)] leading-relaxed mb-3">
-          Build a roster of friends for team battles. Add anyone you&apos;re friends with — they don&apos;t need to know each other.
-        </p>
+        <div className="mb-3" />
 
         {loading ? (
           <p className="font-mono text-[10px] text-[var(--ink-3)] py-2">Loading…</p>
@@ -118,7 +118,7 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
           <div className="space-y-2">
             {groups.map(g => (
               <div key={g.id} className="rounded-lg border border-[var(--line)] bg-[var(--bg-2)] p-3">
-                <div className="flex items-center gap-3 mb-2.5">
+                <button type="button" onClick={() => setOpenGroupId(g.id)} className="w-full flex items-center gap-3 mb-2.5 text-left">
                   <div className="flex -space-x-2 flex-shrink-0">
                     {g.members.slice(0, 5).map(m => <Avatar key={m.id} m={m} size={28} />)}
                     {g.members.length > 5 && (
@@ -130,10 +130,11 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
                   <div className="flex-1 min-w-0">
                     <p className="font-mono text-[12px] font-bold text-[var(--ink-0)] truncate">{g.name}</p>
                     <p className="font-mono text-[9px] text-[var(--ink-3)]">
-                      {g.members.length} member{g.members.length === 1 ? '' : 's'}{g.isOwner ? ' · owner' : ''}
+                      {g.members.length} member{g.members.length === 1 ? '' : 's'}{g.isOwner ? ' · owner' : ''} · open feed
                     </p>
                   </div>
-                </div>
+                  <ChevronRight size={16} className="text-[var(--ink-3)] flex-shrink-0" />
+                </button>
 
                 {/* Actions */}
                 <div className="flex gap-2">
@@ -228,15 +229,25 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
         )}
       </div>
 
+      {/* Group feed (full-screen) */}
+      {openGroupId && (() => {
+        const g = groups.find(x => x.id === openGroupId);
+        return g ? <GroupFeed group={g} meId={meId} onClose={() => setOpenGroupId(null)} /> : null;
+      })()}
+
       {/* Create-group bottom sheet */}
       {creating && (
         <div className="fixed inset-0 z-[450] flex items-end sm:items-center justify-center bg-black/60 px-4" onClick={() => setCreating(false)}>
           <div className="w-full max-w-[400px] rounded-t-2xl sm:rounded-2xl bg-[var(--bg-1)] border border-[var(--line-2)] p-5 mb-0 sm:mb-0"
             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 20px)' }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="font-display text-[18px] tracking-[1.5px] uppercase text-[var(--ink-0)]">New Group</h3>
               <button type="button" onClick={() => setCreating(false)} className="text-[var(--ink-3)] hover:text-[var(--ink-0)]"><X size={18} /></button>
             </div>
+
+            <p className="font-mono text-[10px] text-[var(--ink-2)] leading-relaxed mb-4">
+              Build a group of friends or gym-mates to share progress, challenge each other, and grow together as a community.
+            </p>
 
             <label className="que-label">Group name</label>
             <input type="text" className="que-input mb-4" placeholder="e.g. Gym Bros" value={name} maxLength={40}
