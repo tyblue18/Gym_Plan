@@ -1327,6 +1327,16 @@ export default function SocialTab() {
         </div>
       )}
 
+      {/* ── GROUPS (community hub — feeds + team battles entry) ──────────────── */}
+      {hasUsername && ownProfile?.id && (
+        <Groups meId={ownProfile.id} friends={friends} />
+      )}
+
+      {/* ── TEAM BATTLES ─────────────────────────────────────────────────── */}
+      {hasUsername && ownProfile?.id && (
+        <TeamBattles meId={ownProfile.id} />
+      )}
+
       {/* ── BATTLES ──────────────────────────────────────────────────────── */}
       <div className="que-card mb-4">
         <div className="px-5 pt-5 pb-3">
@@ -1513,21 +1523,6 @@ export default function SocialTab() {
         </div>
       </div>
 
-      {/* ── INVITE FRIENDS ───────────────────────────────────────────────── */}
-      {hasUsername && ownProfile?.username && (
-        <InviteFriends username={ownProfile.username} referralCount={ownProfile.referralCount ?? 0} />
-      )}
-
-      {/* ── GROUPS ───────────────────────────────────────────────────────── */}
-      {hasUsername && ownProfile?.id && (
-        <Groups meId={ownProfile.id} friends={friends} />
-      )}
-
-      {/* ── TEAM BATTLES ─────────────────────────────────────────────────── */}
-      {hasUsername && ownProfile?.id && (
-        <TeamBattles meId={ownProfile.id} />
-      )}
-
       {/* ── FRIENDS ──────────────────────────────────────────────────────── */}
       <div className="que-card">
         <div className="px-5 pt-5 pb-2">
@@ -1687,6 +1682,11 @@ export default function SocialTab() {
           </div>
         )}
       </div>
+
+      {/* ── INVITE FRIENDS (growth CTA — footer) ──────────────────────────── */}
+      {hasUsername && ownProfile?.username && (
+        <InviteFriends username={ownProfile.username} referralCount={ownProfile.referralCount ?? 0} />
+      )}
 
           </motion.div>
         )}
