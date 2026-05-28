@@ -8,6 +8,14 @@ const nextConfig = {
     NEXT_PUBLIC_BUILD_TIME: String(Date.now()),
   },
 
+  // Skip ESLint during `next build` — it's a meaningful chunk of build time on
+  // the Hobby plan's limited CPU and is redundant with editor/CI linting.
+  // Type-checking stays ON (Next still type-checks the build) so we never ship
+  // type errors. Run `npm run lint` locally/in CI to keep lint coverage.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // REMOVED: output: 'export'
   //    NextAuth API routes require a Node.js server runtime.
   //    Static export (output: 'export') compiles to plain HTML/JS and
