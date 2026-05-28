@@ -1282,9 +1282,6 @@ export default function SocialTab() {
             <span className="w-5 h-5 rounded-full text-[9px] font-bold font-mono flex items-center justify-center"
               style={{ background: 'var(--danger)', color: '#fff' }}>{totalNotifs}</span>
           )}
-          <span className="font-mono text-[10px] font-bold flex items-center gap-1" style={{ color: '#FFB547' }}>
-            🪙 {balance}
-          </span>
           {hasUsername && <span className="font-mono text-[10px] text-[var(--ink-3)]">@{ownProfile?.username}</span>}
         </div>
       </div>

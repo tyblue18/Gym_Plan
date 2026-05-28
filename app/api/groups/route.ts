@@ -47,6 +47,7 @@ export async function GET(): Promise<NextResponse> {
             orderBy: { createdAt: 'desc' },
             select: { note: true, payload: true, createdAt: true, user: { select: { name: true, username: true } } },
           },
+          _count: { select: { posts: true } },
         },
       },
     },
@@ -68,6 +69,7 @@ export async function GET(): Promise<NextResponse> {
       isOwner: m.group.ownerId === meId,
       members: m.group.members.map(gm => memberFields(gm.user)),
       lastPost,
+      postCount: m.group._count.posts,
     };
   });
 

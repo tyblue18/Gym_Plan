@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Heart, MessageCircle, Trash2, X, Bookmark, Plus, Send, Dumbbell } from 'lucide-react';
+import { Heart, MessageCircle, Trash2, X, Bookmark, Plus, Send, Dumbbell, Swords } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import type { DayRecord, ExerciseEntry } from '@/lib/AppContext';
 import { getWorkoutPresets, saveWorkoutPresets } from '@/lib/storage';
@@ -34,7 +34,7 @@ function Avatar({ p, size = 30 }: { p: { name: string | null; username: string |
   );
 }
 
-interface WorkoutItem { kind: 'lift' | 'run' | 'bike' | 'swim'; name: string; detail: string }
+interface WorkoutItem { kind: 'lift' | 'run' | 'bike' | 'swim'; name: string; detail: string; group: string }
 interface DaySummary { title: string; items: WorkoutItem[]; lines: string[]; exercises: string; liftCount: number; setCount: number; hasContent: boolean }
 
 /** Build a structured, shareable summary + raw exercises from a day's record. */
@@ -56,20 +56,36 @@ function summarizeDay(rec: DayRecord | undefined): DaySummary {
     setCount += sets.length;
     const detail = sets.length ? sets.map(s => (s.w ? `${s.r}×${s.w}` : `${s.r}`)).filter(Boolean).join(', ') : '';
     const name = ex.n ?? 'Exercise';
-    items.push({ kind: 'lift', name, detail });
+    items.push({ kind: 'lift', name, detail, group: ex.g || 'Other' });
     lines.push(`${name}${detail ? ` — ${detail}` : ''}`);
   }
   const run = num(rec.runDist), runT = num(rec.runTime);
-  if (run > 0) { items.push({ kind: 'run', name: 'Run', detail: `${run} mi${runT ? ` · ${runT} min` : ''}` }); lines.push(`Ran ${run} mi`); }
+  if (run > 0) { items.push({ kind: 'run', name: 'Run', detail: `${run} mi${runT ? ` · ${runT} min` : ''}`, group: 'Cardio' }); lines.push(`Ran ${run} mi`); }
   const bike = num(rec.bikeDist), bikeT = num(rec.bikeTime);
-  if (bike > 0) { items.push({ kind: 'bike', name: 'Bike', detail: `${bike} mi${bikeT ? ` · ${bikeT} min` : ''}` }); lines.push(`Biked ${bike} mi`); }
+  if (bike > 0) { items.push({ kind: 'bike', name: 'Bike', detail: `${bike} mi${bikeT ? ` · ${bikeT} min` : ''}`, group: 'Cardio' }); lines.push(`Biked ${bike} mi`); }
   const swim = num(rec.swimDist), swimT = num(rec.swimTime);
-  if (swim > 0 || swimT > 0) { items.push({ kind: 'swim', name: 'Swim', detail: `${swim ? `${swim} mi` : ''}${swimT ? `${swim ? ' · ' : ''}${swimT} min` : ''}` }); lines.push('Swam'); }
+  if (swim > 0 || swimT > 0) { items.push({ kind: 'swim', name: 'Swim', detail: `${swim ? `${swim} mi` : ''}${swimT ? `${swim ? ' · ' : ''}${swimT} min` : ''}`, group: 'Cardio' }); lines.push('Swam'); }
   const title = groups.size ? Array.from(groups).slice(0, 3).join(' · ') : (items.length ? 'Workout' : '');
   return { title, items, lines, exercises: rec.exercises ?? '[]', liftCount: lifts.length, setCount, hasContent: items.length > 0 };
 }
 
 const KIND_ICON: Record<string, string> = { lift: '🏋️', run: '🏃', bike: '🚴', swim: '🏊' };
+
+/** Pretty muscle-group label (stored lowercase: "chest" → "Chest"). */
+function groupLabel(g: string): string {
+  return g.charAt(0).toUpperCase() + g.slice(1);
+}
+
+/** Bucket workout items by muscle group, preserving first-seen order. */
+function groupItems(items: WorkoutItem[]): Array<[string, WorkoutItem[]]> {
+  const order: string[] = [];
+  const buckets = new Map<string, WorkoutItem[]>();
+  for (const it of items) {
+    if (!buckets.has(it.group)) { buckets.set(it.group, []); order.push(it.group); }
+    buckets.get(it.group)!.push(it);
+  }
+  return order.map(g => [g, buckets.get(g)!] as [string, WorkoutItem[]]);
+}
 
 export function GroupFeed({ group, onClose }: { group: GroupLite; meId: string; onClose: () => void }) {
   const { localDB } = useApp();
@@ -99,6 +115,13 @@ export function GroupFeed({ group, onClose }: { group: GroupLite; meId: string; 
     try { await fetch(`/api/posts/${p.id}`, { method: 'DELETE', credentials: 'include' }); } catch { /* noop */ }
   };
 
+  // Open the team-battle creator for this group (TeamBattles listens), then close
+  // the feed so the create modal — which sits below this overlay — is visible.
+  const startBattle = () => {
+    window.dispatchEvent(new CustomEvent('que-start-team-battle', { detail: { groupId: group.id } }));
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-[470] flex flex-col bg-[var(--bg-0)]">
       {/* Header */}
@@ -111,11 +134,18 @@ export function GroupFeed({ group, onClose }: { group: GroupLite; meId: string; 
         <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)]"><X size={20} /></button>
       </div>
 
-      {/* Share bar */}
-      <div className="px-4 py-3 border-b border-[var(--line)] flex-shrink-0">
-        <button type="button" onClick={() => setSharing(true)} className="que-btn-primary w-full py-2.5 text-[11px] flex items-center justify-center gap-1.5">
-          <Plus size={14} /> Share a workout
+      {/* Top actions */}
+      <div className="px-4 py-3 border-b border-[var(--line)] flex-shrink-0 flex gap-2">
+        <button type="button" onClick={() => setSharing(true)} className="que-btn-primary flex-1 py-2.5 text-[11px] flex items-center justify-center gap-1.5">
+          <Plus size={14} /> Share workout
         </button>
+        {group.members.length >= 2 && (
+          <button type="button" onClick={startBattle}
+            className="flex-1 py-2.5 text-[11px] font-mono font-bold tracking-[0.5px] uppercase rounded-md border flex items-center justify-center gap-1.5 transition-all"
+            style={{ borderColor: '#FFB547', color: '#FFB547' }}>
+            <Swords size={14} /> Start battle
+          </button>
+        )}
       </div>
 
       {/* Feed */}
@@ -193,6 +223,7 @@ function PostCard({ post, onLike, onDelete }: { post: Post; onLike: () => void; 
   };
 
   const items = post.payload.items ?? [];
+  const grouped = groupItems(items);
   const lines = post.payload.lines ?? [];
   const liftCount = post.payload.liftCount ?? items.filter(i => i.kind === 'lift').length;
   const setCount  = post.payload.setCount ?? 0;
@@ -227,16 +258,35 @@ function PostCard({ post, onLike, onDelete }: { post: Post; onLike: () => void; 
           <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] flex-1 truncate">{post.payload.title || 'Workout'}</p>
           {statText && <span className="font-mono text-[8px] text-[var(--ink-3)] flex-shrink-0">{statText}</span>}
         </div>
-        <div className="divide-y divide-[var(--line)]">
-          {items.length > 0 ? items.map((it, i) => (
-            <div key={i} className="flex items-center justify-between gap-3 px-3 py-1.5">
-              <span className="font-mono text-[10px] text-[var(--ink-1)] truncate">{KIND_ICON[it.kind]} {it.name}</span>
-              {it.detail && <span className="font-mono text-[9px] text-[var(--ink-3)] tabular-nums flex-shrink-0">{it.detail}</span>}
-            </div>
-          )) : lines.map((l, i) => (
-            <p key={i} className="px-3 py-1.5 font-mono text-[10px] text-[var(--ink-1)]">{l}</p>
-          ))}
-        </div>
+        {items.length > 0 ? (
+          <div className="py-1">
+            {grouped.map(([grp, grpItems], gi) => (
+              <div key={gi} className="px-3 py-1">
+                {/* Muscle-group header with trailing divider */}
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-[1.5px] flex-shrink-0" style={{ color: 'var(--accent)' }}>
+                    {grp === 'Cardio' ? '🏃' : '💪'} {groupLabel(grp)}
+                  </span>
+                  <span className="flex-1 h-px" style={{ background: 'var(--line)' }} />
+                  <span className="font-mono text-[8px] text-[var(--ink-3)] tabular-nums flex-shrink-0">{grpItems.length}</span>
+                </div>
+                {/* Exercise rows */}
+                {grpItems.map((it, i) => (
+                  <div key={i} className="flex items-baseline justify-between gap-3 pl-3 py-0.5">
+                    <span className="font-mono text-[10px] text-[var(--ink-1)] truncate">{grp === 'Cardio' ? `${KIND_ICON[it.kind]} ` : ''}{it.name}</span>
+                    {it.detail && <span className="font-mono text-[9px] text-[var(--ink-3)] tabular-nums flex-shrink-0">{it.detail}</span>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="divide-y divide-[var(--line)]">
+            {lines.map((l, i) => (
+              <p key={i} className="px-3 py-1.5 font-mono text-[10px] text-[var(--ink-1)]">{l}</p>
+            ))}
+          </div>
+        )}
       </div>
       {post.note && <p className="font-mono text-[10px] text-[var(--ink-2)] italic mb-2">“{post.note}”</p>}
 

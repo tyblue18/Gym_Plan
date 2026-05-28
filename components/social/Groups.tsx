@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Plus, X, Trash2, UserPlus, LogOut, Check, Swords, ChevronRight } from 'lucide-react';
+import { Users, Plus, X, Trash2, UserPlus, LogOut, Check, Swords, ChevronRight, MessageCircle } from 'lucide-react';
 import { GroupFeed } from '@/components/social/GroupFeed';
 
 /** Opens the Team Battles create flow pre-selected to a group (TeamBattles listens). */
@@ -14,6 +14,7 @@ interface GroupMemberLite { id: string; name: string | null; username: string | 
 interface GroupData {
   id: string; name: string; ownerId: string; isOwner: boolean; members: GroupMemberLite[];
   lastPost?: { author: string; text: string; at: string } | null;
+  postCount?: number;
 }
 
 function Avatar({ m, size = 26 }: { m: { name: string | null; username: string | null; photo: string | null }; size?: number }) {
@@ -141,7 +142,14 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
                       </p>
                     )}
                   </div>
-                  <ChevronRight size={16} className="text-[var(--ink-3)] flex-shrink-0" />
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {(g.postCount ?? 0) > 0 && (
+                      <span className="flex items-center gap-1 font-mono text-[9px] font-bold text-[var(--ink-2)] bg-[var(--bg-3)] border border-[var(--line-2)] rounded-full px-2 py-0.5">
+                        <MessageCircle size={10} /> {g.postCount}
+                      </span>
+                    )}
+                    <ChevronRight size={16} className="text-[var(--ink-3)]" />
+                  </div>
                 </button>
 
                 {/* Actions */}

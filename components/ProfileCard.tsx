@@ -841,14 +841,14 @@ export default function ProfileCard({
           onEdit={isOwn ? () => setModal('showcase') : undefined}
         />
 
-        {/* Edit showcase button */}
+        {/* Edit showcase — compact text link */}
         {isOwn && (
           <button
             type="button"
             onClick={() => setModal('showcase')}
-            className="w-full mt-3 flex items-center justify-center gap-1.5 py-2 font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--ink-3)] hover:text-[var(--accent)] border border-[var(--line)] hover:border-[var(--accent)]/40 rounded transition-all"
+            className="mt-2 mx-auto flex items-center gap-1 py-1 font-mono text-[8px] font-bold tracking-[1px] uppercase text-[var(--ink-3)] hover:text-[var(--accent)] transition-colors"
           >
-            <Pencil size={10} /> Edit Badge Showcase
+            <Pencil size={9} /> Edit showcase
           </button>
         )}
       </div>
