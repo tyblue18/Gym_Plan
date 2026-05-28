@@ -371,7 +371,11 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
                         }}
                       >
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <AutoCropImage src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+                          {badge.icon.startsWith('/') ? (
+                            <AutoCropImage src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+                          ) : (
+                            <span className="text-[22px] leading-none">{badge.icon}</span>
+                          )}
                         </div>
                         <div
                           className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"

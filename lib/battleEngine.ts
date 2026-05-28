@@ -267,6 +267,127 @@ export async function resolveBattle(challengeId: string): Promise<BattleResoluti
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TEAM BATTLES (group 2v2 … NvN)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TeamCategoryResult {
+  slug:       string;
+  label:      string;
+  group:      BattleCategory['group'];
+  direction:  BattleCategory['direction'];
+  unit:       string;
+  team0Score: number | null;
+  team1Score: number | null;
+  outcome:    'team0' | 'team1' | 'tie' | 'nodata';
+}
+
+export interface TeamBattleResolution {
+  perCategory: TeamCategoryResult[];
+  summary: { team0Wins: number; team1Wins: number; ties: number; decided: number };
+  /** 0 | 1 winning team, or null on overall tie. */
+  winningTeam: 0 | 1 | null;
+}
+
+/**
+ * A team's score for a category = sum of its members' scores. Null only if
+ * EVERY member had no data (a single non-logger just contributes 0, which —
+ * because team battles are restricted to 'higher-is-better' categories — hurts
+ * their own team). Mirrors the 1v1 "no data loses to anyone with data" rule.
+ */
+function teamScore(cat: BattleCategory, memberRows: DayRow[][]): number | null {
+  const scores  = memberRows.map(rows => cat.score(rows));
+  const anyData = scores.some(s => s !== null);
+  if (!anyData) return null;
+  return scores.reduce<number>((sum, s) => sum + (s ?? 0), 0);
+}
+
+/**
+ * Resolve a team battle: per-category team sums, majority decides the winning
+ * team, then the pot (wager × all participants) is split evenly among the
+ * winning team (each winner nets +1 wager, like a duel). Overall tie refunds
+ * everyone their ante. Safe to call on a non-active battle — returns null.
+ */
+export async function resolveTeamBattle(battleId: string): Promise<TeamBattleResolution | null> {
+  const tb = await prisma.teamBattle.findUnique({
+    where:   { id: battleId },
+    include: { participants: { select: { userId: true, team: true } } },
+  });
+  if (!tb || tb.status !== 'active') return null;
+  if (!tb.startDate || !tb.endDate)  return null;
+  const slugs = Array.isArray(tb.categories) ? (tb.categories as string[]) : [];
+  if (slugs.length === 0) return null;
+
+  const team0 = tb.participants.filter(p => p.team === 0);
+  const team1 = tb.participants.filter(p => p.team === 1);
+  if (team0.length === 0 || team1.length === 0) return null;
+
+  // Load every participant's window rows in parallel.
+  const loadTeam = (members: { userId: string }[]) =>
+    Promise.all(members.map(m => loadWindow(m.userId, tb.startDate, tb.endDate)));
+  const [t0Rows, t1Rows] = await Promise.all([loadTeam(team0), loadTeam(team1)]);
+
+  const perCategory: TeamCategoryResult[] = [];
+  for (const slug of slugs) {
+    const cat = getCategory(slug);
+    if (!cat) continue;
+    const s0 = teamScore(cat, t0Rows);
+    const s1 = teamScore(cat, t1Rows);
+    let outcome: TeamCategoryResult['outcome'];
+    if (s0 === null && s1 === null) outcome = 'nodata';
+    else if (s0 === null)           outcome = 'team1';
+    else if (s1 === null)           outcome = 'team0';
+    else {
+      const cmp = compare(s0, s1, cat.direction);
+      outcome = cmp === 1 ? 'team0' : cmp === -1 ? 'team1' : 'tie';
+    }
+    perCategory.push({ slug: cat.slug, label: cat.label, group: cat.group, direction: cat.direction, unit: cat.unit, team0Score: s0, team1Score: s1, outcome });
+  }
+
+  let team0Wins = 0, team1Wins = 0, ties = 0;
+  for (const r of perCategory) {
+    if      (r.outcome === 'team0') team0Wins++;
+    else if (r.outcome === 'team1') team1Wins++;
+    else if (r.outcome === 'tie')   ties++;
+  }
+  const winningTeam: 0 | 1 | null = team0Wins > team1Wins ? 0 : team1Wins > team0Wins ? 1 : null;
+  const resolution: TeamBattleResolution = {
+    perCategory,
+    summary: { team0Wins, team1Wins, ties, decided: team0Wins + team1Wins },
+    winningTeam,
+  };
+
+  await prisma.$transaction(async tx => {
+    const claimed = await tx.teamBattle.updateMany({
+      where: { id: tb.id, status: 'active' },
+      data:  { status: 'resolved', winningTeam, resolution: resolution as unknown as object, resolvedAt: new Date() },
+    });
+    if (claimed.count === 0) throw new Error('ALREADY_RESOLVED');
+
+    if (tb.wager <= 0) return; // friendly battle — no coins move
+
+    const pot = tb.wager * tb.participants.length;
+    if (winningTeam !== null) {
+      const winners = tb.participants.filter(p => p.team === winningTeam);
+      const share   = Math.floor(pot / winners.length); // equal teams → wager × 2
+      for (const p of winners) {
+        const w = await tx.coinWallet.upsert({ where: { userId: p.userId }, create: { userId: p.userId, balance: 0 }, update: {} });
+        await tx.coinWallet.update({ where: { id: w.id }, data: { balance: { increment: share } } });
+        await tx.coinTransaction.create({ data: { walletId: w.id, amount: share, reason: 'battle_win', refId: tb.id } });
+      }
+    } else {
+      // Overall tie — refund each participant their ante.
+      for (const p of tb.participants) {
+        const w = await tx.coinWallet.upsert({ where: { userId: p.userId }, create: { userId: p.userId, balance: 0 }, update: {} });
+        await tx.coinWallet.update({ where: { id: w.id }, data: { balance: { increment: tb.wager } } });
+        await tx.coinTransaction.create({ data: { walletId: w.id, amount: tb.wager, reason: 'refund', refId: tb.id } });
+      }
+    }
+  });
+
+  return resolution;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HELPERS used by the API routes
 // ─────────────────────────────────────────────────────────────────────────────
 

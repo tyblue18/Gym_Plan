@@ -15,7 +15,7 @@ import { NextResponse }       from 'next/server';
 import { Redis }              from '@upstash/redis';
 import { prisma }             from '@/lib/prisma';
 import { sendPushToUser }     from '@/lib/push';
-import { resolveBattle, todayUTC } from '@/lib/battleEngine';
+import { resolveBattle, resolveTeamBattle, todayUTC } from '@/lib/battleEngine';
 import { awardBadgesForUser } from '@/lib/badgeEngine';
 import type { AwardedBadge }  from '@/lib/badgeEngine';
 import { mapWithConcurrency } from '@/lib/asyncBatch';
@@ -150,6 +150,65 @@ export async function GET(req: Request): Promise<NextResponse> {
     else if (s.value === 'resolved') resolved++;
   }
 
-  console.log(`[cron/resolve-battles] ${today} — resolved:${resolved} failed:${failed} scanned:${due.length}`);
-  return NextResponse.json({ ok: true, date: today, resolved, failed, scanned: due.length });
+  // ── Team battles ────────────────────────────────────────────────────────────
+  // Resolve those whose window has fully passed; the [status,endDate] index keeps
+  // this cheap. resolveTeamBattle is idempotent (status='active' guard).
+  const dueTeam = await prisma.teamBattle.findMany({
+    where:   { status: 'active', endDate: { lt: today } },
+    include: { participants: { select: { userId: true, team: true } } },
+    take:    200,
+  });
+  const teamSettled = await mapWithConcurrency(dueTeam, 5, async (tb) => {
+    const res = await resolveTeamBattle(tb.id);
+    if (!res) return 'skipped' as const;
+    const pot = tb.wager * tb.participants.length;
+    const share = res.winningTeam !== null
+      ? Math.floor(pot / tb.participants.filter(p => p.team === res.winningTeam).length)
+      : 0;
+    for (const p of tb.participants) {
+      if (res.winningTeam === null) {
+        sendPushToUser(p.userId, { title: 'Team battle tied 🤝', body: `Ended in a tie — ${tb.wager} 🪙 refunded.`, url: '/app' }).catch(() => {});
+      } else if (p.team === res.winningTeam) {
+        sendPushToUser(p.userId, { title: 'Your team won! 🏆', body: `Team battle won${tb.wager > 0 ? ` — ${share} 🪙 added to your wallet.` : '!'}`, url: '/app' }).catch(() => {});
+      } else {
+        sendPushToUser(p.userId, { title: 'Team battle lost', body: 'Your team came up short. Run it back!', url: '/app' }).catch(() => {});
+      }
+    }
+    return 'resolved' as const;
+  });
+  const teamResolved = teamSettled.filter(s => s.status === 'fulfilled' && s.value === 'resolved').length;
+
+  // Cancel pending team battles whose window passed without everyone accepting →
+  // refund anyone who already anted.
+  const expiredTeam = await prisma.teamBattle.findMany({
+    where:   { status: 'pending', endDate: { lt: today } },
+    include: { participants: { select: { userId: true, accepted: true } } },
+    take:    200,
+  });
+  let teamCancelled = 0;
+  for (const tb of expiredTeam) {
+    try {
+      await prisma.$transaction(async tx => {
+        const claimed = await tx.teamBattle.updateMany({ where: { id: tb.id, status: 'pending' }, data: { status: 'cancelled' } });
+        if (claimed.count === 0) return;
+        if (tb.wager > 0) {
+          for (const p of tb.participants) {
+            if (!p.accepted) continue;
+            const w = await tx.coinWallet.upsert({ where: { userId: p.userId }, create: { userId: p.userId, balance: 0 }, update: {} });
+            await tx.coinWallet.update({ where: { id: w.id }, data: { balance: { increment: tb.wager } } });
+            await tx.coinTransaction.create({ data: { walletId: w.id, amount: tb.wager, reason: 'refund', refId: tb.id } });
+          }
+        }
+      });
+      teamCancelled++;
+      for (const p of tb.participants) {
+        if (p.accepted) sendPushToUser(p.userId, { title: 'Team battle expired', body: 'Not everyone joined in time — coins refunded.', url: '/app' }).catch(() => {});
+      }
+    } catch (e) {
+      console.error(`[cron/resolve-battles] team expire failed for ${tb.id}:`, e);
+    }
+  }
+
+  console.log(`[cron/resolve-battles] ${today} — resolved:${resolved} failed:${failed} scanned:${due.length} | team resolved:${teamResolved} cancelled:${teamCancelled}`);
+  return NextResponse.json({ ok: true, date: today, resolved, failed, scanned: due.length, teamResolved, teamCancelled });
 }

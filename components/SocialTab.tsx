@@ -10,6 +10,7 @@ import dynamic                                       from 'next/dynamic';
 import ProfileCard, { type PublicProfile }           from '@/components/ProfileCard';
 import { InviteFriends }                              from '@/components/social/InviteFriends';
 import { Groups }                                     from '@/components/social/Groups';
+import { TeamBattles }                                from '@/components/social/TeamBattles';
 import {
   COIN_KEY, PROFILE_PHOTO_KEY, SOCIAL_ANIM_KEY, COINS_MIGRATED_KEY,
 } from '@/lib/constants';
@@ -1520,6 +1521,11 @@ export default function SocialTab() {
       {/* ── GROUPS ───────────────────────────────────────────────────────── */}
       {hasUsername && ownProfile?.id && (
         <Groups meId={ownProfile.id} friends={friends} />
+      )}
+
+      {/* ── TEAM BATTLES ─────────────────────────────────────────────────── */}
+      {hasUsername && ownProfile?.id && (
+        <TeamBattles meId={ownProfile.id} />
       )}
 
       {/* ── FRIENDS ──────────────────────────────────────────────────────── */}
