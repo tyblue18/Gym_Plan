@@ -63,3 +63,10 @@ export const inviteLimit = new Ratelimit({
   limiter: Ratelimit.slidingWindow(5, '1 m'),
   prefix:  'rl:invite',
 });
+
+// 20 group writes per user per minute (create / rename / add / remove / leave).
+export const groupLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, '1 m'),
+  prefix:  'rl:group',
+});

@@ -83,6 +83,21 @@ export const inviteRedeemSchema = z.object({
   code: z.string().min(1).max(40),
 });
 
+// ── /api/groups ───────────────────────────────────────────────────────────────
+
+export const groupCreateSchema = z.object({
+  name:      z.string().min(1).max(40),
+  memberIds: z.array(id).max(20).optional(),
+});
+
+export const groupRenameSchema = z.object({
+  name: z.string().min(1).max(40),
+});
+
+export const groupMemberSchema = z.object({
+  userId: id,
+});
+
 // ── /api/wallet POST (coin import) ────────────────────────────────────────────
 
 export const walletImportSchema = z.object({
