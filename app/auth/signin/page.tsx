@@ -77,9 +77,32 @@ function GoogleMark({ size = 16 }: { size?: number }) {
   );
 }
 
+/* NextAuth appends ?error=<code> to the signIn page when a round-trip fails.
+ * Most "had to sign in twice" reports are a first attempt bouncing back here
+ * with OAuthCallback/Callback (a state/PKCE cookie check that failed) — which
+ * looked identical to a fresh page until we surfaced it. */
+const ERROR_COPY: Record<string, string> = {
+  OAuthCallback:       'Sign-in didn’t complete — please try once more.',
+  Callback:            'Sign-in didn’t complete — please try once more.',
+  OAuthSignin:         'Could not start sign-in. Try again.',
+  OAuthAccountNotLinked: 'That email is already linked to a different sign-in method.',
+  AccessDenied:        'Access was denied.',
+  Configuration:       'Sign-in is misconfigured — we’re on it.',
+  Default:             'Something went wrong signing in. Try again.',
+};
+
 /* ── Page ───────────────────────────────────────────────────────────── */
 export default function SignInPage() {
   const [loading, setLoading] = useState<'github' | 'google' | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Read ?error= via window (avoids the App Router useSearchParams Suspense
+  // requirement). Keep the raw code visible in small text so an intermittent
+  // failure can be reported back precisely.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('error');
+    if (code) setAuthError(code);
+  }, []);
 
   async function handleSignIn(provider: 'github' | 'google') {
     setLoading(provider);
@@ -102,6 +125,22 @@ export default function SignInPage() {
         <p className="si-eyebrow">Training &amp; Calorie Log</p>
 
         <div className="si-divider" aria-hidden="true" />
+
+        {authError && (
+          <div
+            role="alert"
+            style={{
+              width: '100%', marginBottom: 14, padding: '10px 12px', borderRadius: 10,
+              border: '1px solid rgba(255,90,90,0.35)', background: 'rgba(255,90,90,0.08)',
+              fontSize: 12, lineHeight: 1.4, color: 'rgba(255,180,180,0.95)', textAlign: 'left',
+            }}
+          >
+            {ERROR_COPY[authError] ?? ERROR_COPY.Default}
+            <span style={{ display: 'block', marginTop: 4, fontSize: 10, opacity: 0.6, fontFamily: 'var(--font-mono, monospace)' }}>
+              code: {authError}
+            </span>
+          </div>
+        )}
 
         {/* Google first */}
         <button

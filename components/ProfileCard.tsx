@@ -93,124 +93,26 @@ function BattleRecordChip({ record }: { record?: { wins: number; losses: number;
 
 // ── Status modal ───────────────────────────────────────────────────────────────
 
-function StatusModal({ current, expiresAt, onSave, onClose }: {
-  current:   string | null;
-  expiresAt: string | null;
-  onSave:    () => void;
-  onClose:   () => void;
+/**
+ * Combined profile editor — Status + Badge Showcase in one scrollable sheet.
+ * One Save PATCHes status, duration and showcase together (the /api/user PATCH
+ * handler merges all three fields in a single update).
+ */
+function EditProfileModal({ status, expiresAt, badges, currentShowcase, onSaved, onClose }: {
+  status:          string | null;
+  expiresAt:       string | null;
+  badges:          BadgeInfo[];
+  currentShowcase: string[];
+  onSaved:         (slugs: string[]) => void;
+  onClose:         () => void;
 }) {
-  const [text,     setText]     = useState(current ?? '');
+  // Status
+  const [text,     setText]     = useState(status ?? '');
   const [duration, setDuration] = useState<'24h' | 'forever'>(expiresAt ? '24h' : 'forever');
-  const [saving,   setSaving]   = useState(false);
-
-  const save = async () => {
-    setSaving(true);
-    await fetch('/api/user', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: text.trim(), statusDuration: duration }),
-    });
-    setSaving(false);
-    onSave();
-    onClose();
-  };
-
-  const clear = async () => {
-    await fetch('/api/user', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ statusDuration: 'clear' }),
-    });
-    onSave();
-    onClose();
-  };
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-[500] flex items-end md:items-center justify-center backdrop-blur-sm px-0 md:px-3"
-      style={{ background: 'rgba(7,8,10,0.9)' }}
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <motion.div
-        className="w-full md:max-w-[420px] rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
-        initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
-        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-        style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
-      >
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[var(--line)]">
-          <h3 className="font-display text-[18px] tracking-[2px] uppercase text-[var(--ink-0)]">Set Status</h3>
-          <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors"><X size={20} /></button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          <div>
-            <label className="que-label">What's your status?</label>
-            <input
-              type="text"
-              className="que-input"
-              placeholder="e.g. On a cut · Bulk szn 💪 · Rest day"
-              value={text}
-              maxLength={60}
-              onChange={e => setText(e.target.value)}
-              autoFocus
-            />
-            <p className="font-mono text-[8px] text-[var(--ink-3)] mt-1 text-right">{text.length}/60</p>
-          </div>
-
-          {/* Duration */}
-          <div>
-            <label className="que-label">Duration</label>
-            <div className="flex gap-2">
-              {([['24h', '24 Hours', Clock], ['forever', 'Indefinite', InfinityIcon]] as const).map(([val, label, Icon]) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setDuration(val)}
-                  className={[
-                    'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-sm border font-mono text-[10px] font-bold tracking-[0.5px] uppercase transition-all',
-                    duration === val ? 'bg-[var(--accent)] text-[var(--accent-ink)] border-[var(--accent)]'
-                      : 'border-[var(--line-2)] text-[var(--ink-2)] hover:border-[var(--accent)]/60'
-                  ].join(' ')}
-                >
-                  <Icon size={13} />{label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex gap-2">
-            {current && (
-              <button type="button" onClick={clear} className="flex-1 que-btn-ghost py-3.5 text-[var(--danger)]">
-                Clear
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={save}
-              disabled={saving || !text.trim()}
-              className="flex-1 que-btn-primary py-3.5 disabled:opacity-40"
-            >
-              {saving ? '…' : 'Save'}
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-// ── Showcase editor ────────────────────────────────────────────────────────────
-
-function ShowcaseEditor({ badges, current, onSave, onClose }: {
-  badges:  BadgeInfo[];
-  current: string[];
-  onSave:  (slugs: string[]) => void;
-  onClose: () => void;
-}) {
+  // Showcase
   const [slots, setSlots] = useState<(string | null)[]>(() => {
     const arr = Array<string | null>(8).fill(null);
-    current.slice(0, 8).forEach((slug, i) => { arr[i] = slug; });
+    currentShowcase.slice(0, 8).forEach((slug, i) => { arr[i] = slug; });
     return arr;
   });
   const [saving,            setSaving]            = useState(false);
@@ -255,16 +157,17 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
     setPickedSlot(null);
   };
 
+  // One Save persists status + duration + showcase together.
   const save = async () => {
     setSaving(true);
     const slugs = slots.filter((s): s is string => s !== null);
     await fetch('/api/user', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ showcaseBadges: slugs }),
+      body: JSON.stringify({ status: text.trim(), statusDuration: duration, showcaseBadges: slugs }),
     });
     setSaving(false);
-    onSave(slugs);
+    onSaved(slugs);
     onClose();
   };
 
@@ -288,229 +191,266 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <motion.div
-        className="w-full md:max-w-[480px] h-[88dvh] flex flex-col rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
+        className="w-full md:max-w-[480px] h-[90dvh] flex flex-col rounded-t-2xl md:rounded-2xl bg-[var(--bg-1)] overflow-hidden"
         initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
         style={{ boxShadow: '0 0 0 1px var(--line-2), 0 -2px 0 0 var(--accent), 0 40px 80px rgba(0,0,0,0.6)' }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0">
-          <div>
-            <h3 className="font-display text-[18px] tracking-[2px] uppercase text-[var(--ink-0)]">Edit Showcase</h3>
-            <p className="font-mono text-[9px] text-[var(--ink-3)] mt-0.5">
-              Tap a badge below to add or remove · tap two slots to swap
-            </p>
-          </div>
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 flex-shrink-0 border-b border-[var(--line)]">
+          <h3 className="font-display text-[18px] tracking-[2px] uppercase text-[var(--ink-0)]">Edit Profile</h3>
           <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        {/* Preview 4×2 grid with drag-and-drop */}
-        <div className="px-5 pb-3 flex-shrink-0">
-          <div
-            className="relative rounded-xl overflow-visible px-3 py-3"
-            style={{
-              background: 'linear-gradient(160deg, #0C0C1C 0%, #070710 100%)',
-              boxShadow: 'inset 0 0 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)',
-            }}
-          >
-            <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-xl"
-              style={{ background: 'linear-gradient(90deg, #CC1100, #EE2200, #CC1100)' }} />
+        {/* Scrollable body — Status stacked above Showcase */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
 
-            <div className="flex items-center justify-between mb-2 mt-0.5">
-              <p className="font-mono text-[7px] font-bold tracking-[2px] uppercase" style={{ color: 'rgba(255,255,255,0.2)' }}>
-                Showcase
+          {/* ── Status ── */}
+          <div className="space-y-3">
+            <p className="font-mono text-[9px] font-bold tracking-[2px] uppercase text-[var(--ink-3)]">Status</p>
+            <div>
+              <input
+                type="text"
+                className="que-input"
+                placeholder="e.g. On a cut · Bulk szn 💪 · Rest day"
+                value={text}
+                maxLength={60}
+                onChange={e => setText(e.target.value)}
+              />
+              <p className="font-mono text-[8px] text-[var(--ink-3)] mt-1 flex justify-between">
+                <span>Leave empty to clear</span><span>{text.length}/60</span>
               </p>
-              <motion.p
-                animate={shake ? { x: [0, -4, 4, -4, 4, 0] } : { x: 0 }}
-                transition={{ duration: 0.4 }}
-                className="font-mono text-[7px] font-bold tracking-[1px]"
-                style={{ color: selected.length >= 8 ? 'var(--accent)' : 'rgba(255,255,255,0.2)' }}
-              >
-                {selected.length}/8
-              </motion.p>
+            </div>
+            <div className="flex gap-2">
+              {([['24h', '24 Hours', Clock], ['forever', 'Indefinite', InfinityIcon]] as const).map(([val, label, Icon]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setDuration(val)}
+                  className={[
+                    'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-sm border font-mono text-[10px] font-bold tracking-[0.5px] uppercase transition-all',
+                    duration === val ? 'bg-[var(--accent)] text-[var(--accent-ink)] border-[var(--accent)]'
+                      : 'border-[var(--line-2)] text-[var(--ink-2)] hover:border-[var(--accent)]/60'
+                  ].join(' ')}
+                >
+                  <Icon size={13} />{label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-[var(--line)]" />
+
+          {/* ── Showcase ── */}
+          <div className="space-y-3">
+            <div>
+              <p className="font-mono text-[9px] font-bold tracking-[2px] uppercase text-[var(--ink-3)]">Badge Showcase</p>
+              <p className="font-mono text-[8px] text-[var(--ink-3)] mt-1">Tap a badge to add or remove · tap two slots to swap</p>
             </div>
 
-            <div className="grid grid-cols-4 gap-2">
-              {Array.from({ length: 8 }).map((_, i) => {
-                const slug   = slots[i];
-                const badge  = slug ? badges.find(b => b.slug === slug) : null;
-                const picked = pickedSlot === i;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => handleSlotTap(i)}
-                    className="aspect-square relative flex items-center justify-center select-none transition-transform active:scale-95"
-                    style={{
-                      borderRadius: '50%',
-                      background: badge
-                        ? 'radial-gradient(circle at 35% 30%, #181828, #06060E)'
-                        : 'radial-gradient(circle at 35% 30%, #101018, #05050C)',
-                      boxShadow: picked
-                        ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-40)'
-                        : badge
-                          ? 'inset 0 2px 6px rgba(0,0,0,0.9), inset 0 -1px 2px rgba(255,255,255,0.03)'
-                          : 'inset 0 2px 8px rgba(0,0,0,0.95)',
-                    }}
-                  >
-                    {badge ? (
-                      badge.icon.startsWith('/') ? (
-                        <AutoCropImage src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+            {/* Preview 4×2 grid */}
+            <div
+              className="relative rounded-xl overflow-visible px-3 py-3"
+              style={{
+                background: 'linear-gradient(160deg, #0C0C1C 0%, #070710 100%)',
+                boxShadow: 'inset 0 0 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)',
+              }}
+            >
+              <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-xl"
+                style={{ background: 'linear-gradient(90deg, #CC1100, #EE2200, #CC1100)' }} />
+
+              <div className="flex items-center justify-between mb-2 mt-0.5">
+                <p className="font-mono text-[7px] font-bold tracking-[2px] uppercase" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                  Showcase
+                </p>
+                <motion.p
+                  animate={shake ? { x: [0, -4, 4, -4, 4, 0] } : { x: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="font-mono text-[7px] font-bold tracking-[1px]"
+                  style={{ color: selected.length >= 8 ? 'var(--accent)' : 'rgba(255,255,255,0.2)' }}
+                >
+                  {selected.length}/8
+                </motion.p>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {Array.from({ length: 8 }).map((_, i) => {
+                  const slug   = slots[i];
+                  const badge  = slug ? badges.find(b => b.slug === slug) : null;
+                  const picked = pickedSlot === i;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleSlotTap(i)}
+                      className="aspect-square relative flex items-center justify-center select-none transition-transform active:scale-95"
+                      style={{
+                        borderRadius: '50%',
+                        background: badge
+                          ? 'radial-gradient(circle at 35% 30%, #181828, #06060E)'
+                          : 'radial-gradient(circle at 35% 30%, #101018, #05050C)',
+                        boxShadow: picked
+                          ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-40)'
+                          : badge
+                            ? 'inset 0 2px 6px rgba(0,0,0,0.9), inset 0 -1px 2px rgba(255,255,255,0.03)'
+                            : 'inset 0 2px 8px rgba(0,0,0,0.95)',
+                      }}
+                    >
+                      {badge ? (
+                        badge.icon.startsWith('/') ? (
+                          <AutoCropImage src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+                        ) : (
+                          <span className="text-[22px] leading-none">{badge.icon}</span>
+                        )
                       ) : (
-                        <span className="text-[22px] leading-none">{badge.icon}</span>
-                      )
-                    ) : (
-                      <span style={{ color: pickedSlot !== null ? 'var(--accent)' : 'rgba(255,255,255,0.10)', fontSize: 16 }}>
-                        {pickedSlot !== null ? '↓' : '+'}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                        <span style={{ color: pickedSlot !== null ? 'var(--accent)' : 'rgba(255,255,255,0.10)', fontSize: 16 }}>
+                          {pickedSlot !== null ? '↓' : '+'}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            {/* Tab toggle */}
+            <div className="flex gap-1 p-0.5 rounded-sm bg-[var(--bg-3)]">
+              {(['mine', 'all'] as const).map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  className={[
+                    'flex-1 py-1.5 font-mono text-[9px] font-bold tracking-[1px] uppercase rounded-sm transition-all',
+                    tab === t
+                      ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                      : 'text-[var(--ink-3)] hover:text-[var(--ink-1)]',
+                  ].join(' ')}
+                >
+                  {t === 'mine' ? `My Badges · ${badges.length}` : 'All Badges'}
+                </button>
+              ))}
+            </div>
+
+            {/* Badge picker */}
+            {tab === 'mine' ? (
+              badges.length === 0 ? (
+                <div className="text-center py-10">
+                  <p className="font-mono text-[10px] text-[var(--ink-3)]">Earn badges first by logging lifts and hitting calorie goals.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2">
+                  {sorted.map(badge => {
+                    const slotIdx    = slots.indexOf(badge.slug);
+                    const inShowcase = slotIdx !== -1;
+                    return (
+                      <button
+                        key={badge.id}
+                        type="button"
+                        onClick={() => toggle(badge.slug)}
+                        className={[
+                          'relative flex flex-col items-center text-center p-2 rounded-lg border transition-all active:scale-95',
+                          inShowcase
+                            ? 'border-[var(--accent)] bg-[var(--accent)]/10'
+                            : 'border-[var(--line)] bg-[var(--bg-2)] hover:border-[var(--accent)]/50',
+                        ].join(' ')}
+                      >
+                        {inShowcase && (
+                          <span
+                            className="absolute top-1 right-1 min-w-[14px] h-[14px] px-0.5 rounded-full text-[7px] font-bold font-mono flex items-center justify-center"
+                            style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                          >
+                            {slotIdx + 1}
+                          </span>
+                        )}
+                        <div className="w-10 h-10 flex items-center justify-center mb-1">
+                          <BadgeIcon icon={badge.icon} size={36} />
+                        </div>
+                        <p className="font-mono text-[7px] font-bold text-[var(--ink-0)] leading-tight line-clamp-2">{badge.label}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              /* All Badges catalog */
+              <div className="grid grid-cols-4 gap-2">
+                {BADGE_CATALOG.map(entry => {
+                  const earned = earnedMap.get(entry.slug);
+                  const isHovered = hoveredCatalogSlug === entry.slug;
+                  return (
+                    <div
+                      key={entry.slug}
+                      className="relative flex flex-col items-center text-center p-2 rounded-lg border transition-all"
+                      style={earned ? {
+                        borderColor: 'rgba(109,255,153,0.45)',
+                        background: 'rgba(109,255,153,0.07)',
+                        boxShadow: '0 0 14px rgba(109,255,153,0.12)',
+                      } : {
+                        borderColor: 'var(--line)',
+                        background: 'var(--bg-2)',
+                      }}
+                      onMouseEnter={() => setHoveredCatalogSlug(entry.slug)}
+                      onMouseLeave={() => setHoveredCatalogSlug(null)}
+                    >
+                      <div
+                        className={['w-10 h-10 flex items-center justify-center mb-1', earned ? '' : 'badge-unearned'].join(' ')}
+                      >
+                        <BadgeIcon icon={entry.icon} size={36} />
+                      </div>
+                      <p
+                        className="font-mono text-[7px] font-bold leading-tight line-clamp-2"
+                        style={{ color: earned ? 'rgba(109,255,153,0.8)' : 'var(--ink-3)' }}
+                      >
+                        {entry.label}
+                      </p>
+
+                      {/* Tooltip */}
+                      <AnimatePresence>
+                        {isHovered && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 4, scale: 0.94 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 4, scale: 0.94 }}
+                            transition={{ duration: 0.12 }}
+                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-36 rounded-lg p-2.5 text-center pointer-events-none"
+                            style={{
+                              background: 'var(--bg-0)',
+                              border: '1px solid var(--line-2)',
+                              boxShadow: '0 6px 24px rgba(0,0,0,0.7)',
+                            }}
+                          >
+                            {earned ? (
+                              <>
+                                <p className="font-mono text-[8px] font-bold" style={{ color: 'rgba(109,255,153,0.9)' }}>Earned</p>
+                                <p className="font-mono text-[7px] text-[var(--ink-2)] mt-0.5 leading-snug">{fmtBadgeDate(earned.earnedAt)}</p>
+                              </>
+                            ) : (
+                              <p className="font-mono text-[7px] text-[var(--ink-2)] leading-snug">{entry.howToGet}</p>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Save button */}
-        <div className="px-5 pb-3 flex-shrink-0">
+        {/* Sticky Save — persists both sections */}
+        <div className="px-5 py-3 flex-shrink-0 border-t border-[var(--line)]">
           <button
             type="button"
             onClick={save}
             disabled={saving}
             className="que-btn-primary w-full py-3 disabled:opacity-40"
           >
-            {saving ? '…' : 'Save Showcase'}
+            {saving ? '…' : 'Save changes'}
           </button>
-        </div>
-
-        {/* Tab toggle */}
-        <div className="px-5 pb-2 flex-shrink-0">
-          <div className="flex gap-1 p-0.5 rounded-sm bg-[var(--bg-3)]">
-            {(['mine', 'all'] as const).map(t => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={[
-                  'flex-1 py-1.5 font-mono text-[9px] font-bold tracking-[1px] uppercase rounded-sm transition-all',
-                  tab === t
-                    ? 'bg-[var(--accent)] text-[var(--accent-ink)]'
-                    : 'text-[var(--ink-3)] hover:text-[var(--ink-1)]',
-                ].join(' ')}
-              >
-                {t === 'mine' ? `My Badges · ${badges.length}` : 'All Badges'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-5 pb-5">
-          {tab === 'mine' ? (
-            badges.length === 0 ? (
-              <div className="text-center py-10">
-                <p className="font-mono text-[10px] text-[var(--ink-3)]">Earn badges first by logging lifts and hitting calorie goals.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-4 gap-2">
-                {sorted.map(badge => {
-                  const slotIdx    = slots.indexOf(badge.slug);
-                  const inShowcase = slotIdx !== -1;
-                  return (
-                    <button
-                      key={badge.id}
-                      type="button"
-                      onClick={() => toggle(badge.slug)}
-                      className={[
-                        'relative flex flex-col items-center text-center p-2 rounded-lg border transition-all active:scale-95',
-                        inShowcase
-                          ? 'border-[var(--accent)] bg-[var(--accent)]/10'
-                          : 'border-[var(--line)] bg-[var(--bg-2)] hover:border-[var(--accent)]/50',
-                      ].join(' ')}
-                    >
-                      {inShowcase && (
-                        <span
-                          className="absolute top-1 right-1 min-w-[14px] h-[14px] px-0.5 rounded-full text-[7px] font-bold font-mono flex items-center justify-center"
-                          style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
-                        >
-                          {slotIdx + 1}
-                        </span>
-                      )}
-                      <div className="w-10 h-10 flex items-center justify-center mb-1">
-                        <BadgeIcon icon={badge.icon} size={36} />
-                      </div>
-                      <p className="font-mono text-[7px] font-bold text-[var(--ink-0)] leading-tight line-clamp-2">{badge.label}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            )
-          ) : (
-            /* All Badges catalog */
-            <div className="grid grid-cols-4 gap-2">
-              {BADGE_CATALOG.map(entry => {
-                const earned = earnedMap.get(entry.slug);
-                const isHovered = hoveredCatalogSlug === entry.slug;
-                return (
-                  <div
-                    key={entry.slug}
-                    className="relative flex flex-col items-center text-center p-2 rounded-lg border transition-all"
-                    style={earned ? {
-                      borderColor: 'rgba(109,255,153,0.45)',
-                      background: 'rgba(109,255,153,0.07)',
-                      boxShadow: '0 0 14px rgba(109,255,153,0.12)',
-                    } : {
-                      borderColor: 'var(--line)',
-                      background: 'var(--bg-2)',
-                    }}
-                    onMouseEnter={() => setHoveredCatalogSlug(entry.slug)}
-                    onMouseLeave={() => setHoveredCatalogSlug(null)}
-                  >
-                    <div
-                      className={['w-10 h-10 flex items-center justify-center mb-1', earned ? '' : 'badge-unearned'].join(' ')}
-                    >
-                      <BadgeIcon icon={entry.icon} size={36} />
-                    </div>
-                    <p
-                      className="font-mono text-[7px] font-bold leading-tight line-clamp-2"
-                      style={{ color: earned ? 'rgba(109,255,153,0.8)' : 'var(--ink-3)' }}
-                    >
-                      {entry.label}
-                    </p>
-
-                    {/* Tooltip */}
-                    <AnimatePresence>
-                      {isHovered && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 4, scale: 0.94 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 4, scale: 0.94 }}
-                          transition={{ duration: 0.12 }}
-                          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-36 rounded-lg p-2.5 text-center pointer-events-none"
-                          style={{
-                            background: 'var(--bg-0)',
-                            border: '1px solid var(--line-2)',
-                            boxShadow: '0 6px 24px rgba(0,0,0,0.7)',
-                          }}
-                        >
-                          {earned ? (
-                            <>
-                              <p className="font-mono text-[8px] font-bold" style={{ color: 'rgba(109,255,153,0.9)' }}>Earned</p>
-                              <p className="font-mono text-[7px] text-[var(--ink-2)] mt-0.5 leading-snug">{fmtBadgeDate(earned.earnedAt)}</p>
-                            </>
-                          ) : (
-                            <p className="font-mono text-[7px] text-[var(--ink-2)] leading-snug">{entry.howToGet}</p>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       </motion.div>
     </motion.div>
@@ -730,7 +670,7 @@ export default function ProfileCard({
   onRefresh?: () => void;
 }) {
   const [localProfile, setLocalProfile] = useState(profile);
-  const [modal, setModal] = useState<'status' | 'showcase' | null>(null);
+  const [modal, setModal] = useState<'edit' | null>(null);
   const [showAll, setShowAll] = useState(false);   // Full Collection collapsed by default to keep the tab compact
 
   // Sync when parent refreshes
@@ -799,15 +739,14 @@ export default function ProfileCard({
               </div>
             )}
 
-            {/* Edit status button (own profile) */}
+            {/* Edit profile (own profile) — opens status + showcase in one window */}
             {isOwn && (
               <button
                 type="button"
-                onClick={() => setModal('status')}
+                onClick={() => setModal('edit')}
                 className="flex items-center gap-1 mt-2 font-mono text-[9px] font-bold tracking-[0.5px] uppercase text-[var(--ink-3)] hover:text-[var(--accent)] transition-colors"
               >
-                <Pencil size={10} />
-                {hasStatus ? 'Edit status' : 'Set status'}
+                <Pencil size={10} /> Edit profile
               </button>
             )}
           </div>
@@ -838,19 +777,9 @@ export default function ProfileCard({
           showcase={localProfile.showcaseBadges}
           allBadges={localProfile.badges}
           isOwn={isOwn}
-          onEdit={isOwn ? () => setModal('showcase') : undefined}
+          onEdit={isOwn ? () => setModal('edit') : undefined}
         />
 
-        {/* Edit showcase — compact text link */}
-        {isOwn && (
-          <button
-            type="button"
-            onClick={() => setModal('showcase')}
-            className="mt-2 mx-auto flex items-center gap-1 py-1 font-mono text-[8px] font-bold tracking-[1px] uppercase text-[var(--ink-3)] hover:text-[var(--accent)] transition-colors"
-          >
-            <Pencil size={9} /> Edit showcase
-          </button>
-        )}
       </div>
 
       {/* ── Full badge collection — collapsed by default to keep the tab compact ── */}
@@ -890,21 +819,15 @@ export default function ProfileCard({
         </div>
       )}
 
-      {/* ── Modals — only one open at a time ── */}
+      {/* ── Edit profile — status + showcase in one window ── */}
       <AnimatePresence>
-        {modal === 'status' && (
-          <StatusModal
-            current={localProfile.status}
+        {modal === 'edit' && (
+          <EditProfileModal
+            status={localProfile.status}
             expiresAt={localProfile.statusExpiresAt}
-            onSave={refresh}
-            onClose={() => setModal(null)}
-          />
-        )}
-        {modal === 'showcase' && (
-          <ShowcaseEditor
             badges={localProfile.badges}
-            current={localProfile.showcaseBadges}
-            onSave={slugs => { setLocalProfile(p => ({ ...p, showcaseBadges: slugs })); refresh(); }}
+            currentShowcase={localProfile.showcaseBadges}
+            onSaved={slugs => { setLocalProfile(p => ({ ...p, showcaseBadges: slugs })); refresh(); }}
             onClose={() => setModal(null)}
           />
         )}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Heart, MessageCircle, Trash2, X, Bookmark, Plus, Send, Dumbbell, Swords } from 'lucide-react';
+import { Heart, MessageCircle, Trash2, X, Bookmark, Plus, Send, Dumbbell, Swords, Settings, UserPlus, LogOut } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import type { DayRecord, ExerciseEntry } from '@/lib/AppContext';
 import { getWorkoutPresets, saveWorkoutPresets } from '@/lib/storage';
@@ -87,11 +87,33 @@ function groupItems(items: WorkoutItem[]): Array<[string, WorkoutItem[]]> {
   return order.map(g => [g, buckets.get(g)!] as [string, WorkoutItem[]]);
 }
 
-export function GroupFeed({ group, onClose }: { group: GroupLite; meId: string; onClose: () => void }) {
+export function GroupFeed({ group, meId, friends, onChanged, onClose }: {
+  group: GroupLite; meId: string; friends: MemberLite[]; onChanged: () => void; onClose: () => void;
+}) {
   const { localDB } = useApp();
   const [posts, setPosts]     = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [sharing, setSharing] = useState(false);
+  const [showManage, setShowManage] = useState(false);
+  const [busy, setBusy]       = useState(false);
+  const [manageError, setManageError] = useState('');
+
+  // Member CRUD — hits the API, then asks the parent to refresh the groups list
+  // (the updated `group` prop flows back down). closeAfter is for delete/leave,
+  // where this group ceases to exist for the user.
+  const manage = async (url: string, method: string, body?: object, closeAfter = false) => {
+    setBusy(true); setManageError('');
+    try {
+      const res = await fetch(url, {
+        method, credentials: 'include',
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) { setManageError((await res.json().catch(() => null))?.error ?? 'Something went wrong'); return; }
+      onChanged();
+      if (closeAfter) { setShowManage(false); onClose(); }
+    } finally { setBusy(false); }
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -131,7 +153,11 @@ export function GroupFeed({ group, onClose }: { group: GroupLite; meId: string; 
           <h2 className="font-display text-[18px] tracking-[1.5px] uppercase text-[var(--ink-0)] truncate">{group.name}</h2>
           <p className="font-mono text-[9px] text-[var(--ink-3)]">{group.members.length} members</p>
         </div>
-        <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)]"><X size={20} /></button>
+        <div className="flex items-center flex-shrink-0">
+          <button onClick={() => { setManageError(''); setShowManage(true); }} aria-label="Group settings"
+            className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)]"><Settings size={18} /></button>
+          <button onClick={onClose} aria-label="Close" className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)]"><X size={20} /></button>
+        </div>
       </div>
 
       {/* Top actions */}
@@ -170,6 +196,78 @@ export function GroupFeed({ group, onClose }: { group: GroupLite; meId: string; 
           onShared={() => { setSharing(false); void refresh(); }}
           groupId={group.id}
         />
+      )}
+
+      {/* Manage group — members, add friends, delete/leave */}
+      {showManage && (
+        <div className="fixed inset-0 z-[480] flex items-end sm:items-center justify-center bg-black/60 px-4" onClick={() => setShowManage(false)}>
+          <div className="w-full max-w-[400px] rounded-t-2xl sm:rounded-2xl bg-[var(--bg-1)] border border-[var(--line-2)] p-5"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 20px)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display text-[18px] tracking-[1.5px] uppercase text-[var(--ink-0)]">Manage Group</h3>
+              <button type="button" onClick={() => setShowManage(false)} className="text-[var(--ink-3)] hover:text-[var(--ink-0)]"><X size={18} /></button>
+            </div>
+
+            {/* Member list */}
+            <div className="space-y-1.5 mb-4">
+              {group.members.map(m => (
+                <div key={m.id} className="flex items-center gap-2">
+                  <Avatar p={m} size={22} />
+                  <span className="font-mono text-[10px] text-[var(--ink-1)] flex-1 min-w-0 truncate">
+                    {NM(m)}{m.id === group.ownerId && <span className="text-[var(--ink-3)]"> · owner</span>}
+                  </span>
+                  {group.isOwner && m.id !== group.ownerId && (
+                    <button type="button" disabled={busy}
+                      onClick={() => manage(`/api/groups/${group.id}/members`, 'DELETE', { userId: m.id })}
+                      aria-label="Remove member"
+                      className="text-[var(--ink-3)] hover:text-[var(--danger)] transition-colors disabled:opacity-40">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Owner: add friends not already in the group */}
+            {group.isOwner && (() => {
+              const inGroup = new Set(group.members.map(m => m.id));
+              const addable = friends.filter(f => !inGroup.has(f.id));
+              return addable.length > 0 ? (
+                <div className="mb-4">
+                  <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mb-1.5">Add friends</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {addable.map(f => (
+                      <button key={f.id} type="button" disabled={busy}
+                        onClick={() => manage(`/api/groups/${group.id}/members`, 'POST', { userId: f.id })}
+                        className="flex items-center gap-1 font-mono text-[9px] text-[var(--ink-1)] border border-[var(--line-2)] rounded-full pl-1 pr-2 py-0.5 hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all disabled:opacity-40">
+                        <Avatar p={f} size={16} /> <UserPlus size={10} /> {f.name ?? f.username}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            {manageError && <p className="font-mono text-[9px] text-[var(--danger)] mb-2">{manageError}</p>}
+
+            {/* Owner deletes, member leaves */}
+            <div className="flex justify-end pt-1">
+              {group.isOwner ? (
+                <button type="button" disabled={busy}
+                  onClick={() => manage(`/api/groups/${group.id}`, 'DELETE', undefined, true)}
+                  className="font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--danger)] border border-[var(--danger)]/40 rounded-sm px-2.5 py-1.5 hover:bg-[var(--danger)]/10 transition-all flex items-center gap-1 disabled:opacity-40">
+                  <Trash2 size={12} /> Delete group
+                </button>
+              ) : (
+                <button type="button" disabled={busy}
+                  onClick={() => manage(`/api/groups/${group.id}/members`, 'DELETE', { userId: meId }, true)}
+                  className="font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--ink-2)] border border-[var(--line-2)] rounded-sm px-2.5 py-1.5 hover:border-[var(--danger)] hover:text-[var(--danger)] transition-all flex items-center gap-1 disabled:opacity-40">
+                  <LogOut size={12} /> Leave
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
