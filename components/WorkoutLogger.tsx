@@ -1068,10 +1068,31 @@ export default function WorkoutLogger() {
     const usageNames  = Object.keys(usage);
     const known       = Array.from(new Set([...presets, ...customNames, ...usageNames]));
 
-    // Sort by usage frequency; unused names keep their natural order.
-    const usedNames   = known.filter(n => usage[n]).sort((a, b) => (usage[b] ?? 0) - (usage[a] ?? 0));
-    const unused      = known.filter(n => !usage[n]);
-    const primary     = [...usedNames, ...unused];
+    // Most-recent logged date per exercise for THIS group — the workout log is
+    // the source of truth for "recently done", so the dropdown can lead with it.
+    const lastDone: Record<string, string> = {};
+    for (const [date, rec] of Object.entries(localDB)) {
+      const raw = (rec as { exercises?: string }).exercises;
+      if (!raw) continue;
+      let exs: unknown;
+      try { exs = JSON.parse(String(raw)); } catch { continue; }
+      if (!Array.isArray(exs)) continue;
+      for (const ex of exs) {
+        const e = ex as { k?: string; g?: string; n?: string };
+        if (e.k !== 'lift' || e.g !== currentGroup || !e.n) continue;
+        if (!lastDone[e.n] || date > lastDone[e.n]) lastDone[e.n] = date;
+      }
+    }
+
+    // Order: exercises you've actually done, MOST RECENT first (usage frequency
+    // breaks same-day ties); then everything else (presets / saved customs not
+    // yet logged) in natural order.
+    const done    = known.filter(n => lastDone[n]).sort((a, b) =>
+      lastDone[a] !== lastDone[b]
+        ? lastDone[b].localeCompare(lastDone[a])
+        : (usage[b] ?? 0) - (usage[a] ?? 0));
+    const notDone = known.filter(n => !lastDone[n]);
+    const primary = [...done, ...notDone];
 
     // Secondary exercises — preset exercises from OTHER groups whose g2/g3 hits
     // this group. Skip any already surfaced in `primary` so they don't double up.
@@ -1087,7 +1108,7 @@ export default function WorkoutLogger() {
     });
 
     return { primary, secondary };
-  }, [currentGroup, isLoaded, exListVersion]);
+  }, [currentGroup, isLoaded, exListVersion, localDB]);
 
   useEffect(() => {
     setSelectedEx(exerciseOptions.primary[0] ?? '');
