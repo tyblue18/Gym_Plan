@@ -13,6 +13,7 @@ interface FriendLite { id: string; name: string | null; username: string | null;
 interface GroupMemberLite { id: string; name: string | null; username: string | null; photo: string | null }
 interface GroupData {
   id: string; name: string; ownerId: string; isOwner: boolean; members: GroupMemberLite[];
+  lastPost?: { author: string; text: string; at: string } | null;
 }
 
 function Avatar({ m, size = 26 }: { m: { name: string | null; username: string | null; photo: string | null }; size?: number }) {
@@ -129,9 +130,16 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-mono text-[12px] font-bold text-[var(--ink-0)] truncate">{g.name}</p>
-                    <p className="font-mono text-[9px] text-[var(--ink-3)]">
-                      {g.members.length} member{g.members.length === 1 ? '' : 's'}{g.isOwner ? ' · owner' : ''} · open feed
-                    </p>
+                    {g.lastPost ? (
+                      <p className="font-mono text-[9px] text-[var(--ink-2)] truncate">
+                        <span className="font-bold" style={{ color: 'var(--accent)' }}>{g.lastPost.author}</span>
+                        {' · '}{g.lastPost.text}
+                      </p>
+                    ) : (
+                      <p className="font-mono text-[9px] text-[var(--ink-3)] truncate">
+                        {g.members.length} member{g.members.length === 1 ? '' : 's'}{g.isOwner ? ' · owner' : ''} · tap to open
+                      </p>
+                    )}
                   </div>
                   <ChevronRight size={16} className="text-[var(--ink-3)] flex-shrink-0" />
                 </button>

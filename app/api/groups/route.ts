@@ -41,19 +41,35 @@ export async function GET(): Promise<NextResponse> {
           members: {
             select: { user: { select: { id: true, name: true, username: true, workoutData: { select: { settings: true } } } } },
           },
+          // Latest feed post → shown as a "last activity" preview on the group card.
+          posts: {
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+            select: { note: true, payload: true, createdAt: true, user: { select: { name: true, username: true } } },
+          },
         },
       },
     },
     orderBy: { createdAt: 'desc' },
   });
 
-  const groups = memberships.map(m => ({
-    id:      m.group.id,
-    name:    m.group.name,
-    ownerId: m.group.ownerId,
-    isOwner: m.group.ownerId === meId,
-    members: m.group.members.map(gm => memberFields(gm.user)),
-  }));
+  const groups = memberships.map(m => {
+    const post = m.group.posts[0];
+    let lastPost: { author: string; text: string; at: string } | null = null;
+    if (post) {
+      const payload = (post.payload ?? {}) as { title?: string };
+      const author  = post.user.name ?? (post.user.username ? `@${post.user.username}` : 'Someone');
+      lastPost = { author, text: payload.title || post.note || 'shared a workout', at: post.createdAt.toISOString() };
+    }
+    return {
+      id:      m.group.id,
+      name:    m.group.name,
+      ownerId: m.group.ownerId,
+      isOwner: m.group.ownerId === meId,
+      members: m.group.members.map(gm => memberFields(gm.user)),
+      lastPost,
+    };
+  });
 
   return NextResponse.json({ groups });
 }

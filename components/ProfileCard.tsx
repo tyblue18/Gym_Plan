@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Pencil, Clock, Infinity as InfinityIcon } from 'lucide-react';
+import { X, Pencil, Clock, Infinity as InfinityIcon, ChevronDown } from 'lucide-react';
 import { AutoCropImage } from '@/components/AutoCropImage';
 import { BADGE_CATALOG } from '@/lib/badgeCatalog';
 
@@ -624,13 +624,13 @@ function BadgeCase({ showcase, allBadges, isOwn, onEdit }: {
 
   return (
     <div className="mt-4">
-      <div className="badge-case relative rounded-xl overflow-hidden px-4 py-5">
+      <div className="badge-case relative rounded-xl overflow-hidden px-4 py-3.5">
         {/* Red trim */}
-        <div className="absolute top-0 left-0 right-0 h-2 rounded-t-xl"
+        <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-xl"
           style={{ background: 'linear-gradient(90deg, #CC1100, #EE2200, #CC1100)' }} />
 
         {/* Label */}
-        <p className="badge-case-label font-mono text-[8px] font-bold tracking-[2.5px] uppercase text-center mb-4 mt-1">
+        <p className="badge-case-label font-mono text-[8px] font-bold tracking-[2.5px] uppercase text-center mb-3 mt-1">
           Gym Badges
         </p>
 
@@ -731,6 +731,7 @@ export default function ProfileCard({
 }) {
   const [localProfile, setLocalProfile] = useState(profile);
   const [modal, setModal] = useState<'status' | 'showcase' | null>(null);
+  const [showAll, setShowAll] = useState(false);   // Full Collection collapsed by default to keep the tab compact
 
   // Sync when parent refreshes
   useEffect(() => { setLocalProfile(profile); }, [profile]);
@@ -852,13 +853,17 @@ export default function ProfileCard({
         )}
       </div>
 
-      {/* ── Full badge collection (if any beyond showcase) ── */}
+      {/* ── Full badge collection — collapsed by default to keep the tab compact ── */}
       {localProfile.badges.length > 0 && (
-        <div className="border-t border-[var(--line)] px-5 py-3">
-          <p className="font-mono text-[8px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mb-2">
-            Full Collection · {localProfile.badgeCount}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
+        <div className="border-t border-[var(--line)] px-5 py-2.5">
+          <button type="button" onClick={() => setShowAll(v => !v)} className="w-full flex items-center justify-between">
+            <span className="font-mono text-[8px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)]">
+              Full Collection · {localProfile.badgeCount}
+            </span>
+            <ChevronDown size={12} className="text-[var(--ink-3)] transition-transform" style={{ transform: showAll ? 'rotate(180deg)' : 'none' }} />
+          </button>
+          {showAll && (
+          <div className="flex flex-wrap gap-1.5 mt-2.5">
             {localProfile.badges.slice(0, 12).map(b => (
               <div
                 key={b.id}
@@ -881,6 +886,7 @@ export default function ProfileCard({
               <span className="font-mono text-[9px] text-[var(--ink-3)] self-center">+{localProfile.badgeCount - 12} more</span>
             )}
           </div>
+          )}
         </div>
       )}
 
