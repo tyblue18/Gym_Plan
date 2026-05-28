@@ -37,6 +37,7 @@ export const MILLION_GROUPS_KEY = 'queMillionGroups';
 export const ATHLETE_PLAN_KEY   = 'queAthletePlan';
 export const WORKOUT_PRESETS_KEY = 'queWorkoutPresets';
 export const EXERCISE_USAGE_KEY  = 'queExerciseUsage';
+export const CUSTOM_EXERCISES_KEY = 'queCustomExercises'; // user-added exercises (name + secondary/tertiary muscles), per group
 
 // UI preferences
 export const PROFILE_PHOTO_KEY = 'queProfilePhoto';

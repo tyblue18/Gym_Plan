@@ -10,6 +10,7 @@
 import type { WorkoutTemplate, WorkoutPreset } from '@/lib/AppContext';
 import {
   EXERCISE_USAGE_KEY,
+  CUSTOM_EXERCISES_KEY,
   TEMPLATES_KEY,
   WORKOUT_PRESETS_KEY,
   LAST_STREAK_KEY,
@@ -28,6 +29,30 @@ export function bumpUsage(group: string, name: string): void {
   if (!u[group]) u[group] = {};
   u[group][name] = (u[group][name] ?? 0) + 1;
   try { localStorage.setItem(EXERCISE_USAGE_KEY, JSON.stringify(u)); } catch { /* noop */ }
+}
+
+// ── Custom (user-added) exercises ────────────────────────────────────────────
+// A preset's muscle map lives in code (SECONDARY_MUSCLES); custom exercises are
+// the user's own additions, so we persist the muscles they hit here keyed by
+// primary group → name. This is what keeps a custom exercise — and the muscle
+// groups it trains — in the picker for next time.
+
+export interface ExerciseMuscles { g2?: string; g3?: string }
+
+export function getCustomExercises(): Record<string, Record<string, ExerciseMuscles>> {
+  try {
+    return JSON.parse(localStorage.getItem(CUSTOM_EXERCISES_KEY) ?? '{}');
+  } catch { return {}; }
+}
+
+export function saveCustomExercise(group: string, name: string, muscles: ExerciseMuscles): void {
+  const all = getCustomExercises();
+  if (!all[group]) all[group] = {};
+  all[group][name] = {
+    ...(muscles.g2 ? { g2: muscles.g2 } : {}),
+    ...(muscles.g3 ? { g3: muscles.g3 } : {}),
+  };
+  try { localStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify(all)); } catch { /* noop */ }
 }
 
 // ── Workout templates pool ───────────────────────────────────────────────────

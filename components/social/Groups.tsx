@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Plus, X, Check, ChevronRight, MessageCircle } from 'lucide-react';
+import { Plus, X, Check, ChevronRight, MessageCircle, Zap } from 'lucide-react';
 import { GroupFeed } from '@/components/social/GroupFeed';
 
 interface FriendLite { id: string; name: string | null; username: string | null; photo: string | null }
@@ -14,20 +14,54 @@ interface GroupData {
   postCount?: number;
 }
 
-function Avatar({ m, size = 26 }: { m: { name: string | null; username: string | null; photo: string | null }; size?: number }) {
+function Avatar({ m, size = 26, ring = false }: { m: { name: string | null; username: string | null; photo: string | null }; size?: number; ring?: boolean }) {
   const label = m.name ?? m.username ?? '?';
+  // `ring` = thick bg-colored border for the overlapping group stack.
+  const border = ring ? 'border-2 border-[var(--bg-2)]' : 'border border-[var(--line-2)]';
   if (m.photo) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={m.photo} alt="" style={{ width: size, height: size }} className="rounded-full object-cover border border-[var(--line-2)]" />;
+    return <img src={m.photo} alt="" style={{ width: size, height: size }} className={`rounded-full object-cover ${border}`} />;
   }
   return (
     <span
-      className="rounded-full inline-flex items-center justify-center font-mono font-bold text-[var(--accent)] bg-[var(--accent-12)] border border-[var(--accent-24)]"
+      className={`rounded-full inline-flex items-center justify-center font-mono font-bold text-[var(--accent)] bg-[var(--accent-12)] ${ring ? 'border-2 border-[var(--bg-2)]' : 'border border-[var(--accent-24)]'}`}
       style={{ width: size, height: size, fontSize: size * 0.42 }}
       aria-hidden="true"
     >
       {label.charAt(0).toUpperCase()}
     </span>
+  );
+}
+
+/** Compact relative-time label for the group activity line ("2h", "1d", "3w"). */
+function ago(iso: string | undefined): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60)       return 'now';
+  const m = s / 60; if (m < 60) return `${Math.floor(m)}m`;
+  const h = m / 60; if (h < 24) return `${Math.floor(h)}h`;
+  const d = h / 24; if (d < 7)  return `${Math.floor(d)}d`;
+  return `${Math.floor(d / 7)}w`;
+}
+
+/** Dashed "Start a group" call-to-action (Activity-forward layout). */
+function NewGroupCTA({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-3.5 rounded-2xl border border-dashed border-[var(--line-3)] p-4 text-left hover:border-[var(--accent)] hover:bg-[var(--accent-12)] transition-all"
+    >
+      <span className="w-11 h-11 rounded-xl bg-[var(--accent-12)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+        <Plus size={20} />
+      </span>
+      <span className="min-w-0">
+        <span className="block font-mono text-[13px] font-bold tracking-[0.5px] text-[var(--ink-0)]">Start a group</span>
+        <span className="block font-mono text-[11px] text-[var(--ink-2)] mt-0.5">Train with friends · share daily · run battles</span>
+      </span>
+    </button>
   );
 }
 
@@ -92,47 +126,55 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
         {loading ? (
           <p className="font-mono text-[10px] text-[var(--ink-3)] py-2">Loading…</p>
         ) : groups.length === 0 ? (
-          <div className="text-center py-6 border border-dashed border-[var(--line-2)] rounded">
-            <Users size={20} className="text-[var(--ink-3)] mx-auto mb-2" />
-            <p className="font-mono text-[10px] text-[var(--ink-2)] font-bold tracking-[1px] uppercase">No groups yet</p>
-            <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1">Create one to run team battles</p>
-          </div>
+          <NewGroupCTA onClick={() => { setCreating(true); setName(''); setPicked(new Set()); setError(''); }} />
         ) : (
-          <div className="space-y-2">
-            {groups.map(g => (
-              <button key={g.id} type="button" onClick={() => setOpenGroupId(g.id)}
-                className="w-full rounded-lg border border-[var(--line)] bg-[var(--bg-2)] p-3 flex items-center gap-3 text-left hover:border-[var(--line-3)] transition-colors">
-                  <div className="flex -space-x-2 flex-shrink-0">
-                    {g.members.slice(0, 5).map(m => <Avatar key={m.id} m={m} size={28} />)}
-                    {g.members.length > 5 && (
-                      <span className="w-7 h-7 rounded-full inline-flex items-center justify-center font-mono text-[9px] font-bold text-[var(--ink-2)] bg-[var(--bg-3)] border border-[var(--line-2)]">
-                        +{g.members.length - 5}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-mono text-[12px] font-bold text-[var(--ink-0)] truncate">{g.name}</p>
-                    {g.lastPost ? (
-                      <p className="font-mono text-[9px] text-[var(--ink-2)] truncate">
-                        <span className="font-bold" style={{ color: 'var(--accent)' }}>{g.lastPost.author}</span>
-                        {' · '}{g.lastPost.text}
+          <div className="space-y-3">
+            {groups.map(g => {
+              const note = g.description?.trim() || `${g.members.length} member${g.members.length === 1 ? '' : 's'}`;
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setOpenGroupId(g.id)}
+                  className="w-full text-left rounded-2xl border border-[var(--line-2)] bg-[var(--bg-2)] p-4 transition-all hover:border-[var(--accent)]/40 active:scale-[0.995]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex -space-x-2.5 flex-shrink-0">
+                      {g.members.slice(0, 4).map(m => <Avatar key={m.id} m={m} size={36} ring />)}
+                      {g.members.length > 4 && (
+                        <span className="w-9 h-9 rounded-full inline-flex items-center justify-center font-mono text-[10px] font-bold text-[var(--ink-2)] bg-[var(--bg-3)] border-2 border-[var(--bg-2)]">
+                          +{g.members.length - 4}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-display text-[19px] tracking-[0.5px] leading-none text-[var(--ink-0)] truncate">{g.name}</p>
+                      <p className="font-mono text-[11px] text-[var(--ink-2)] mt-1.5 truncate">
+                        {g.members.length} member{g.members.length === 1 ? '' : 's'} · {note}
                       </p>
-                    ) : (
-                      <p className="font-mono text-[9px] text-[var(--ink-3)] truncate">
-                        {g.members.length} member{g.members.length === 1 ? '' : 's'}{g.isOwner ? ' · owner' : ''} · tap to open
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    </div>
                     {(g.postCount ?? 0) > 0 && (
-                      <span className="flex items-center gap-1 font-mono text-[9px] font-bold text-[var(--ink-2)] bg-[var(--bg-3)] border border-[var(--line-2)] rounded-full px-2 py-0.5">
-                        <MessageCircle size={10} /> {g.postCount}
+                      <span className="flex items-center gap-1 font-mono text-[11px] text-[var(--ink-1)] border border-[var(--line-2)] rounded-full px-2.5 py-1 flex-shrink-0">
+                        <MessageCircle size={12} /> {g.postCount}
                       </span>
                     )}
-                    <ChevronRight size={16} className="text-[var(--ink-3)]" />
+                    <ChevronRight size={18} className="text-[var(--ink-2)] flex-shrink-0" />
                   </div>
-              </button>
-            ))}
+
+                  {g.lastPost && (
+                    <div className="flex items-center gap-2 mt-3.5 font-mono text-[12px] text-[var(--ink-1)]">
+                      <Zap size={13} className="text-[var(--ink-2)] flex-shrink-0" />
+                      <span className="truncate min-w-0">
+                        <span className="font-medium" style={{ color: 'var(--accent)' }}>{g.lastPost.author}</span>
+                        {' '}{g.lastPost.text}
+                      </span>
+                      <span className="text-[var(--ink-3)] flex-shrink-0 whitespace-nowrap">· {ago(g.lastPost.at)}</span>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+            <NewGroupCTA onClick={() => { setCreating(true); setName(''); setPicked(new Set()); setError(''); }} />
           </div>
         )}
       </div>

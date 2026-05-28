@@ -19,7 +19,8 @@ import {
   type DayRecord,
 } from '@/lib/AppContext';
 import {
-  getUsage, bumpUsage, getWorkoutPresets, saveWorkoutPresets,
+  getUsage, bumpUsage, getCustomExercises, saveCustomExercise,
+  getWorkoutPresets, saveWorkoutPresets,
 } from '@/lib/storage';
 import {
   GOAL_TOLERANCE, LIFT_PRS_KEY, MILLION_GROUPS_KEY, SHOWN_BADGES_KEY,
@@ -886,6 +887,9 @@ export default function WorkoutLogger() {
   const [customG2,      setCustomG2]      = useState('');
   const [customG3,      setCustomG3]      = useState('');
   const [exSearch,      setExSearch]      = useState('');
+  // Bumped on each commit so the exercise picker re-reads usage + custom-exercise
+  // stores from localStorage (a freshly-added custom exercise shows immediately).
+  const [exListVersion, setExListVersion] = useState(0);
   const [pendingDelete, setPendingDelete] = useState<{ entry: ExerciseEntry; key: string } | null>(null);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saveFlash, setSaveFlash] = useState(false);
@@ -1053,31 +1057,52 @@ export default function WorkoutLogger() {
     const grp = currentGroup as keyof typeof PRESETS;
     const presets = PRESETS[grp] ?? [];
 
-    // Primary exercises — sorted by usage frequency
+    // Candidate names for this group = built-in presets + the user's saved
+    // custom exercises + ANYTHING they've logged here (usage). Including usage
+    // names is the bulletproof guarantee behind "if I logged it, it stays in the
+    // list": `bumpUsage` runs on every commit and `queExerciseUsage` is a small,
+    // long-synced store, so a name survives even if the richer custom-exercise
+    // write (which also stores muscles) didn't persist for some reason.
     const usage       = isLoaded ? (getUsage()[currentGroup] ?? {}) : {};
-    const usedNames   = Object.keys(usage).filter(n => presets.includes(n)).sort((a, b) => (usage[b] ?? 0) - (usage[a] ?? 0));
-    const unused      = presets.filter(n => !usage[n]);
+    const customNames = isLoaded ? Object.keys(getCustomExercises()[currentGroup] ?? {}) : [];
+    const usageNames  = Object.keys(usage);
+    const known       = Array.from(new Set([...presets, ...customNames, ...usageNames]));
+
+    // Sort by usage frequency; unused names keep their natural order.
+    const usedNames   = known.filter(n => usage[n]).sort((a, b) => (usage[b] ?? 0) - (usage[a] ?? 0));
+    const unused      = known.filter(n => !usage[n]);
     const primary     = [...usedNames, ...unused];
 
-    // Secondary exercises — exercises from other groups where currentGroup is g2 or g3
+    // Secondary exercises — preset exercises from OTHER groups whose g2/g3 hits
+    // this group. Skip any already surfaced in `primary` so they don't double up.
     const secondary: Array<{ n: string; fromGroup: string }> = [];
     (Object.keys(PRESETS) as Array<keyof typeof PRESETS>).forEach(g => {
       if (g === grp) return;
       PRESETS[g].forEach(name => {
         const m = SECONDARY_MUSCLES[name];
-        if (m?.g2 === currentGroup || m?.g3 === currentGroup) {
+        if ((m?.g2 === currentGroup || m?.g3 === currentGroup) && !known.includes(name)) {
           secondary.push({ n: name, fromGroup: capitalize(String(g)) });
         }
       });
     });
 
     return { primary, secondary };
-  }, [currentGroup, isLoaded]);
+  }, [currentGroup, isLoaded, exListVersion]);
 
   useEffect(() => {
     setSelectedEx(exerciseOptions.primary[0] ?? '');
     setIsCustomEx(false); setCustomName(''); setCustomG2(''); setCustomG3('');
   }, [currentGroup]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cloud pull restores synced settings (usage + custom exercises) AFTER mount.
+  // The picker memo won't otherwise recompute, so a custom exercise saved on
+  // another device wouldn't appear until a group switch. Bump the version so the
+  // freshly-restored names show up immediately.
+  useEffect(() => {
+    const onRestored = () => setExListVersion(v => v + 1);
+    window.addEventListener('que-settings-restored', onRestored);
+    return () => window.removeEventListener('que-settings-restored', onRestored);
+  }, []);
 
   // ── pill drag
   const onPillsMouseDown = useCallback((e: React.MouseEvent) => {
@@ -1146,8 +1171,27 @@ export default function WorkoutLogger() {
   // Rest timer state — populated whenever a lift is committed. Lives at the
   // logger level so it survives between commits and renders the floating bar.
   // Stored as wall-clock so it stays accurate even when the tab is backgrounded.
-  const [restTimer, setRestTimer] = useState<{ startMs: number; durationMs: number } | null>(null);
+  const [restTimer, setRestTimer] = useState<
+    { startMs: number; durationMs: number; exKey: string; reps: string; weight: string } | null
+  >(null);
   const DEFAULT_REST_MS = 150_000; // 2:30 — a sane default for hypertrophy sets
+
+  // Quick-log a set from the rest bar straight into the exercise the timer
+  // belongs to (matched by stable key), then restart the rest clock. Reuses
+  // setExercises so persistence + PR recompute + badge popups all fire.
+  const logRestSet = useCallback((reps: string, weight: string) => {
+    if (!restTimer) return;
+    const idx = exerciseKeysRef.current.indexOf(restTimer.exKey);
+    if (idx >= 0) {
+      setExercises(exercises.map((e, i) => {
+        if (i !== idx || e.k !== 'lift') return e;
+        const sets = Array.isArray(e.sets) && e.sets.length ? [...e.sets] : normalizeSets(e);
+        sets.push({ r: reps || '1', w: weight });
+        return { ...e, sets };
+      }));
+    }
+    setRestTimer(rt => rt && { ...rt, startMs: Date.now(), reps, weight });
+  }, [exercises, restTimer, setExercises]);
 
   const commitLift = useCallback(() => {
     const name = isCustomEx ? customName.trim() : selectedEx;
@@ -1178,10 +1222,21 @@ export default function WorkoutLogger() {
     trackEvent('lift_logged', { sets: pendingSetsCount, hasWeight: maxWeight > 0 });
     bumpUsage(currentGroup, name);
 
-    // Auto-fill secondary/tertiary from the map; custom exercises use the explicit selectors
+    // Resolve the muscles this exercise trains. Custom: the user's explicit
+    // selectors. Preset: the built-in map, falling back to a previously-saved
+    // custom exercise of the same name so re-selecting it keeps its muscles.
     const muscles = isCustomEx
       ? { g2: customG2 || undefined, g3: customG3 || undefined }
-      : SECONDARY_MUSCLES[name] ?? {};
+      : (SECONDARY_MUSCLES[name] ?? getCustomExercises()[currentGroup]?.[name] ?? {});
+
+    // Persist a custom exercise (name + the muscles it hits) so it stays in the
+    // picker next time. Preset exercises already live in code. Push immediately
+    // so it survives the next-day reload even if the debounced sync never fired
+    // (e.g. the tab was closed within the 4 s debounce window).
+    if (isCustomEx) {
+      saveCustomExercise(currentGroup, name, { g2: customG2 || undefined, g3: customG3 || undefined });
+      pushNow({ settings: gatherSettings() });
+    }
 
     const entry: ExerciseEntry = {
       k: 'lift', g: currentGroup, n: name, sets: snappedSets,
@@ -1192,11 +1247,29 @@ export default function WorkoutLogger() {
     exerciseKeysRef.current = [...exerciseKeysRef.current, nextKey()];
     setExercises(next);
     setPendingSetData(Array.from({ length: pendingSetsCount }, () => ({ r: '1', w: '' })));
-    if (isCustomEx) { setCustomName(''); setCustomG2(''); setCustomG3(''); }
+    if (isCustomEx) {
+      // Drop out of custom-input mode and select the exercise we just saved, so
+      // the user actually SEES it persist into the picker (and can log it again
+      // with one tap). Previously the form stayed on a blank custom input, which
+      // made it look like the custom exercise hadn't been stored.
+      setIsCustomEx(false);
+      setSelectedEx(name);
+      setCustomName(''); setCustomG2(''); setCustomG3('');
+    }
+    // Re-read usage + custom stores so the picker reflects this commit immediately.
+    setExListVersion(v => v + 1);
     // Start the rest timer fresh each commit. Replacing any existing one means
     // "I just did another set, restart the clock" — the more useful behavior
-    // than letting a stale timer expire mid-set.
-    setRestTimer({ startMs: Date.now(), durationMs: DEFAULT_REST_MS });
+    // than letting a stale timer expire mid-set. Carry the just-logged exercise's
+    // key + last set so the bar can quick-log the next set into the right entry.
+    const lastSet = snappedSets[snappedSets.length - 1] ?? { r: '1', w: '' };
+    setRestTimer({
+      startMs:    Date.now(),
+      durationMs: DEFAULT_REST_MS,
+      exKey:      exerciseKeysRef.current[exerciseKeysRef.current.length - 1] ?? '',
+      reps:       lastSet.r,
+      weight:     lastSet.w,
+    });
   }, [
     isCustomEx, customName, customG2, customG3, selectedEx, pendingSetData,
     currentGroup, exercises, pendingSetsCount, outlierPending,
@@ -1895,9 +1968,11 @@ export default function WorkoutLogger() {
       <AnimatePresence>
         {restTimer && (
           <RestTimerBar
-            key={restTimer.startMs}
             startMs={restTimer.startMs}
             durationMs={restTimer.durationMs}
+            suggestReps={restTimer.reps}
+            suggestWeight={restTimer.weight}
+            onLogSet={logRestSet}
             onAdjust={delta => setRestTimer(rt => rt && { ...rt, durationMs: Math.max(15_000, rt.durationMs + delta) })}
             onDismiss={() => setRestTimer(null)}
           />

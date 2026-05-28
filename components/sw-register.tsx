@@ -44,6 +44,20 @@ export function SWRegister() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
+    // In development a service worker only causes confusion: it caches the JS
+    // bundle and keeps serving STALE code, so edits to the dev server don't show
+    // up in the browser. Unregister any worker left over from a prior session,
+    // drop its caches, and never register one in dev.
+    if (process.env.NODE_ENV !== 'production') {
+      navigator.serviceWorker.getRegistrations?.()
+        .then(regs => regs.forEach(r => r.unregister()))
+        .catch(() => {});
+      if (typeof caches !== 'undefined') {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+      }
+      return;
+    }
+
     let registration: ServiceWorkerRegistration | null = null;
     let intervalId: ReturnType<typeof setInterval> | undefined;
 

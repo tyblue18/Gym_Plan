@@ -279,6 +279,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
   });
 
+  // Lightweight daily push-sync counter for the /api/stats usage dashboard.
+  // Best-effort (never blocks or fails the sync), ~1 Redis command/sync, and the
+  // key self-expires after 8 days so it never accumulates. Independent of the
+  // eval lock above so every push is counted, not just one per 30s burst.
+  after(async () => {
+    try {
+      const key = `stats:syncs:${new Date().toISOString().slice(0, 10)}`;
+      const n   = await redis.incr(key);
+      if (n === 1) await redis.expire(key, 60 * 60 * 24 * 8);
+    } catch { /* metrics are non-critical */ }
+  });
+
   // Return the server's own timestamp so the client can stamp _syncedAt without
   // relying on its (possibly skewed or maliciously forged) local clock. This is
   // strictly >= every upsert's actual updatedAt in this request.

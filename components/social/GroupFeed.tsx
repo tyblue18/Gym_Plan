@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
-import { MessageCircle, Trash2, X, Bookmark, Plus, Send, Swords, Settings, UserPlus, LogOut } from 'lucide-react';
+import { MessageCircle, Trash2, X, Bookmark, Plus, Send, Swords, Settings, UserPlus, LogOut, BarChart3 } from 'lucide-react';
 import { useApp } from '@/lib/AppContext';
 import type { DayRecord, ExerciseEntry } from '@/lib/AppContext';
 import { getWorkoutPresets, saveWorkoutPresets } from '@/lib/storage';
 import { BATTLE_CATEGORIES } from '@/lib/battle-categories';
+import { CreateTeamBattle } from '@/components/social/TeamBattles';
+import { GroupLeaderboard } from '@/components/social/GroupLeaderboard';
 
 interface MemberLite { id: string; name: string | null; username: string | null; photo: string | null }
 interface GroupLite  { id: string; name: string; ownerId: string; isOwner: boolean; members: MemberLite[]; description?: string | null; createdAt?: string }
@@ -365,7 +367,7 @@ function BattleDetail({ battle, onClose }: { battle: StripBattle; onClose: () =>
 }
 
 /** Horizontally-scrollable strip of the group's active + pending battles. */
-function GroupBattles({ groupId }: { groupId: string }) {
+function GroupBattles({ groupId, version = 0 }: { groupId: string; version?: number }) {
   const [open, setOpen] = useState<StripBattle | null>(null);
   const [battles, setBattles] = useState<StripBattle[]>([]);
   useEffect(() => {
@@ -379,7 +381,7 @@ function GroupBattles({ groupId }: { groupId: string }) {
       } catch { /* noop */ }
     })();
     return () => { cancelled = true; };
-  }, [groupId]);
+  }, [groupId, version]);
 
   if (battles.length === 0) return null;
 
@@ -456,6 +458,10 @@ export function GroupFeed({ group, meId, friends, onChanged, onClose }: {
   const [busy, setBusy]       = useState(false);
   const [manageError, setManageError] = useState('');
   const [descDraft, setDescDraft] = useState(group.description ?? '');
+  const [creatingBattle, setCreatingBattle] = useState(false);
+  const [battleBusy, setBattleBusy] = useState(false);
+  const [battleVersion, setBattleVersion] = useState(0);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // Member CRUD — hits the API, then asks the parent to refresh the groups list
   // (the updated `group` prop flows back down). closeAfter is for delete/leave,
@@ -496,12 +502,11 @@ export function GroupFeed({ group, meId, friends, onChanged, onClose }: {
     try { await fetch(`/api/posts/${p.id}`, { method: 'DELETE', credentials: 'include' }); } catch { /* noop */ }
   };
 
-  // Open the team-battle creator for this group (TeamBattles listens), then close
-  // the feed so the create modal — which sits below this overlay — is visible.
-  const startBattle = () => {
-    window.dispatchEvent(new CustomEvent('que-start-team-battle', { detail: { groupId: group.id } }));
-    onClose();
-  };
+  // Open the team-battle creator scoped to THIS group, in place. (Previously it
+  // dispatched an event the Social tab listened for + closed the feed; that
+  // listener was removed when the Social tab moved to the group leaderboard, so
+  // the group hub now owns team-battle creation directly.)
+  const startBattle = () => setCreatingBattle(true);
 
   // Current group streak — consecutive days with ≥1 post, counting back from
   // today (or yesterday, so a not-yet-posted-today streak still reads as live).
@@ -571,21 +576,28 @@ export function GroupFeed({ group, meId, friends, onChanged, onClose }: {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 mb-4">
-          <button type="button" onClick={() => setSharing(true)} className="que-btn-primary flex-1 py-3 text-[12px] flex items-center justify-center gap-1.5">
+        <div className="space-y-2 mb-4">
+          <button type="button" onClick={() => setSharing(true)} className="que-btn-primary w-full py-3 text-[12px] flex items-center justify-center gap-1.5">
             <Plus size={15} /> Share today
           </button>
           {total >= 2 && (
-            <button type="button" onClick={startBattle}
-              className="px-5 py-3 text-[12px] font-mono font-bold tracking-[0.5px] uppercase rounded-md border flex items-center justify-center gap-1.5 transition-all flex-shrink-0"
-              style={{ borderColor: '#FFB547', color: '#FFB547' }}>
-              <Swords size={14} /> Battle
-            </button>
+            <div className="flex gap-2">
+              <button type="button" onClick={startBattle}
+                className="flex-1 py-3 text-[12px] font-mono font-bold tracking-[0.5px] uppercase rounded-md border flex items-center justify-center gap-1.5 transition-all"
+                style={{ borderColor: '#FFB547', color: '#FFB547' }}>
+                <Swords size={14} /> Battle
+              </button>
+              <button type="button" onClick={() => setShowLeaderboard(true)}
+                className="flex-1 py-3 text-[12px] font-mono font-bold tracking-[0.5px] uppercase rounded-md border flex items-center justify-center gap-1.5 transition-all"
+                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                <BarChart3 size={14} /> Leaderboard
+              </button>
+            </div>
           )}
         </div>
 
         {/* Active / pending battles */}
-        <GroupBattles groupId={group.id} />
+        <GroupBattles groupId={group.id} version={battleVersion} />
 
         {/* Feed */}
         {loading ? (
@@ -615,6 +627,33 @@ export function GroupFeed({ group, meId, friends, onChanged, onClose }: {
           onShared={() => { setSharing(false); void refresh(); }}
           groupId={group.id}
         />
+      )}
+
+      {/* Team-battle creator — scoped to this group, opened by the Battle button */}
+      {creatingBattle && (
+        <CreateTeamBattle
+          meId={meId}
+          groups={[group]}
+          initialGroupId={group.id}
+          busy={battleBusy}
+          setBusy={setBattleBusy}
+          onClose={() => setCreatingBattle(false)}
+          onCreated={() => { setCreatingBattle(false); setBattleVersion(v => v + 1); }}
+        />
+      )}
+
+      {/* Group leaderboard — read-only ranking of this group's members */}
+      {showLeaderboard && (
+        <div className="fixed inset-0 z-[480] flex items-end sm:items-center justify-center bg-black/60 px-4" onClick={() => setShowLeaderboard(false)}>
+          <div className="w-full max-w-[440px] max-h-[88vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[var(--bg-1)] border border-[var(--line-2)] p-5"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 20px)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display text-[18px] tracking-[1.5px] uppercase text-[var(--ink-0)]">Leaderboard</h3>
+              <button type="button" onClick={() => setShowLeaderboard(false)} className="text-[var(--ink-3)] hover:text-[var(--ink-0)]"><X size={18} /></button>
+            </div>
+            <GroupLeaderboard groupId={group.id} />
+          </div>
+        </div>
       )}
 
       {/* Manage group — members, add friends, delete/leave */}

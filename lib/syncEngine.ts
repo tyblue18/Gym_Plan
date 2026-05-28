@@ -27,6 +27,7 @@ const DEBOUNCE_MS = 4_000;
 
 import {
   ATHLETE_PLAN_KEY, WORKOUT_PRESETS_KEY, TEMPLATES_KEY, EXERCISE_USAGE_KEY,
+  CUSTOM_EXERCISES_KEY,
   LAST_STREAK_KEY, LIFT_PRS_KEY, MILLION_GROUPS_KEY, MACRO_GOALS_KEY,
   COIN_KEY, PROFILE_PHOTO_KEY, DB_KEY,
 } from '@/lib/constants';
@@ -37,6 +38,7 @@ const SETTINGS_KEYS = [
   WORKOUT_PRESETS_KEY,     // saved workout presets
   TEMPLATES_KEY,           // custom templates
   EXERCISE_USAGE_KEY,      // exercise frequency (for sorting)
+  CUSTOM_EXERCISES_KEY,    // user-added exercises + the muscles they hit
   LAST_STREAK_KEY,         // calorie streak
   LIFT_PRS_KEY,            // all-time lift maxes — read by badge engine server-side
   MILLION_GROUPS_KEY,      // muscle groups that have crossed 1,000,000 lbs lifetime volume
@@ -85,6 +87,11 @@ export function restoreSettings(settings: Record<string, unknown>): void {
   if (settings[PROFILE_PHOTO_KEY]) {
     window.dispatchEvent(new Event('queProfilePhotoChanged'));
   }
+  // Let UI that derives from synced settings (e.g. the WorkoutLogger exercise
+  // picker, which reads usage + custom exercises) recompute now that the
+  // restore has landed — otherwise cross-device additions wouldn't appear until
+  // an unrelated state change.
+  window.dispatchEvent(new Event('que-settings-restored'));
 }
 
 /**

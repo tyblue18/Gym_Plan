@@ -50,7 +50,8 @@ const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'
 
 export const challengePostSchema = z.object({
   friendId:   id,
-  wager:      z.number().int().min(1).max(100_000),
+  // 0 = a "bragging rights" battle (no coins on the line), matching team battles.
+  wager:      z.number().int().min(0).max(100_000),
   // ── Typed-battle fields (optional for backward compat with the classic
   //    badge-count battles created without these set; new clients send them) ──
   bestOf:     z.union([z.literal(1), z.literal(3), z.literal(5)]).optional(),

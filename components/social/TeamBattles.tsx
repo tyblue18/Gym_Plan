@@ -344,13 +344,13 @@ export function TeamBattles({ meId, embedded = false }: { meId: string; embedded
     />
   );
 
-  // Embedded: render as a "Team" subgroup inside the parent BATTLES card —
+  // Embedded: render as a "Group" subgroup inside the parent BATTLES card —
   // no card chrome, no section header. Friend (1v1) battles sit above it.
   if (embedded) {
     return (
       <div className="mt-4 pt-4 border-t border-[var(--line)]">
         <div className="flex items-center justify-between mb-2">
-          <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)]">Team</p>
+          <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)]">Group</p>
           {newBtn}
         </div>
         {body}
@@ -400,7 +400,7 @@ function fmtRange(start: string, end: string): string {
   return start === end ? fmtMDY(start) : `${fmtMDY(start)} – ${fmtMDY(end)}`;
 }
 
-function CreateTeamBattle({ meId, groups, initialGroupId, busy, onClose, onCreated, setBusy }: {
+export function CreateTeamBattle({ meId, groups, initialGroupId, busy, onClose, onCreated, setBusy }: {
   meId: string; groups: GroupData[]; initialGroupId: string | null; busy: boolean;
   onClose: () => void; onCreated: () => void; setBusy: (b: boolean) => void;
 }) {

@@ -10,7 +10,7 @@ import dynamic                                       from 'next/dynamic';
 import ProfileCard, { type PublicProfile }           from '@/components/ProfileCard';
 import { InviteFriends }                              from '@/components/social/InviteFriends';
 import { Groups }                                     from '@/components/social/Groups';
-import { TeamBattles }                                from '@/components/social/TeamBattles';
+import { TeamBattles }                               from '@/components/social/TeamBattles';
 import {
   COIN_KEY, PROFILE_PHOTO_KEY, SOCIAL_ANIM_KEY, COINS_MIGRATED_KEY,
 } from '@/lib/constants';
@@ -19,6 +19,7 @@ import {
 } from '@/lib/battle-categories';
 import type { BattleResolution, CategoryResult } from '@/lib/battleEngine';
 import { trackEvent } from '@/lib/telemetry';
+import { useApp } from '@/lib/AppContext';
 
 // Lottie + its JSON payloads are only used by the loading spinner that
 // briefly shows on first mount. Defer the library + JSON until they're
@@ -102,6 +103,11 @@ function fmtRange(startDate: string, endDate: string): string {
   return `${fmtMonthDay(startDate)} – ${fmtMonthDay(endDate)}`;
 }
 
+/** Wager chip text: "5 🪙" for a real stake, "Free" for a bragging-rights battle. */
+function wagerChip(w: number): string {
+  return w > 0 ? `${w} 🪙` : 'Free';
+}
+
 /** Human-readable status for an active battle ("Day 3 of 7", "Starts tomorrow", "Resolving…"). */
 function battleProgressLabel(startDate: string, endDate: string): string {
   const today = localToday();
@@ -117,6 +123,51 @@ function battleProgressLabel(startDate: string, endDate: string): string {
   return `Day ${dayN} of ${total}`;
 }
 
+// ── Profile stat-rail computations (own profile, from localDB) ────────────────
+
+function dStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Current consecutive-day workout streak ending today (today may be unlogged — grace). */
+function currentWorkoutStreak(localDB: Record<string, { exercises?: string }>): number {
+  const has = (ds: string) => String(localDB[ds]?.exercises ?? '').length > 2;
+  const cursor = new Date();
+  if (!has(dStr(cursor))) cursor.setDate(cursor.getDate() - 1); // today not logged yet → start at yesterday
+  let count = 0;
+  for (let i = 0; i < 400; i++) {
+    if (!has(dStr(cursor))) break;
+    count++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return count;
+}
+
+/** Total lift volume (reps × weight) over the last 7 days incl. today. */
+function weekLiftVolume(localDB: Record<string, { exercises?: string }>): number {
+  const num = (v: unknown) => { const n = parseFloat(String(v ?? '0')); return Number.isFinite(n) ? n : 0; };
+  let total = 0;
+  const today = new Date();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const raw = localDB[dStr(d)]?.exercises;
+    if (!raw) continue;
+    try {
+      const exs = JSON.parse(String(raw));
+      if (!Array.isArray(exs)) continue;
+      for (const ex of exs) {
+        if ((ex as { k?: string }).k !== 'lift') continue;
+        const e = ex as { sets?: Array<{ r?: unknown; w?: unknown }>; s?: unknown; r?: unknown; w?: unknown };
+        const sets = Array.isArray(e.sets)
+          ? e.sets
+          : Array.from({ length: parseInt(String(e.s ?? '1')) || 1 }, () => ({ r: e.r, w: e.w }));
+        for (const s of sets) total += num(s.r) * num(s.w);
+      }
+    } catch { /* skip corrupt day */ }
+  }
+  return total;
+}
+
 // ── Challenge modal ────────────────────────────────────────────────────────────
 
 type WindowPreset = 'today' | 'tomorrow' | 'past_week' | 'next_week' | 'custom';
@@ -128,10 +179,10 @@ interface WindowPresetEntry {
 }
 
 const WINDOW_PRESETS: WindowPresetEntry[] = [
-  { id: 'past_week', label: 'Past 7 days', sub: 'retrospective' },
+  { id: 'next_week', label: 'Next 7 days', sub: 'starts today' },
   { id: 'today',     label: 'Today',       sub: 'ends tonight' },
   { id: 'tomorrow',  label: 'Tomorrow',    sub: 'one day' },
-  { id: 'next_week', label: 'Next 7 days', sub: 'starts today' },
+  { id: 'past_week', label: 'Past 7 days', sub: 'retrospective' },
   { id: 'custom',    label: 'Custom',      sub: 'pick a start date' },
 ];
 
@@ -180,12 +231,17 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
   onSent:    () => void;
 }) {
   // ── Form state ──────────────────────────────────────────────────────────
-  const [preset,        setPreset]        = useState<WindowPreset>('past_week');
+  // Default to a forward window so two fresh users compete going forward rather
+  // than on empty history (a past-week battle fails the "must have logged" check
+  // for brand-new accounts).
+  const [preset,        setPreset]        = useState<WindowPreset>('next_week');
   const [customStart,   setCustomStart]   = useState(localToday());
   const [customKind,    setCustomKind]    = useState<'day' | '3day' | 'week'>('day');
   const [bestOf,        setBestOf]        = useState<1 | 3 | 5>(1);
   const [selectedCats,  setSelectedCats]  = useState<string[]>([]);
-  const [wager,         setWager]         = useState(Math.min(3, Math.max(1, myBalance)));
+  // Default to a small wager when the user has coins, else 0 (bragging rights) so
+  // a broke user can still send a challenge with one tap.
+  const [wager,         setWager]         = useState(Math.max(0, Math.min(3, myBalance)));
   const [sending,       setSending]       = useState(false);
   const [error,         setError]         = useState('');
 
@@ -197,7 +253,7 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
   const max     = Math.max(0, myBalance);
   const win     = presetToWindow(preset, customStart, customKind);
   const canSend =
-    wager >= 1 && wager <= max &&
+    wager >= 0 && wager <= max &&
     selectedCats.length === bestOf;
 
   // Surface any safety notes for currently-selected categories.
@@ -476,23 +532,31 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
               </span>
             </div>
             <div className="flex items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--bg-2)] p-1">
-              <button type="button" onClick={() => setWager(w => Math.max(1, w - 1))}
+              <button type="button" onClick={() => setWager(w => Math.max(0, w - 1))}
                 className="w-11 h-11 flex items-center justify-center rounded text-[var(--ink-1)] text-2xl hover:bg-[var(--bg-3)] transition-colors disabled:opacity-30"
-                disabled={wager <= 1}>−</button>
+                disabled={wager <= 0}>−</button>
               <div className="flex-1 flex items-baseline justify-center gap-1.5">
-                <span className="font-display tabular-nums text-[32px] leading-none" style={{ color: '#FFB547' }}>{wager}</span>
-                <span className="font-mono text-[11px] text-[var(--ink-3)]">🪙</span>
+                {wager === 0 ? (
+                  <span className="font-display tracking-[1px] text-[22px] leading-none" style={{ color: 'var(--ink-1)' }}>FREE</span>
+                ) : (
+                  <>
+                    <span className="font-display tabular-nums text-[32px] leading-none" style={{ color: '#FFB547' }}>{wager}</span>
+                    <span className="font-mono text-[11px] text-[var(--ink-3)]">🪙</span>
+                  </>
+                )}
               </div>
               <button type="button" onClick={() => setWager(w => Math.min(max, w + 1))}
                 className="w-11 h-11 flex items-center justify-center rounded text-[var(--ink-1)] text-2xl hover:bg-[var(--bg-3)] transition-colors disabled:opacity-30"
                 disabled={wager >= max}>+</button>
             </div>
             <p className="font-mono text-[9px] text-[var(--ink-3)] text-center mt-1.5">
-              Pot: <span className="text-[var(--ink-1)] font-bold tabular-nums">{wager * 2}</span> 🪙 · Winner takes all
+              {wager === 0
+                ? 'Bragging rights — no coins on the line'
+                : <>Pot: <span className="text-[var(--ink-1)] font-bold tabular-nums">{wager * 2}</span> 🪙 · Winner takes all</>}
             </p>
             {myBalance === 0 && (
-              <p className="font-mono text-[9px] text-[var(--warn,#FBBF24)] mt-2 text-center">
-                No coins — hit your calorie goal to earn some!
+              <p className="font-mono text-[9px] text-[var(--ink-3)] mt-2 text-center">
+                No coins yet — battle for bragging rights, or hit your calorie goal to earn some.
               </p>
             )}
           </div>
@@ -512,7 +576,13 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
           <button type="button" onClick={send} disabled={!canSend || sending}
             className="flex-1 py-3.5 rounded-md font-mono text-[10px] font-bold tracking-[1px] uppercase transition-all disabled:opacity-40 active:scale-[0.98]"
             style={{ background: '#FFB547', color: '#07080A', boxShadow: canSend ? '0 0 0 1px #FFB547, 0 0 20px rgba(255,181,71,0.3)' : 'none' }}>
-            {sending ? '…' : `Challenge · ${wager} 🪙`}
+            {sending
+              ? '…'
+              : selectedCats.length === bestOf
+                ? (wager === 0 ? 'Send · Bragging rights' : `Challenge · ${wager} 🪙`)
+                : selectedCats.length === 0
+                  ? `Pick ${bestOf} categor${bestOf === 1 ? 'y' : 'ies'}`
+                  : `Pick ${bestOf - selectedCats.length} more`}
           </button>
         </div>
       </motion.div>
@@ -686,9 +756,11 @@ function BattleDetailSheet({ challenge, myId, myName, myPhoto, opponentPhoto, on
                                                'Tied'}
                 </p>
                 <p className="font-mono text-[10px] text-[var(--ink-2)] mt-1 tabular-nums">
-                  {overallOutcome === 'win'  ? <>+{challenge.wager * 2} 🪙 to your wallet</> :
-                   overallOutcome === 'loss' ? <>−{challenge.wager} 🪙 to {opponentName}</> :
-                                               <>{challenge.wager} 🪙 refunded</>}
+                  {challenge.wager === 0
+                    ? 'Bragging rights'
+                    : overallOutcome === 'win'  ? <>+{challenge.wager * 2} 🪙 to your wallet</> :
+                      overallOutcome === 'loss' ? <>−{challenge.wager} 🪙 to {opponentName}</> :
+                                                  <>{challenge.wager} 🪙 refunded</>}
                 </p>
                 {challenge.resolution && (
                   <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1 tabular-nums">
@@ -718,9 +790,15 @@ function BattleDetailSheet({ challenge, myId, myName, myPhoto, opponentPhoto, on
               </div>
             )}
             <div className="flex items-center gap-1.5">
-              <span className="text-[var(--ink-3)]">🪙</span>
-              <span style={{ color: '#FFB547' }} className="font-bold tabular-nums">{challenge.wager}</span>
-              <span className="text-[var(--ink-3)]">wager</span>
+              {challenge.wager === 0 ? (
+                <span className="text-[var(--ink-2)] font-bold">Bragging rights</span>
+              ) : (
+                <>
+                  <span className="text-[var(--ink-3)]">🪙</span>
+                  <span style={{ color: '#FFB547' }} className="font-bold tabular-nums">{challenge.wager}</span>
+                  <span className="text-[var(--ink-3)]">wager</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -955,11 +1033,12 @@ function UsernameSetup({ onSaved }: { onSaved: () => void }) {
 
 function ChallengeResult({ challenge, myId }: { challenge: ChallengeData; myId: string }) {
   if (challenge.status === 'cancelled') return <span className="font-mono text-[9px] text-[var(--ink-3)]">Declined</span>;
-  if (!challenge.winnerId) return <span className="font-mono text-[9px] text-[var(--ink-3)]">Tie · refunded</span>;
+  const free = challenge.wager === 0;
+  if (!challenge.winnerId) return <span className="font-mono text-[9px] text-[var(--ink-3)]">{free ? 'Tie' : 'Tie · refunded'}</span>;
   const won = challenge.winnerId === myId;
   return (
     <span className="font-mono text-[9px] font-bold" style={{ color: won ? 'var(--positive)' : 'var(--danger)' }}>
-      {won ? `+${challenge.wager} 🪙 Won` : `-${challenge.wager} 🪙 Lost`}
+      {won ? (free ? 'Won' : `+${challenge.wager} 🪙 Won`) : (free ? 'Lost' : `-${challenge.wager} 🪙 Lost`)}
     </span>
   );
 }
@@ -1049,6 +1128,11 @@ export default function SocialTab() {
   const [pendingDecline, setPendingDecline] = useState<string | null>(null);
   const [removeError,    setRemoveError]    = useState<string | null>(null);
   const [challengeError, setChallengeError] = useState<string | null>(null);
+
+  // Profile stat-rail stats — computed client-side from the local workout log.
+  const { localDB } = useApp();
+  const profileStreak = useMemo(() => currentWorkoutStreak(localDB), [localDB]);
+  const weekVolume    = useMemo(() => weekLiftVolume(localDB), [localDB]);
 
   const refresh = useCallback(async () => {
     const [userRes, friendRes, challengeRes] = await Promise.all([
@@ -1332,7 +1416,7 @@ export default function SocialTab() {
       {/* ── YOUR PROFILE CARD ─────────────────────────────────────────────── */}
       {ownProfile && (
         <div className="mb-4">
-          <ProfileCard profile={ownProfile} isOwn onRefresh={refresh} />
+          <ProfileCard profile={ownProfile} isOwn stats={{ streak: profileStreak, weekVolume }} onRefresh={refresh} />
         </div>
       )}
 
@@ -1376,7 +1460,7 @@ export default function SocialTab() {
                       <CategoryGroupDots slugs={c.categories} />
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="font-mono text-[9px] text-[var(--ink-3)]">{c.wager} 🪙</span>
+                      <span className="font-mono text-[9px] text-[var(--ink-3)]">{wagerChip(c.wager)}</span>
                       {c.bestOf && (
                         <span className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-1.5 py-[1px] rounded-sm bg-[var(--bg-3)] text-[var(--ink-2)]">
                           Bo{c.bestOf}
@@ -1449,7 +1533,7 @@ export default function SocialTab() {
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="font-mono text-[8px] text-[var(--accent)] font-bold tracking-[0.5px]">{label}</span>
                             <span className="font-mono text-[8px] text-[var(--ink-3)]">·</span>
-                            <span className="font-mono text-[8px] text-[var(--ink-3)]">{c.wager} 🪙</span>
+                            <span className="font-mono text-[8px] text-[var(--ink-3)]">{wagerChip(c.wager)}</span>
                             {c.bestOf && (
                               <span className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-1 py-[1px] rounded-sm bg-[var(--bg-3)] text-[var(--ink-2)]">
                                 Bo{c.bestOf}
@@ -1477,7 +1561,7 @@ export default function SocialTab() {
                     <CategoryGroupDots slugs={c.categories} />
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="font-mono text-[8px] text-[var(--ink-3)]">{c.wager} 🪙</span>
+                    <span className="font-mono text-[8px] text-[var(--ink-3)]">{wagerChip(c.wager)}</span>
                     {c.bestOf && (
                       <span className="font-mono text-[8px] font-bold tracking-[0.5px] uppercase px-1 py-[1px] rounded-sm bg-[var(--bg-3)] text-[var(--ink-2)]">
                         Bo{c.bestOf}
@@ -1530,7 +1614,7 @@ export default function SocialTab() {
             </>
           )}
 
-          {/* ── Team (embedded — same merged BATTLES card) ── */}
+          {/* ── Group battles (team + FFA) — accept invites, view active ── */}
           {ownProfile?.id && <TeamBattles meId={ownProfile.id} embedded />}
         </div>
       </div>

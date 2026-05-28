@@ -1,6 +1,8 @@
 /**
  * GET  /api/challenges — list incoming, sent, and resolved challenges
- * POST /api/challenges — send a challenge to a friend (deducts wager immediately)
+ * POST /api/challenges — send a challenge to a friend (deducts the wager
+ *   immediately). A wager of 0 is a "bragging rights" battle — no coins move and
+ *   no ledger row is written, matching team-battle behaviour.
  */
 
 import { getServerSession } from 'next-auth/next';
@@ -67,7 +69,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const parsed = challengePostSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'friendId required and wager must be 1–100,000' }, { status: 400 });
+    return NextResponse.json({ error: 'friendId required and wager must be 0–100,000' }, { status: 400 });
   }
   const { friendId, wager, bestOf, windowKind, startDate, categories } = parsed.data;
 
@@ -156,23 +158,18 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: 'Start date is too far in the past' }, { status: 400 });
     }
 
-    // ── Prereq: for a past/current window, both users must have a logged
-    //    exercise day within it (option-a interpretation: at least one day
-    //    each). Future-only windows skip this — no data exists yet.
-    const windowEnded   = isWindowComplete(endDate, today);
-    const windowStarted = startDate <= today;
-    if (windowStarted) {
-      // The battle includes at least one past/current day. Verify both users
-      // have ≥1 logged exercise day in the window.
-      //
-      // We only enforce this for windows that touch past data. A purely
-      // future-scheduled battle (startDate > today) bypasses the check.
-      const upper = windowEnded ? endDate : today;
+    // ── Prereq: only for a FULLY-RETROSPECTIVE window (already over). That guard
+    //    stops gaming a past battle whose outcome you can already see. An ongoing
+    //    or forward window (e.g. "Next 7 days") builds data DURING the battle, so
+    //    requiring logs up front would block two fresh users from ever starting —
+    //    exactly the case we want to support, so we skip the check there.
+    const windowEnded = isWindowComplete(endDate, today);
+    if (windowEnded) {
       const requiresExercise = categories.some(c => getCategory(c)?.requiresExercise);
       if (requiresExercise) {
         const [meRows, friendRows] = await Promise.all([
-          loadDayRecords(me.id,    startDate, upper),
-          loadDayRecords(friendId, startDate, upper),
+          loadDayRecords(me.id,    startDate, endDate),
+          loadDayRecords(friendId, startDate, endDate),
         ]);
         if (!hasLoggedExercise(meRows)) {
           return NextResponse.json({ error: 'You have no logged exercise in that window' }, { status: 400 });
@@ -197,14 +194,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   let challenge;
   try {
     challenge = await prisma.$transaction(async tx => {
-      const updated = await tx.coinWallet.update({
-        where: { id: wallet.id },
-        data:  { balance: { decrement: wager } },
-      });
-      if (updated.balance < 0) throw new Error('INSUFFICIENT_FUNDS');
-      await tx.coinTransaction.create({
-        data: { walletId: wallet.id, amount: -wager, reason: 'battle_bet' },
-      });
+      // Bragging-rights battles (wager 0) move no coins and write no ledger row.
+      if (wager > 0) {
+        const updated = await tx.coinWallet.update({
+          where: { id: wallet.id },
+          data:  { balance: { decrement: wager } },
+        });
+        if (updated.balance < 0) throw new Error('INSUFFICIENT_FUNDS');
+        await tx.coinTransaction.create({
+          data: { walletId: wallet.id, amount: -wager, reason: 'battle_bet' },
+        });
+      }
       return tx.challenge.create({
         data: {
           challengerId: me.id,

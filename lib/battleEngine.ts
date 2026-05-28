@@ -228,6 +228,9 @@ export async function resolveBattle(challengeId: string): Promise<BattleResoluti
     });
     if (claimed.count === 0) throw new Error('ALREADY_RESOLVED');
 
+    // Bragging-rights battle (wager 0) — nothing was escrowed, so no pot to move.
+    if (challenge.wager <= 0) return;
+
     const pot = challenge.wager * 2;
 
     if (resolution.winnerId) {

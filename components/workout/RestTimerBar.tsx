@@ -3,30 +3,47 @@
 /**
  * components/workout/RestTimerBar.tsx
  *
- * Floating bottom bar that counts down between sets. Started by WorkoutLogger
- * on every successful commitLift; dismissable; ±30 s adjusters. Vibrates once
- * when the timer reaches 0, then sticks around in a "done" state so the user
- * sees it expired (auto-disappears 8 s later).
+ * Floating rest-timer bar shown between sets. Started by WorkoutLogger on every
+ * successful commitLift. Features:
+ *   - Drag handle (grip): hold and move the bar anywhere on screen — it no longer
+ *     sits trapped behind the mobile nav/chrome at the bottom.
+ *   - ±30 s adjusters and a skip (✕).
+ *   - "Log set": reveals reps × weight inputs (prefilled from the last set) and
+ *     appends that set to the exercise the timer belongs to, then restarts the
+ *     clock — so you can run the set → rest → log loop without scrolling back up.
  *
- * Wall-clock based — survives tab background / sleep without drift.
+ * Wall-clock based — survives tab background / sleep without drift. The countdown
+ * resets when `startMs` changes (a new set/commit) WITHOUT remounting, so the
+ * user's dragged position is preserved across the rest loop.
  */
 
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { Plus, Minus, X } from 'lucide-react';
+import { motion, useDragControls } from 'framer-motion';
+import { Plus, Minus, X, Check, GripVertical } from 'lucide-react';
 
 export function RestTimerBar({
   startMs,
   durationMs,
+  suggestReps,
+  suggestWeight,
+  onLogSet,
   onAdjust,
   onDismiss,
 }: {
-  startMs:    number;
-  durationMs: number;
-  onAdjust:   (deltaMs: number) => void;
-  onDismiss:  () => void;
+  startMs:       number;
+  durationMs:    number;
+  suggestReps:   string;
+  suggestWeight: string;
+  onLogSet:      (reps: string, weight: string) => void;
+  onAdjust:      (deltaMs: number) => void;
+  onDismiss:     () => void;
 }) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow]         = useState(() => Date.now());
+  const [vibed, setVibed]     = useState(false);
+  const [logging, setLogging] = useState(false);
+  const [reps, setReps]       = useState(suggestReps);
+  const [weight, setWeight]   = useState(suggestWeight);
+  const dragControls          = useDragControls();
 
   // 1 s tick. Don't tick faster — it's wall-clock anyway, granularity is fine.
   useEffect(() => {
@@ -34,13 +51,14 @@ export function RestTimerBar({
     return () => clearInterval(id);
   }, []);
 
+  // A new set / commit restarts the clock (startMs changes) — reset the countdown
+  // state in place (no remount) so the dragged position survives the rest loop.
+  useEffect(() => { setNow(Date.now()); setVibed(false); }, [startMs]);
+
   const remaining = Math.max(0, durationMs - (now - startMs));
   const done      = remaining === 0;
 
-  // One-shot vibration the instant we hit zero. The ref-style guard prevents
-  // it from firing again on subsequent ticks while the user lingers on the
-  // "done" state.
-  const [vibed, setVibed] = useState(false);
+  // One-shot vibration the instant we hit zero.
   useEffect(() => {
     if (done && !vibed) {
       setVibed(true);
@@ -48,70 +66,127 @@ export function RestTimerBar({
     }
   }, [done, vibed]);
 
-  // Auto-dismiss 8 s after expiry so the bar doesn't linger forever once the
-  // user has moved on to their next set or left the tab.
+  // Auto-dismiss 8 s after expiry — but never while the user is mid-log.
   useEffect(() => {
-    if (!done) return;
+    if (!done || logging) return;
     const id = setTimeout(onDismiss, 8_000);
     return () => clearTimeout(id);
-  }, [done, onDismiss]);
+  }, [done, logging, onDismiss]);
 
   const mm = Math.floor(remaining / 60_000);
   const ss = Math.floor((remaining % 60_000) / 1000).toString().padStart(2, '0');
 
+  const openLog = () => { setReps(suggestReps); setWeight(suggestWeight); setLogging(true); };
+  const saveLog = () => { onLogSet(reps.trim() || '1', weight.trim()); setLogging(false); };
+
   return (
     <motion.div
+      drag
+      dragListener={false}
+      dragControls={dragControls}
+      dragMomentum={false}
+      dragElastic={0.12}
       initial={{ y: 60, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: 60, opacity: 0 }}
       transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 rounded-full border bg-[var(--bg-1)] px-3 py-2 shadow-2xl"
+      className="fixed left-0 right-0 mx-auto w-max max-w-[calc(100vw-20px)] z-[60] flex items-center gap-2 rounded-full border bg-[var(--bg-1)] px-2 py-2 shadow-2xl"
       style={{
-        bottom:       'calc(20px + env(safe-area-inset-bottom))',
-        borderColor:  done ? 'var(--positive)' : 'var(--accent)',
-        boxShadow:    `0 0 0 1px ${done ? 'var(--positive-12)' : 'var(--accent-12)'}, 0 18px 40px rgba(0,0,0,0.5)`,
+        bottom:      'calc(20px + env(safe-area-inset-bottom))',
+        borderColor: done ? 'var(--positive)' : 'var(--accent)',
+        boxShadow:   `0 0 0 1px ${done ? 'var(--positive-12)' : 'var(--accent-12)'}, 0 18px 40px rgba(0,0,0,0.5)`,
       }}
     >
+      {/* Drag handle — press and move the bar anywhere on screen. */}
       <button
         type="button"
-        onClick={() => onAdjust(-30_000)}
-        disabled={done}
-        className="w-8 h-8 flex items-center justify-center rounded-full border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-2)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all disabled:opacity-30"
-        title="Subtract 30 s"
+        onPointerDown={e => dragControls.start(e)}
+        aria-label="Drag rest timer"
+        title="Drag to move"
+        className="w-6 h-9 flex items-center justify-center rounded-full text-[var(--ink-3)] hover:text-[var(--ink-1)] cursor-grab active:cursor-grabbing flex-shrink-0"
+        style={{ touchAction: 'none' }}
       >
-        <Minus size={13} />
+        <GripVertical size={15} />
       </button>
 
-      <div className="flex flex-col items-center min-w-[64px]">
-        <span
-          className="font-display tabular text-[22px] leading-none"
-          style={{ color: done ? 'var(--positive)' : 'var(--accent)' }}
-        >
-          {done ? 'GO' : `${mm}:${ss}`}
-        </span>
-        <span className="font-mono text-[7px] tracking-[1.5px] uppercase text-[var(--ink-3)] mt-0.5">
-          {done ? 'next set' : 'rest'}
-        </span>
-      </div>
+      {logging ? (
+        <>
+          <input
+            type="number" inputMode="numeric" value={reps}
+            onChange={e => setReps(e.target.value)}
+            placeholder="reps" aria-label="Reps"
+            className="w-12 h-9 text-center rounded-md border border-[var(--line-2)] bg-[var(--bg-2)] font-mono text-[13px] text-[var(--ink-0)] focus:border-[var(--accent)] outline-none"
+          />
+          <span className="font-mono text-[12px] text-[var(--ink-3)]">×</span>
+          <input
+            type="number" inputMode="decimal" value={weight}
+            onChange={e => setWeight(e.target.value)}
+            placeholder="lbs" aria-label="Weight"
+            className="w-16 h-9 text-center rounded-md border border-[var(--line-2)] bg-[var(--bg-2)] font-mono text-[13px] text-[var(--ink-0)] focus:border-[var(--accent)] outline-none"
+          />
+          <button
+            type="button" onClick={saveLog}
+            className="h-9 px-3 flex items-center gap-1 rounded-full font-mono text-[10px] font-bold uppercase tracking-[0.5px] flex-shrink-0"
+            style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+          >
+            <Check size={13} /> Save
+          </button>
+          <button
+            type="button" onClick={() => setLogging(false)} aria-label="Back"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-[var(--ink-3)] hover:text-[var(--ink-1)] transition-colors flex-shrink-0"
+          >
+            <X size={14} />
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button" onClick={() => onAdjust(-30_000)} disabled={done}
+            className="w-8 h-8 flex items-center justify-center rounded-full border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-2)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all disabled:opacity-30 flex-shrink-0"
+            title="Subtract 30 s"
+          >
+            <Minus size={13} />
+          </button>
 
-      <button
-        type="button"
-        onClick={() => onAdjust(30_000)}
-        disabled={done}
-        className="w-8 h-8 flex items-center justify-center rounded-full border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-2)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all disabled:opacity-30"
-        title="Add 30 s"
-      >
-        <Plus size={13} />
-      </button>
+          <div className="flex flex-col items-center min-w-[54px]">
+            <span
+              className="font-display tabular text-[22px] leading-none"
+              style={{ color: done ? 'var(--positive)' : 'var(--accent)' }}
+            >
+              {done ? 'GO' : `${mm}:${ss}`}
+            </span>
+            <span className="font-mono text-[7px] tracking-[1.5px] uppercase text-[var(--ink-3)] mt-0.5">
+              {done ? 'next set' : 'rest'}
+            </span>
+          </div>
 
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="w-8 h-8 flex items-center justify-center rounded-full text-[var(--ink-3)] hover:text-[var(--danger)] transition-colors"
-        title="Skip rest"
-      >
-        <X size={14} />
-      </button>
+          <button
+            type="button" onClick={() => onAdjust(30_000)} disabled={done}
+            className="w-8 h-8 flex items-center justify-center rounded-full border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-2)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all disabled:opacity-30 flex-shrink-0"
+            title="Add 30 s"
+          >
+            <Plus size={13} />
+          </button>
+
+          {/* Log the set you just did — appends to the current exercise + restarts rest. */}
+          <button
+            type="button" onClick={openLog}
+            className="h-8 px-3 flex items-center gap-1 rounded-full font-mono text-[10px] font-bold uppercase tracking-[0.5px] flex-shrink-0"
+            style={{ background: done ? 'var(--positive)' : 'var(--accent)', color: 'var(--accent-ink)' }}
+            title="Log this set"
+          >
+            <Check size={13} /> Log set
+          </button>
+
+          <button
+            type="button" onClick={onDismiss} aria-label="Skip rest"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-[var(--ink-3)] hover:text-[var(--danger)] transition-colors flex-shrink-0"
+            title="Skip rest"
+          >
+            <X size={14} />
+          </button>
+        </>
+      )}
     </motion.div>
   );
 }

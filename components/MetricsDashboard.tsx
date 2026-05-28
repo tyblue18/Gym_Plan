@@ -866,9 +866,34 @@ function WeeklyVolumeCard() {
 // SUB-COMPONENT — ActivityLogCard
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Real caloric balance for a logged day: calsEaten − true maintenance.
+ *   maintenance = budget + goalDeficit + 0.4 × burn   (≡ TDEE + burn)
+ * Mirrors getPlanCompliance + the budget formula. Negative = a real deficit,
+ * positive = a real surplus. Returns null when the day lacks the data to
+ * compute it (no calories or no stored budget).
+ *
+ * NOTE: this is the true deficit/surplus vs. maintenance — NOT calsEaten −
+ * budget, which only measures how far under/over the GOAL you landed.
+ */
+function dayCalorieBalance(
+  rec: { calsEaten?: unknown; budget?: unknown; burn?: unknown },
+  goalDeficit: number,
+): number | null {
+  const eaten  = parseNum(String(rec.calsEaten ?? 0));
+  const budget = parseNum(String(rec.budget ?? 0));
+  if (eaten <= 0 || budget <= 0) return null;
+  const burn = parseNum(String(rec.burn ?? 0));
+  return Math.round(eaten - (budget + goalDeficit + burn * 0.4));
+}
+
 function ActivityLogCard() {
-  const { localDB, today } = useApp();
+  const { localDB, today, profile } = useApp();
   const [page, setPage] = useState(30);
+  // Goal direction: positive deficit = cutting, negative = bulking (surplus
+  // stored as a negative deficit). Matches getPlanCompliance's default of 500.
+  const goalDeficit = parseNum(profile.deficit) || 500;
+  const cutting     = goalDeficit >= 0;
 
   const DOW = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
   const todayStr = toDateStr(today);
@@ -899,18 +924,28 @@ function ActivityLogCard() {
               const label  = dayIdx === 0 ? 'TODAY'
                 : dayIdx === 1 ? 'YESTERDAY'
                 : `${DOW[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;
-              const eaten  = parseNum(rec.calsEaten);
-              const budget = parseNum(rec.budget);
+              // Real balance vs maintenance (deficit when negative, surplus when
+              // positive) — not just "under/over the goal budget".
+              const balance = dayCalorieBalance(rec, goalDeficit);
 
               let netEl: React.ReactNode = <span className="font-mono text-[11px] text-[var(--ink-3)] tracking-[1px]">—</span>;
-              if (rec.calsEaten && budget) {
-                const net = Math.round(eaten - budget);
-                const col = net <= 0 ? 'text-[var(--positive)]' : 'text-[var(--danger)]';
-                netEl = (
-                  <span className={`font-mono font-bold text-[13px] tabular ${col}`}>
-                    {net > 0 ? '+' : ''}{net.toLocaleString()} kcal
-                  </span>
-                );
+              if (balance !== null) {
+                if (balance === 0) {
+                  netEl = <span className="font-mono font-bold text-[13px] tabular text-[var(--ink-1)]">maintenance</span>;
+                } else {
+                  const isDeficit = balance < 0;
+                  // Green when the balance moves toward the user's goal.
+                  const onGoal = cutting ? isDeficit : !isDeficit;
+                  const col    = onGoal ? 'text-[var(--positive)]' : 'text-[var(--danger)]';
+                  netEl = (
+                    <span className={`font-mono font-bold text-[13px] tabular ${col}`}>
+                      {Math.abs(balance).toLocaleString()}
+                      <span className="font-normal text-[10px] text-[var(--ink-3)] tracking-[0.5px] uppercase ml-1">
+                        {isDeficit ? 'deficit' : 'surplus'}
+                      </span>
+                    </span>
+                  );
+                }
               }
               return (
                 <div
@@ -942,10 +977,12 @@ function ActivityLogCard() {
 // SUB-COMPONENT — CalorieHistoryCard
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CalorieHistoryCard({ streak, avgNet, days }: {
-  streak: number; avgNet: number; days: number;
+function CalorieHistoryCard({ streak, avgNet, days, cutting }: {
+  streak: number; avgNet: number; days: number; cutting: boolean;
 }) {
-  const isPositive = avgNet <= 0;
+  const isDeficit = avgNet < 0;
+  // Green when the average balance moves toward the user's goal.
+  const onGoal    = avgNet === 0 ? true : cutting ? isDeficit : !isDeficit;
   return (
     <div className="que-card mb-4 cursor-pointer transition-all hover:border-[var(--line-2)]">
       <div className="p-5 flex items-center gap-4">
@@ -954,8 +991,8 @@ function CalorieHistoryCard({ streak, avgNet, days }: {
           {days > 0 ? (
             <p className="font-mono text-[11px] text-[var(--ink-1)] tracking-[0.5px]">
               {days} DAYS · AVG{' '}
-              <span className={`font-bold tabular ${isPositive ? 'text-[var(--positive)]' : 'text-[var(--danger)]'}`}>
-                {avgNet > 0 ? '+' : ''}{fmt(avgNet)} kcal/day
+              <span className={`font-bold tabular ${onGoal ? 'text-[var(--positive)]' : 'text-[var(--danger)]'}`}>
+                {avgNet === 0 ? 'maintenance' : `${fmt(Math.abs(avgNet))} kcal ${isDeficit ? 'deficit' : 'surplus'}/day`}
               </span>
             </p>
           ) : (
@@ -1242,13 +1279,13 @@ export default function MetricsDashboard() {
   }, [localDB, activeDayFocus]);
 
   const { calDays, avgNet, streak, workoutStreak, weighStreak } = useMemo(() => {
+    // Average real balance vs maintenance (matches the per-day Activity Log),
+    // not average vs goal budget.
+    const goalDeficit = parseNum(profile.deficit) || 500;
     const days = Object.keys(localDB)
       .map(ds => {
-        const rec = localDB[ds];
-        if (!rec.calsEaten) return null;
-        const eaten = parseNum(rec.calsEaten);
-        const budget = parseNum(rec.budget);
-        return { ds, net: eaten - budget };
+        const bal = dayCalorieBalance(localDB[ds], goalDeficit);
+        return bal === null ? null : { ds, net: bal };
       })
       .filter(Boolean) as { ds: string; net: number }[];
     const avg    = days.length ? days.reduce((s, d) => s + d.net, 0) / days.length : 0;
@@ -1278,7 +1315,7 @@ export default function MetricsDashboard() {
     const wis = countStreak(ds => weighDays.has(ds));
 
     return { calDays: days.length, avgNet: avg, streak: s, workoutStreak: ws, weighStreak: wis };
-  }, [localDB, today, todayStr]);
+  }, [localDB, today, todayStr, profile.deficit]);
 
   if (!isLoaded) {
     return (
@@ -1339,7 +1376,7 @@ export default function MetricsDashboard() {
       <WeeklyVolumeCard />
       <TrophyCaseCard />
       <ActivityLogCard />
-      <CalorieHistoryCard streak={streak} avgNet={avgNet} days={calDays} />
+      <CalorieHistoryCard streak={streak} avgNet={avgNet} days={calDays} cutting={(parseNum(profile.deficit) || 500) >= 0} />
       <TrendsCard />
 
       <ProjectionModal

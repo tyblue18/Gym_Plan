@@ -5,6 +5,9 @@
  * accept:  challengee pays wager, badge counts compared, winner gets 2× wager.
  *          Tie → both refunded.
  * decline: challenge cancelled, challenger refunded.
+ *
+ * A wager of 0 is a "bragging rights" battle: no coins are deducted, transferred,
+ * or refunded on any path — only the win/loss/tie outcome is recorded.
  */
 
 import { getServerSession } from 'next-auth/next';
@@ -43,27 +46,33 @@ export async function POST(
     return NextResponse.json({ error: 'Not your challenge to respond to' }, { status: 403 });
   }
 
-  // ── Decline — refund challenger ───────────────────────────────────────────
+  // ── Decline — refund challenger (nothing to refund on a bragging-rights battle) ──
   if (action === 'decline') {
-    const challengerWallet = await prisma.coinWallet.upsert({
-      where:  { userId: challenge.challengerId },
-      create: { userId: challenge.challengerId, balance: 0 },
-      update: {},
-    });
-
-    await prisma.$transaction([
-      prisma.coinWallet.update({
-        where: { id: challengerWallet.id },
-        data:  { balance: { increment: challenge.wager } },
-      }),
-      prisma.coinTransaction.create({
-        data: { walletId: challengerWallet.id, amount: challenge.wager, reason: 'refund', refId: challenge.id },
-      }),
-      prisma.challenge.update({
+    if (challenge.wager > 0) {
+      const challengerWallet = await prisma.coinWallet.upsert({
+        where:  { userId: challenge.challengerId },
+        create: { userId: challenge.challengerId, balance: 0 },
+        update: {},
+      });
+      await prisma.$transaction([
+        prisma.coinWallet.update({
+          where: { id: challengerWallet.id },
+          data:  { balance: { increment: challenge.wager } },
+        }),
+        prisma.coinTransaction.create({
+          data: { walletId: challengerWallet.id, amount: challenge.wager, reason: 'refund', refId: challenge.id },
+        }),
+        prisma.challenge.update({
+          where: { id: challenge.id },
+          data:  { status: 'cancelled', resolvedAt: new Date() },
+        }),
+      ]);
+    } else {
+      await prisma.challenge.update({
         where: { id: challenge.id },
         data:  { status: 'cancelled', resolvedAt: new Date() },
-      }),
-    ]);
+      });
+    }
 
     return NextResponse.json({ ok: true, result: 'declined' });
   }
@@ -97,14 +106,16 @@ export async function POST(
     //    accepts are blocked via the status='pending' guard on updateMany.
     try {
       await prisma.$transaction(async tx => {
-        const after = await tx.coinWallet.update({
-          where: { id: challengeeWallet.id },
-          data:  { balance: { decrement: challenge.wager } },
-        });
-        if (after.balance < 0) throw new Error('INSUFFICIENT_FUNDS');
-        await tx.coinTransaction.create({
-          data: { walletId: challengeeWallet.id, amount: -challenge.wager, reason: 'battle_bet', refId: challenge.id },
-        });
+        if (challenge.wager > 0) {
+          const after = await tx.coinWallet.update({
+            where: { id: challengeeWallet.id },
+            data:  { balance: { decrement: challenge.wager } },
+          });
+          if (after.balance < 0) throw new Error('INSUFFICIENT_FUNDS');
+          await tx.coinTransaction.create({
+            data: { walletId: challengeeWallet.id, amount: -challenge.wager, reason: 'battle_bet', refId: challenge.id },
+          });
+        }
         const claimed = await tx.challenge.updateMany({
           where: { id: challenge.id, status: 'pending' },
           data:  { status: 'active' },
@@ -176,21 +187,24 @@ export async function POST(
 
   try {
   await prisma.$transaction(async tx => {
-    // Deduct wager from challengee — re-check balance atomically
-    const afterDeduct = await tx.coinWallet.update({ where: { id: challengeeWallet.id }, data: { balance: { decrement: challenge.wager } } });
-    if (afterDeduct.balance < 0) throw new Error('INSUFFICIENT_FUNDS');
-    await tx.coinTransaction.create({ data: { walletId: challengeeWallet.id, amount: -challenge.wager, reason: 'battle_bet', refId: challenge.id } });
+    // Coins only move when something was actually wagered (bragging-rights = 0).
+    if (challenge.wager > 0) {
+      // Deduct wager from challengee — re-check balance atomically
+      const afterDeduct = await tx.coinWallet.update({ where: { id: challengeeWallet.id }, data: { balance: { decrement: challenge.wager } } });
+      if (afterDeduct.balance < 0) throw new Error('INSUFFICIENT_FUNDS');
+      await tx.coinTransaction.create({ data: { walletId: challengeeWallet.id, amount: -challenge.wager, reason: 'battle_bet', refId: challenge.id } });
 
-    if (winnerId) {
-      // Award pot to winner
-      const winnerWalletId = winnerId === challenge.challengerId ? challengerWallet.id : challengeeWallet.id;
-      await tx.coinWallet.update({ where: { id: winnerWalletId }, data: { balance: { increment: pot } } });
-      await tx.coinTransaction.create({ data: { walletId: winnerWalletId, amount: pot, reason: 'battle_win', refId: challenge.id } });
-    } else {
-      // Tie: refund both
-      for (const wId of [challengerWallet.id, challengeeWallet.id]) {
-        await tx.coinWallet.update({ where: { id: wId }, data: { balance: { increment: challenge.wager } } });
-        await tx.coinTransaction.create({ data: { walletId: wId, amount: challenge.wager, reason: 'refund', refId: challenge.id } });
+      if (winnerId) {
+        // Award pot to winner
+        const winnerWalletId = winnerId === challenge.challengerId ? challengerWallet.id : challengeeWallet.id;
+        await tx.coinWallet.update({ where: { id: winnerWalletId }, data: { balance: { increment: pot } } });
+        await tx.coinTransaction.create({ data: { walletId: winnerWalletId, amount: pot, reason: 'battle_win', refId: challenge.id } });
+      } else {
+        // Tie: refund both
+        for (const wId of [challengerWallet.id, challengeeWallet.id]) {
+          await tx.coinWallet.update({ where: { id: wId }, data: { balance: { increment: challenge.wager } } });
+          await tx.coinTransaction.create({ data: { walletId: wId, amount: challenge.wager, reason: 'refund', refId: challenge.id } });
+        }
       }
     }
 

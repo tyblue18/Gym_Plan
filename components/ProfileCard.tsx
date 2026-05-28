@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Pencil, Clock, Infinity as InfinityIcon, ChevronDown } from 'lucide-react';
 import { AutoCropImage } from '@/components/AutoCropImage';
@@ -65,6 +65,23 @@ function timeRemaining(iso: string): string {
   const h = Math.floor(diff / 3_600_000);
   const m = Math.floor((diff % 3_600_000) / 60_000);
   return h > 0 ? `${h}h ${m}m left` : `${m}m left`;
+}
+
+// ── Profile stat-rail (own / social context only) ──────────────────────────────
+function StatCell({ k, v }: { k: string; v: ReactNode }) {
+  return (
+    <div className="bg-[var(--bg-1)] px-3 py-3 flex flex-col gap-1">
+      <span className="font-display text-[20px] leading-none tracking-[0.5px] text-[var(--ink-0)] flex items-baseline gap-1">{v}</span>
+      <span className="font-mono text-[9px] tracking-[1.5px] uppercase text-[var(--ink-2)]">{k}</span>
+    </div>
+  );
+}
+
+/** Compact "this week" volume label, e.g. 48 → "48 lbs", 48200 → "48k lbs". */
+function weekVolLabel(v: number): ReactNode {
+  const unit = <small className="font-mono text-[10px] text-[var(--ink-2)] font-bold ml-0.5">{v >= 1000 ? 'k lbs' : 'lbs'}</small>;
+  const num  = v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) : String(Math.round(v));
+  return <>{num}{unit}</>;
 }
 
 // ── Battle W-L-T strip ────────────────────────────────────────────────────────
@@ -664,10 +681,13 @@ export default function ProfileCard({
   profile,
   isOwn = false,
   onRefresh,
+  stats,
 }: {
   profile:    PublicProfile;
   isOwn?:     boolean;
   onRefresh?: () => void;
+  /** Own/social context only — drives the stat-rail. Omitted on public profiles. */
+  stats?:     { streak: number; weekVolume: number };
 }) {
   const [localProfile, setLocalProfile] = useState(profile);
   const [modal, setModal] = useState<'edit' | null>(null);
@@ -696,8 +716,8 @@ export default function ProfileCard({
           {/* Avatar */}
           <div className="relative flex-shrink-0">
             <div
-              className="w-16 h-16 rounded-full overflow-hidden border-2 flex items-center justify-center"
-              style={{ borderColor: 'var(--accent)', background: 'var(--bg-3)' }}
+              className="w-[72px] h-[72px] rounded-full overflow-hidden border-2 flex items-center justify-center"
+              style={{ borderColor: 'var(--accent)', background: 'var(--bg-3)', boxShadow: '0 0 0 3px var(--bg-1), 0 0 20px var(--accent-40)' }}
             >
               {localProfile.profilePhoto ? (
                 <img
@@ -759,7 +779,7 @@ export default function ProfileCard({
               </p>
               <p className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px]">badges</p>
             </div>
-            {(localProfile.coinBalance ?? 0) > 0 && (
+            {!stats && (localProfile.coinBalance ?? 0) > 0 && (
               <div className="flex items-center gap-1 px-2 py-0.5 rounded-full"
                 style={{ background: 'rgba(255,181,71,0.12)', border: '1px solid rgba(255,181,71,0.25)' }}>
                 <span className="text-[11px] leading-none">🪙</span>
@@ -773,6 +793,17 @@ export default function ProfileCard({
         </div>
 
       </div>
+
+      {/* ── Stat rail (own/social context) ── */}
+      {isOwn && stats && (
+        <div className="px-5 pb-4 -mt-1">
+          <div className="grid grid-cols-3 gap-px rounded-xl overflow-hidden border border-[var(--line)]" style={{ background: 'var(--line)' }}>
+            <StatCell k="Day streak" v={<><span style={{ color: 'var(--warn)' }}>🔥</span> {stats.streak}</>} />
+            <StatCell k="This week" v={weekVolLabel(stats.weekVolume)} />
+            <StatCell k="Coins" v={<span style={{ color: 'var(--warn)' }}>{(localProfile.coinBalance ?? 0).toLocaleString()}</span>} />
+          </div>
+        </div>
+      )}
 
       {/* ── Gym Badges — one dropdown: showcase + full collection ── */}
       <div className="border-t border-[var(--line)] px-5 py-2.5">
