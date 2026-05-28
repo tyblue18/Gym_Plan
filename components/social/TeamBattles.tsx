@@ -61,6 +61,7 @@ export function TeamBattles({ meId }: { meId: string }) {
   const [groups,  setGroups]  = useState<GroupData[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [createGroupId, setCreateGroupId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -76,6 +77,18 @@ export function TeamBattles({ meId }: { meId: string }) {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // The Groups card fires this to start a battle for a specific group.
+  useEffect(() => {
+    const onStart = (e: Event) => {
+      const id = (e as CustomEvent<{ groupId: string }>).detail?.groupId ?? null;
+      void refresh();              // pull in any just-created group/members
+      setCreateGroupId(id);
+      setCreating(true);
+    };
+    window.addEventListener('que-start-team-battle', onStart);
+    return () => window.removeEventListener('que-start-team-battle', onStart);
+  }, [refresh]);
 
   const act = async (battleId: string, action: 'accept' | 'decline' | 'cancel') => {
     setBusy(true);
@@ -97,7 +110,7 @@ export function TeamBattles({ meId }: { meId: string }) {
         <div className="flex items-center justify-between mb-1">
           <h2 className="que-section-label"><span className="dot" style={{ background: '#FFB547' }} /> TEAM BATTLES</h2>
           <button type="button" disabled={eligibleGroups.length === 0}
-            onClick={() => setCreating(true)}
+            onClick={() => { setCreateGroupId(null); setCreating(true); }}
             className="font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)]/50 rounded-sm px-2.5 py-1.5 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all flex items-center gap-1 disabled:opacity-40">
             <Swords size={12} /> New
           </button>
@@ -188,6 +201,7 @@ export function TeamBattles({ meId }: { meId: string }) {
         <CreateTeamBattle
           meId={meId}
           groups={eligibleGroups}
+          initialGroupId={createGroupId}
           busy={busy}
           onClose={() => setCreating(false)}
           onCreated={() => { setCreating(false); void refresh(); }}
@@ -200,11 +214,11 @@ export function TeamBattles({ meId }: { meId: string }) {
 
 // ── Create flow ─────────────────────────────────────────────────────────────
 
-function CreateTeamBattle({ meId, groups, busy, onClose, onCreated, setBusy }: {
-  meId: string; groups: GroupData[]; busy: boolean;
+function CreateTeamBattle({ meId, groups, initialGroupId, busy, onClose, onCreated, setBusy }: {
+  meId: string; groups: GroupData[]; initialGroupId: string | null; busy: boolean;
   onClose: () => void; onCreated: () => void; setBusy: (b: boolean) => void;
 }) {
-  const [groupId, setGroupId] = useState(groups[0]?.id ?? '');
+  const [groupId, setGroupId] = useState(initialGroupId ?? groups[0]?.id ?? '');
   const group = groups.find(g => g.id === groupId) ?? null;
 
   // team assignment: userId → 0 | 1 | undefined; default the creator to A.

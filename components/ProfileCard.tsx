@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { AnimatePresence, motion, type PanInfo } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { X, Pencil, Clock, Infinity as InfinityIcon } from 'lucide-react';
 import { AutoCropImage } from '@/components/AutoCropImage';
 import { BADGE_CATALOG } from '@/lib/badgeCatalog';
@@ -217,24 +217,20 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
   const [shake,             setShake]             = useState(false);
   const [tab,               setTab]               = useState<'mine' | 'all'>('mine');
   const [hoveredCatalogSlug, setHoveredCatalogSlug] = useState<string | null>(null);
-  const slotRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // Slot index "picked up" for a two-tap reorder (replaces drag-to-reorder,
+  // which fought with scroll and clipped against the sheet on mobile).
+  const [pickedSlot, setPickedSlot] = useState<number | null>(null);
 
   const selected = slots.filter((s): s is string => s !== null);
 
-  const remove = (idx: number) =>
-    setSlots(prev => {
-      const n = [...prev];
-      n.splice(idx, 1);   // remove at idx, shift left
-      n.push(null);       // maintain length = 8
-      return n;
-    });
-
+  // Add (fills the first empty slot) or remove, from the badge picker below.
   const toggle = (slug: string) => {
+    setPickedSlot(null);
     setSlots(prev => {
       const idx = prev.indexOf(slug);
-      if (idx !== -1) { const n = [...prev]; n[idx] = null; return n; }
+      if (idx !== -1) { const n = [...prev]; n[idx] = null; return n; }  // already in → remove
       const emptyIdx = prev.indexOf(null);
-      if (emptyIdx === -1) {
+      if (emptyIdx === -1) {                                              // full → shake the counter
         setShake(true);
         setTimeout(() => setShake(false), 600);
         return prev;
@@ -243,26 +239,20 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
     });
   };
 
-  const handleDragEnd = (fromIdx: number, info: PanInfo) => {
-    const { x, y } = info.point;
-    let closestIdx  = -1;
-    let closestDist = Infinity;
-    slotRefs.current.forEach((ref, i) => {
-      if (!ref) return;
-      const rect = ref.getBoundingClientRect();
-      const cx   = rect.left + rect.width  / 2 + window.scrollX;
-      const cy   = rect.top  + rect.height / 2 + window.scrollY;
-      const dist = Math.hypot(x - cx, y - cy);
-      if (dist < closestDist) { closestDist = dist; closestIdx = i; }
-    });
-    if (closestIdx !== -1 && closestIdx !== fromIdx && closestDist < 100) {
-      setSlots(prev => {
-        if (prev[closestIdx] === null) return prev; // don't drop on empty slots
-        const n = [...prev];
-        [n[fromIdx], n[closestIdx]] = [n[closestIdx], n[fromIdx]];
-        return n;
-      });
+  // Two-tap reorder: tap a filled slot to pick it up, tap another slot to swap
+  // (tapping an empty slot moves it there). Tapping the picked slot again cancels.
+  const handleSlotTap = (i: number) => {
+    if (pickedSlot === null) {
+      if (slots[i] !== null) setPickedSlot(i);
+      return;
     }
+    if (pickedSlot === i) { setPickedSlot(null); return; }
+    setSlots(prev => {
+      const n = [...prev];
+      [n[pickedSlot], n[i]] = [n[i], n[pickedSlot]];
+      return n;
+    });
+    setPickedSlot(null);
   };
 
   const save = async () => {
@@ -308,7 +298,7 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
           <div>
             <h3 className="font-display text-[18px] tracking-[2px] uppercase text-[var(--ink-0)]">Edit Showcase</h3>
             <p className="font-mono text-[9px] text-[var(--ink-3)] mt-0.5">
-              Drag to reorder · tap slot to remove
+              Tap a badge below to add or remove · tap two slots to swap
             </p>
           </div>
           <button onClick={onClose} className="w-11 h-11 flex items-center justify-center text-[var(--ink-2)] hover:text-[var(--accent)] transition-colors">
@@ -344,59 +334,39 @@ function ShowcaseEditor({ badges, current, onSave, onClose }: {
 
             <div className="grid grid-cols-4 gap-2">
               {Array.from({ length: 8 }).map((_, i) => {
-                const slug  = slots[i];
-                const badge = slug ? badges.find(b => b.slug === slug) : null;
+                const slug   = slots[i];
+                const badge  = slug ? badges.find(b => b.slug === slug) : null;
+                const picked = pickedSlot === i;
                 return (
-                  <div
+                  <button
                     key={i}
-                    ref={el => { slotRefs.current[i] = el; }}
-                    className="aspect-square relative"
-                    style={{ borderRadius: '50%' }}
+                    type="button"
+                    onClick={() => handleSlotTap(i)}
+                    className="aspect-square relative flex items-center justify-center select-none transition-transform active:scale-95"
+                    style={{
+                      borderRadius: '50%',
+                      background: badge
+                        ? 'radial-gradient(circle at 35% 30%, #181828, #06060E)'
+                        : 'radial-gradient(circle at 35% 30%, #101018, #05050C)',
+                      boxShadow: picked
+                        ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-40)'
+                        : badge
+                          ? 'inset 0 2px 6px rgba(0,0,0,0.9), inset 0 -1px 2px rgba(255,255,255,0.03)'
+                          : 'inset 0 2px 8px rgba(0,0,0,0.95)',
+                    }}
                   >
                     {badge ? (
-                      <motion.div
-                        key={slug}
-                        drag
-                        dragMomentum={false}
-                        dragElastic={0.08}
-                        onDragEnd={(_, info) => handleDragEnd(i, info)}
-                        onClick={() => remove(i)}
-                        whileDrag={{ scale: 1.18, zIndex: 60, opacity: 0.9 }}
-                        className="w-full h-full flex items-center justify-center relative group cursor-grab active:cursor-grabbing select-none"
-                        style={{
-                          borderRadius: '50%',
-                          background: 'radial-gradient(circle at 35% 30%, #181828, #06060E)',
-                          boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.9), inset 0 -1px 2px rgba(255,255,255,0.03)',
-                          touchAction: 'none',
-                        }}
-                      >
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          {badge.icon.startsWith('/') ? (
-                            <AutoCropImage src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
-                          ) : (
-                            <span className="text-[22px] leading-none">{badge.icon}</span>
-                          )}
-                        </div>
-                        <div
-                          className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-                          style={{ background: 'rgba(0,0,0,0.55)' }}
-                        >
-                          <X size={13} style={{ color: 'rgba(255,255,255,0.85)' }} />
-                        </div>
-                      </motion.div>
+                      badge.icon.startsWith('/') ? (
+                        <AutoCropImage src={badge.icon} alt={badge.label} className="w-full h-full object-contain" />
+                      ) : (
+                        <span className="text-[22px] leading-none">{badge.icon}</span>
+                      )
                     ) : (
-                      <div
-                        className="w-full h-full flex items-center justify-center"
-                        style={{
-                          borderRadius: '50%',
-                          background: 'radial-gradient(circle at 35% 30%, #101018, #05050C)',
-                          boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.95)',
-                        }}
-                      >
-                        <span style={{ color: 'rgba(255,255,255,0.06)', fontSize: 16 }}>+</span>
-                      </div>
+                      <span style={{ color: pickedSlot !== null ? 'var(--accent)' : 'rgba(255,255,255,0.10)', fontSize: 16 }}>
+                        {pickedSlot !== null ? '↓' : '+'}
+                      </span>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>

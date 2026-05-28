@@ -93,11 +93,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
       await tx.teamBattleParticipant.updateMany({ where: { battleId: id, userId: meId }, data: { accepted: true } });
 
-      const remaining = await tx.teamBattleParticipant.count({ where: { battleId: id, accepted: false } });
-      if (remaining === 0) {
-        const claimed = await tx.teamBattle.updateMany({ where: { id, status: 'pending' }, data: { status: 'active' } });
-        activated = claimed.count > 0;
-      }
+      // Activate atomically once no participant is left unaccepted. The relation
+      // filter is evaluated by the DB at update time, so two simultaneous
+      // accepts can't both miss each other (the count()-then-update approach
+      // could, leaving the battle stuck pending).
+      const claimed = await tx.teamBattle.updateMany({
+        where: { id, status: 'pending', participants: { none: { accepted: false } } },
+        data:  { status: 'active' },
+      });
+      activated = claimed.count > 0;
     });
   } catch (e) {
     if (e instanceof Error && e.message === 'INSUFFICIENT_FUNDS') {

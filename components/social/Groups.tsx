@@ -1,7 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Plus, X, Trash2, UserPlus, LogOut, Check } from 'lucide-react';
+import { Users, Plus, X, Trash2, UserPlus, LogOut, Check, Swords } from 'lucide-react';
+
+/** Opens the Team Battles create flow pre-selected to a group (TeamBattles listens). */
+function startBattle(groupId: string) {
+  window.dispatchEvent(new CustomEvent('que-start-team-battle', { detail: { groupId } }));
+}
 
 interface FriendLite { id: string; name: string | null; username: string | null; photo: string | null }
 interface GroupMemberLite { id: string; name: string | null; username: string | null; photo: string | null }
@@ -39,6 +44,7 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
   const [picked, setPicked]   = useState<Set<string>>(new Set());
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState('');
+  const [actionError, setActionError] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -69,13 +75,14 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
   };
 
   const mutate = async (url: string, method: string, body?: object) => {
-    setBusy(true);
+    setBusy(true); setActionError('');
     try {
-      await fetch(url, {
+      const res = await fetch(url, {
         method, credentials: 'include',
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       });
+      if (!res.ok) { setActionError((await res.json().catch(() => null))?.error ?? 'Something went wrong'); return; }
       await refresh();
     } finally { setBusy(false); }
   };
@@ -110,21 +117,43 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
         ) : (
           <div className="space-y-2">
             {groups.map(g => (
-              <div key={g.id} className="rounded border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2.5">
-                <div className="flex items-center gap-3">
-                  <div className="flex -space-x-2">
-                    {g.members.slice(0, 5).map(m => <Avatar key={m.id} m={m} />)}
+              <div key={g.id} className="rounded-lg border border-[var(--line)] bg-[var(--bg-2)] p-3">
+                <div className="flex items-center gap-3 mb-2.5">
+                  <div className="flex -space-x-2 flex-shrink-0">
+                    {g.members.slice(0, 5).map(m => <Avatar key={m.id} m={m} size={28} />)}
+                    {g.members.length > 5 && (
+                      <span className="w-7 h-7 rounded-full inline-flex items-center justify-center font-mono text-[9px] font-bold text-[var(--ink-2)] bg-[var(--bg-3)] border border-[var(--line-2)]">
+                        +{g.members.length - 5}
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-mono text-[12px] font-bold text-[var(--ink-0)] truncate">{g.name}</p>
                     <p className="font-mono text-[9px] text-[var(--ink-3)]">
-                      {g.members.length} member{g.members.length === 1 ? '' : 's'}{g.isOwner ? ' · you own this' : ''}
+                      {g.members.length} member{g.members.length === 1 ? '' : 's'}{g.isOwner ? ' · owner' : ''}
                     </p>
                   </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  {g.members.length >= 2 ? (
+                    <button
+                      type="button"
+                      onClick={() => startBattle(g.id)}
+                      className="flex-1 que-btn-primary py-1.5 text-[10px] flex items-center justify-center gap-1.5"
+                    >
+                      <Swords size={12} /> Start battle
+                    </button>
+                  ) : (
+                    <span className="flex-1 font-mono text-[9px] text-[var(--ink-3)] flex items-center justify-center border border-dashed border-[var(--line-2)] rounded-sm py-1.5 px-2 text-center">
+                      Add a friend to battle
+                    </span>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setManageId(manageId === g.id ? null : g.id)}
-                    className="font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--ink-2)] border border-[var(--line-2)] rounded-sm px-2.5 py-1.5 hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all flex-shrink-0"
+                    onClick={() => { setActionError(''); setManageId(manageId === g.id ? null : g.id); }}
+                    className="font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--ink-2)] border border-[var(--line-2)] rounded-sm px-3 py-1.5 hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all flex-shrink-0"
                   >
                     {manageId === g.id ? 'Close' : 'Manage'}
                   </button>
@@ -172,6 +201,8 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
                         </div>
                       ) : null;
                     })()}
+
+                    {actionError && <p className="font-mono text-[9px] text-[var(--danger)]">{actionError}</p>}
 
                     {/* Owner deletes, member leaves */}
                     <div className="flex justify-end pt-1">

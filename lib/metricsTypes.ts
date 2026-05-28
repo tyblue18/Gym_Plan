@@ -230,6 +230,16 @@ export function useBudgetMetrics(profile: UserProfile, cardio: CardioFields): Bu
     const stepMiles = (steps * stride) / 63360;
     const stepBurn  = Math.round(stepMiles * 0.57 * wLbs);
 
+    // Cardio energy cost is physically dominated by body MASS moved over
+    // distance/time (already captured by `kg`). Height & age have negligible
+    // effect on the *gross* cost, so the scientifically honest way to fold them
+    // in is to report NET calories: gross expenditure minus the resting energy
+    // you'd have burned anyway. Resting rate comes from the Mifflin BMR above —
+    // which uses weight, height, age, and sex — so all four now shape the result.
+    // (1 kcal ≈ 5 kcal per litre O₂; VO₂ in ml/kg/min.)
+    const rmrPerMin = bmr / 1440;
+    const netOf = (gross: number, min: number) => Math.max(0, Math.round(gross - rmrPerMin * min));
+
     const rMi  = parseNum(cardio.runDist);
     const rMin = parseNum(cardio.runTime);
     let runBurn = 0, runPaceStr = '', runSpeed = 0;
@@ -239,13 +249,12 @@ export function useBudgetMetrics(profile: UserProfile, cardio: CardioFields): Bu
       const pMin = Math.floor(pace);
       const pSec = Math.round((pace - pMin) * 60).toString().padStart(2, '0');
       runPaceStr = `${pMin}:${pSec} /mi`;
-      let met = 6;
-      if      (runSpeed >= 9) met = 12.8;
-      else if (runSpeed >= 8) met = 11.8;
-      else if (runSpeed >= 7) met = 11;
-      else if (runSpeed >= 6) met = 9.8;
-      else if (runSpeed >= 5) met = 9;
-      runBurn = Math.round(met * 3.5 * kg / 200 * rMin);
+      // ACSM running equation (level ground): VO₂ = 0.2 × speed(m/min) + 3.5.
+      // Continuous & validated — more accurate than coarse MET tiers.
+      const mPerMin   = runSpeed * 26.8224;           // mph → m/min
+      const vo2        = 0.2 * mPerMin + 3.5;          // ml/kg/min
+      const grossRun  = (vo2 * kg / 1000) * 5 * rMin;  // ml→L→kcal over duration
+      runBurn = netOf(grossRun, rMin);
     }
 
     const bMi  = parseNum(cardio.bikeDist);
@@ -253,17 +262,20 @@ export function useBudgetMetrics(profile: UserProfile, cardio: CardioFields): Bu
     let bikeBurn = 0, bikeSpeed = 0;
     if (bMi > 0 && bMin > 0) {
       bikeSpeed = (bMi / bMin) * 60;
+      // Compendium-of-Physical-Activities cycling METs by road speed (mph).
       let met = 4;
-      if      (bikeSpeed >= 20) met = 15;
+      if      (bikeSpeed >= 20) met = 15.8;
       else if (bikeSpeed >= 16) met = 12;
       else if (bikeSpeed >= 14) met = 10;
       else if (bikeSpeed >= 12) met = 8;
-      else if (bikeSpeed >= 10) met = 6;
-      bikeBurn = Math.round(met * 3.5 * kg / 200 * bMin);
+      else if (bikeSpeed >= 10) met = 6.8;
+      bikeBurn = netOf(met * 3.5 * kg / 200 * bMin, bMin);
     }
 
-    const sMin    = parseNum(cardio.swimTime);
-    const swimBurn = sMin > 0 ? Math.round(6.0 * 3.5 * kg / 200 * sMin) : 0;
+    const sMin     = parseNum(cardio.swimTime);
+    // Moderate freestyle ≈ 7 MET (Compendium); no per-set pace captured, so a
+    // single representative intensity is used, then taken net of resting.
+    const swimBurn = sMin > 0 ? netOf(7.0 * 3.5 * kg / 200 * sMin, sMin) : 0;
 
     const activityBurn = Math.round(runBurn + bikeBurn + swimBurn);
     const eatBack      = Math.round(activityBurn * 0.60);
