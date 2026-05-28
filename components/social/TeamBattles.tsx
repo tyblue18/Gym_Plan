@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Swords, X, Check, Trophy } from 'lucide-react';
+import { Swords, X, Check, Trophy, Shield, Target } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { BATTLE_CATEGORIES, windowLabel } from '@/lib/battle-categories';
 
@@ -38,6 +38,20 @@ function Avatar({ m, size = 22 }: { m: MemberLite | Participant; size?: number }
     <span className="rounded-full inline-flex items-center justify-center font-mono font-bold text-[var(--accent)] bg-[var(--accent-12)] border border-[var(--accent-24)]"
       style={{ width: size, height: size, fontSize: size * 0.42 }} aria-hidden="true">
       {NAME(m).replace('@', '').charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+/** Type indicator chip for a group battle row — Team (A v B) or FFA. */
+function ModeChip({ mode }: { mode: 'teams' | 'ffa' }) {
+  const cfg = mode === 'ffa'
+    ? { Icon: Target, label: 'FFA',  color: '#A78BFA' }
+    : { Icon: Shield, label: 'Team', color: '#4FC3F7' };
+  const { Icon, label, color } = cfg;
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-[2px] rounded-sm font-mono text-[8px] font-bold tracking-[0.5px] uppercase flex-shrink-0"
+      style={{ color, background: `${color}1A`, border: `1px solid ${color}40` }}>
+      <Icon size={9} aria-hidden="true" /> {label}
     </span>
   );
 }
@@ -150,7 +164,7 @@ function StandingsView({ battleId, battle }: { battleId: string; battle: BattleD
  * accept/decline invites, and see active + resolved battles. Uses the same typed
  * category engine as 1v1 battles (restricted to "most wins" categories).
  */
-export function TeamBattles({ meId }: { meId: string }) {
+export function TeamBattles({ meId, embedded = false }: { meId: string; embedded?: boolean }) {
   const [feed,    setFeed]    = useState<FeedData>({ invites: [], pending: [], active: [], resolved: [] });
   const [groups,  setGroups]  = useState<GroupData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,126 +213,167 @@ export function TeamBattles({ meId }: { meId: string }) {
   const eligibleGroups = groups.filter(g => g.members.length >= 2);
   const hasAny = feed.invites.length + feed.pending.length + feed.active.length + feed.resolved.length > 0;
 
+  const newBtn = (
+    <button type="button" disabled={eligibleGroups.length === 0}
+      onClick={() => { setCreateGroupId(null); setCreating(true); }}
+      className="font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)]/50 rounded-sm px-2.5 py-1.5 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all flex items-center gap-1 disabled:opacity-40">
+      <Swords size={12} /> New
+    </button>
+  );
+
+  const body = loading ? (
+    <p className="font-mono text-[10px] text-[var(--ink-3)] py-2">Loading…</p>
+  ) : !hasAny ? (
+    embedded ? (
+      <p className="font-mono text-[9px] text-[var(--ink-3)] py-1">
+        {eligibleGroups.length === 0
+          ? 'Make a group of 2+ members to run team battles.'
+          : 'No team battles yet — tap New to start one.'}
+      </p>
+    ) : (
+      <div className="text-center py-6 border border-dashed border-[var(--line-2)] rounded">
+        <Swords size={20} className="text-[var(--ink-3)] mx-auto mb-2" />
+        <p className="font-mono text-[10px] text-[var(--ink-2)] font-bold tracking-[1px] uppercase">No team battles yet</p>
+      </div>
+    )
+  ) : (
+    <div className="space-y-3">
+      {/* Invites — need your call */}
+      {feed.invites.map(b => (
+        <div key={b.id} className="rounded-md border border-[rgba(255,181,71,0.35)] bg-[rgba(255,181,71,0.06)] px-3 py-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <ModeChip mode={b.mode} />
+            <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] truncate">{b.groupName} · invite</p>
+          </div>
+          <div className="space-y-1 mb-2"><PlayersRows b={b} /></div>
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf} · {windowLabel(b.windowKind)}</span>
+            <div className="flex gap-2">
+              <button type="button" disabled={busy} onClick={() => act(b.id, 'decline')}
+                className="font-mono text-[10px] text-[var(--danger)] px-2 py-1 disabled:opacity-40">Decline</button>
+              <button type="button" disabled={busy} onClick={() => act(b.id, 'accept')}
+                className="que-btn-primary px-3 py-1.5 text-[10px] disabled:opacity-40">Accept</button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Pending — you're in, waiting on others */}
+      {feed.pending.map(b => {
+        const waiting = b.participants.filter(p => !p.accepted).length;
+        return (
+          <div key={b.id} className="rounded-md border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2.5">
+            <div className="flex items-center gap-1.5 mb-1">
+              <ModeChip mode={b.mode} />
+              <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] truncate">{b.groupName} · awaiting {waiting}</p>
+            </div>
+            <div className="space-y-1 mb-1.5"><PlayersRows b={b} /></div>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf}</span>
+              {b.creatorId === meId && (
+                <button type="button" disabled={busy} onClick={() => act(b.id, 'cancel')}
+                  className="font-mono text-[9px] text-[var(--ink-3)] hover:text-[var(--danger)] px-1.5 py-1 disabled:opacity-40">Cancel</button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Active */}
+      {feed.active.map(b => (
+        <div key={b.id} className="rounded-md border border-[var(--accent)]/30 bg-[var(--accent-12)] px-3 py-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <ModeChip mode={b.mode} />
+            <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] truncate">{b.groupName} · live</p>
+          </div>
+          <div className="space-y-1 mb-1"><PlayersRows b={b} /></div>
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf} · ends {fmtMDY(b.endDate)}</span>
+            <button type="button" onClick={() => setOpenStandings(openStandings === b.id ? null : b.id)}
+              className="font-mono text-[9px] font-bold tracking-[0.5px] uppercase" style={{ color: '#FFB547' }}>
+              {openStandings === b.id ? 'Hide' : 'Standings'}
+            </button>
+          </div>
+          {openStandings === b.id && <StandingsView battleId={b.id} battle={b} />}
+        </div>
+      ))}
+
+      {/* Resolved */}
+      {feed.resolved.map(b => {
+        const s        = b.resolution?.summary;
+        const winnerId = b.resolution?.winnerId ?? null;
+        const winnerP  = b.mode === 'ffa' ? b.participants.find(p => p.id === winnerId) ?? null : null;
+        const label    = b.status === 'cancelled' ? 'cancelled'
+          : b.mode === 'ffa'
+            ? (winnerP ? `${NAME(winnerP)} won FFA` : 'tie')
+            : (b.winningTeam === null
+                ? 'tie'
+                : `Team ${b.winningTeam === 0 ? 'A' : 'B'} won${s ? ` ${Math.max(s.team0Wins, s.team1Wins)}–${Math.min(s.team0Wins, s.team1Wins)}` : ''}`);
+        const iWon = b.status === 'resolved' && (
+          b.mode === 'ffa' ? winnerId === meId
+                           : (b.winningTeam !== null && b.myTeam === b.winningTeam)
+        );
+        const isTie = b.mode === 'ffa' ? winnerId === null : b.winningTeam === null;
+        return (
+          <div key={b.id} className="rounded-md border border-[var(--line)] bg-[var(--bg-2)]/50 px-3 py-2 opacity-90">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <ModeChip mode={b.mode} />
+                <span className="font-mono text-[10px] text-[var(--ink-1)] truncate">{b.groupName}</span>
+              </span>
+              <span className="font-mono text-[9px] font-bold tracking-[0.5px] uppercase flex-shrink-0"
+                style={{ color: b.status === 'cancelled' ? 'var(--ink-3)' : iWon ? 'var(--positive)' : isTie ? 'var(--ink-2)' : 'var(--danger)' }}>
+                {label}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const modal = creating && (
+    <CreateTeamBattle
+      meId={meId}
+      groups={eligibleGroups}
+      initialGroupId={createGroupId}
+      busy={busy}
+      onClose={() => setCreating(false)}
+      onCreated={() => { setCreating(false); void refresh(); }}
+      setBusy={setBusy}
+    />
+  );
+
+  // Embedded: render as a "Team" subgroup inside the parent BATTLES card —
+  // no card chrome, no section header. Friend (1v1) battles sit above it.
+  if (embedded) {
+    return (
+      <div className="mt-4 pt-4 border-t border-[var(--line)]">
+        <div className="flex items-center justify-between mb-2">
+          <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)]">Team</p>
+          {newBtn}
+        </div>
+        {body}
+        {modal}
+      </div>
+    );
+  }
+
   return (
     <div className="que-card mb-4">
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-center justify-between mb-1">
           <h2 className="que-section-label"><span className="dot" style={{ background: '#FFB547' }} /> TEAM BATTLES</h2>
-          <button type="button" disabled={eligibleGroups.length === 0}
-            onClick={() => { setCreateGroupId(null); setCreating(true); }}
-            className="font-mono text-[9px] font-bold tracking-[1px] uppercase text-[var(--accent)] border border-[var(--accent)]/50 rounded-sm px-2.5 py-1.5 hover:bg-[var(--accent)] hover:text-[var(--accent-ink)] transition-all flex items-center gap-1 disabled:opacity-40">
-            <Swords size={12} /> New
-          </button>
+          {newBtn}
         </div>
         <p className="font-mono text-[10px] text-[var(--ink-2)] leading-relaxed mb-3">
           {eligibleGroups.length === 0
             ? 'Create a group with at least 2 members to run team battles.'
             : 'Pick a group, split into teams, and wager coins. Each player antes; the winning team splits the pot.'}
         </p>
-
-        {loading ? (
-          <p className="font-mono text-[10px] text-[var(--ink-3)] py-2">Loading…</p>
-        ) : !hasAny ? (
-          <div className="text-center py-6 border border-dashed border-[var(--line-2)] rounded">
-            <Swords size={20} className="text-[var(--ink-3)] mx-auto mb-2" />
-            <p className="font-mono text-[10px] text-[var(--ink-2)] font-bold tracking-[1px] uppercase">No team battles yet</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {/* Invites — need your call */}
-            {feed.invites.map(b => (
-              <div key={b.id} className="rounded-md border border-[rgba(255,181,71,0.35)] bg-[rgba(255,181,71,0.06)] px-3 py-3">
-                <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] mb-1.5">{b.groupName} · invite</p>
-                <div className="space-y-1 mb-2"><PlayersRows b={b} /></div>
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf} · {windowLabel(b.windowKind)}</span>
-                  <div className="flex gap-2">
-                    <button type="button" disabled={busy} onClick={() => act(b.id, 'decline')}
-                      className="font-mono text-[10px] text-[var(--danger)] px-2 py-1 disabled:opacity-40">Decline</button>
-                    <button type="button" disabled={busy} onClick={() => act(b.id, 'accept')}
-                      className="que-btn-primary px-3 py-1.5 text-[10px] disabled:opacity-40">Accept</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {/* Pending — you're in, waiting on others */}
-            {feed.pending.map(b => {
-              const waiting = b.participants.filter(p => !p.accepted).length;
-              return (
-                <div key={b.id} className="rounded-md border border-[var(--line)] bg-[var(--bg-2)] px-3 py-2.5">
-                  <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] mb-1">{b.groupName} · awaiting {waiting}</p>
-                  <div className="space-y-1 mb-1.5"><PlayersRows b={b} /></div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf}</span>
-                    {b.creatorId === meId && (
-                      <button type="button" disabled={busy} onClick={() => act(b.id, 'cancel')}
-                        className="font-mono text-[9px] text-[var(--ink-3)] hover:text-[var(--danger)] px-1.5 py-1 disabled:opacity-40">Cancel</button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Active */}
-            {feed.active.map(b => (
-              <div key={b.id} className="rounded-md border border-[var(--accent)]/30 bg-[var(--accent-12)] px-3 py-2.5">
-                <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] mb-1">{b.groupName} · live</p>
-                <div className="space-y-1 mb-1"><PlayersRows b={b} /></div>
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf} · ends {fmtMDY(b.endDate)}</span>
-                  <button type="button" onClick={() => setOpenStandings(openStandings === b.id ? null : b.id)}
-                    className="font-mono text-[9px] font-bold tracking-[0.5px] uppercase" style={{ color: '#FFB547' }}>
-                    {openStandings === b.id ? 'Hide' : 'Standings'}
-                  </button>
-                </div>
-                {openStandings === b.id && <StandingsView battleId={b.id} battle={b} />}
-              </div>
-            ))}
-
-            {/* Resolved */}
-            {feed.resolved.map(b => {
-              const s        = b.resolution?.summary;
-              const winnerId = b.resolution?.winnerId ?? null;
-              const winnerP  = b.mode === 'ffa' ? b.participants.find(p => p.id === winnerId) ?? null : null;
-              const label    = b.status === 'cancelled' ? 'cancelled'
-                : b.mode === 'ffa'
-                  ? (winnerP ? `${NAME(winnerP)} won FFA` : 'tie')
-                  : (b.winningTeam === null
-                      ? 'tie'
-                      : `Team ${b.winningTeam === 0 ? 'A' : 'B'} won${s ? ` ${Math.max(s.team0Wins, s.team1Wins)}–${Math.min(s.team0Wins, s.team1Wins)}` : ''}`);
-              const iWon = b.status === 'resolved' && (
-                b.mode === 'ffa' ? winnerId === meId
-                                 : (b.winningTeam !== null && b.myTeam === b.winningTeam)
-              );
-              const isTie = b.mode === 'ffa' ? winnerId === null : b.winningTeam === null;
-              return (
-                <div key={b.id} className="rounded-md border border-[var(--line)] bg-[var(--bg-2)]/50 px-3 py-2 opacity-90">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] text-[var(--ink-1)] truncate">{b.groupName}</span>
-                    <span className="font-mono text-[9px] font-bold tracking-[0.5px] uppercase"
-                      style={{ color: b.status === 'cancelled' ? 'var(--ink-3)' : iWon ? 'var(--positive)' : isTie ? 'var(--ink-2)' : 'var(--danger)' }}>
-                      {label}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {body}
       </div>
-
-      {creating && (
-        <CreateTeamBattle
-          meId={meId}
-          groups={eligibleGroups}
-          initialGroupId={createGroupId}
-          busy={busy}
-          onClose={() => setCreating(false)}
-          onCreated={() => { setCreating(false); void refresh(); }}
-          setBusy={setBusy}
-        />
-      )}
+      {modal}
     </div>
   );
 }

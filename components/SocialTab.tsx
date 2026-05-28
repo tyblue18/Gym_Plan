@@ -863,6 +863,18 @@ function CategoryGroupDots({ slugs, size = 6 }: { slugs: string[] | null | undef
   );
 }
 
+/** "Friend" chip marking a 1v1 friend battle in the merged BATTLES list.
+ *  Mirrors the Team/FFA ModeChip in TeamBattles so the row types read consistently. */
+function FriendChip() {
+  const color = '#FFB547';
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-[2px] rounded-sm font-mono text-[8px] font-bold tracking-[0.5px] uppercase flex-shrink-0"
+      style={{ color, background: `${color}1A`, border: `1px solid ${color}40` }}>
+      <Swords size={9} aria-hidden="true" /> Friend
+    </span>
+  );
+}
+
 function ScoreSide({ score, unit, noDataLabel, won, tied, align, color }: {
   score:       number | null;
   unit:        string;
@@ -1329,12 +1341,7 @@ export default function SocialTab() {
         <Groups meId={ownProfile.id} friends={friends} />
       )}
 
-      {/* ── TEAM BATTLES ─────────────────────────────────────────────────── */}
-      {hasUsername && ownProfile?.id && (
-        <TeamBattles meId={ownProfile.id} />
-      )}
-
-      {/* ── BATTLES ──────────────────────────────────────────────────────── */}
+      {/* ── BATTLES (1v1 friend + team, merged) ──────────────────────────── */}
       <div className="que-card mb-4">
         <div className="px-5 pt-5 pb-3">
           <h2 className="que-section-label">
@@ -1346,12 +1353,13 @@ export default function SocialTab() {
             <p className="font-mono text-[9px] text-[var(--danger)] mb-2">{challengeError}</p>
           )}
 
+          {/* ── Friend (1v1) ── */}
+          <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mt-1 mb-2">Friend (1v1)</p>
+
           {inChallenge.length === 0 && sentChallenge.length === 0 && activeBattles.length === 0 && resolved.length === 0 ? (
-            <div className="text-center py-6 border border-dashed border-[var(--line-2)] rounded mb-2">
-              <Swords size={20} className="text-[var(--ink-3)] mx-auto mb-2" />
-              <p className="font-mono text-[10px] text-[var(--ink-2)] font-bold tracking-[1px] uppercase">No battles yet</p>
-              <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1">Challenge a friend to start competing</p>
-            </div>
+            <p className="font-mono text-[9px] text-[var(--ink-3)] py-1 mb-1">
+              No 1v1 battles yet — tap “Battle” on a friend below to start one.
+            </p>
           ) : (
             <>
             {/* Incoming requests — you need to accept/decline */}
@@ -1361,6 +1369,7 @@ export default function SocialTab() {
                   <Swords size={16} style={{ color: '#FFB547', flexShrink: 0 }} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
+                      <FriendChip />
                       <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] truncate">
                         {c.challenger.name ?? c.challenger.username ?? 'Unknown'}
                       </p>
@@ -1431,6 +1440,7 @@ export default function SocialTab() {
                         <Clock size={14} className="text-[var(--accent)] flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
+                            <FriendChip />
                             <p className="font-mono text-[10px] font-bold text-[var(--ink-1)] truncate">
                               vs @{opponent.username ?? opponent.name ?? 'unknown'}
                             </p>
@@ -1460,6 +1470,7 @@ export default function SocialTab() {
                 <Swords size={14} className="text-[var(--ink-3)] flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
+                    <FriendChip />
                     <p className="font-mono text-[10px] font-bold text-[var(--ink-2)] truncate">
                       vs @{c.challengee.username ?? 'unknown'}
                     </p>
@@ -1489,6 +1500,7 @@ export default function SocialTab() {
                   const clickable = c.type === 'typed' && c.status === 'resolved';
                   const inner = (
                     <>
+                      <FriendChip />
                       <span className="font-mono text-[12px]">
                         {!c.winnerId ? '🤝' : c.winnerId === myId ? '🏆' : '💀'}
                       </span>
@@ -1517,6 +1529,9 @@ export default function SocialTab() {
             )}
             </>
           )}
+
+          {/* ── Team (embedded — same merged BATTLES card) ── */}
+          {ownProfile?.id && <TeamBattles meId={ownProfile.id} embedded />}
         </div>
       </div>
 
