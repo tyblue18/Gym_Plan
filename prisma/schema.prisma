@@ -47,8 +47,9 @@ model AppUser {
 // A user-created roster of friends for team battles. You can add anyone you're
 // friends with; members don't need to be friends with each other.
 model Group {
-  id      String        @id @default(cuid())
-  name    String
+  id          String        @id @default(cuid())
+  name        String
+  description String?       // optional group blurb, owner-editable
   ownerId String
   owner   AppUser       @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members GroupMember[]

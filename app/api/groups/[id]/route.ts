@@ -1,5 +1,5 @@
 /**
- * PATCH  /api/groups/[id] — rename a group (owner only).
+ * PATCH  /api/groups/[id] — rename and/or edit description (owner only).
  * DELETE /api/groups/[id] — delete a group (owner only); members cascade.
  */
 
@@ -8,7 +8,7 @@ import { NextResponse }      from 'next/server';
 import { authOptions }       from '@/lib/auth';
 import { prisma }            from '@/lib/prisma';
 import { groupLimit }        from '@/lib/ratelimit';
-import { groupRenameSchema } from '@/lib/validators';
+import { groupUpdateSchema } from '@/lib/validators';
 
 async function ownedGroup(groupId: string, meId: string) {
   const group = await prisma.group.findUnique({ where: { id: groupId }, select: { id: true, ownerId: true } });
@@ -26,13 +26,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
 
   const { id } = await params;
-  const parsed = groupRenameSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: 'Name required' }, { status: 400 });
+  const parsed = groupUpdateSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid update' }, { status: 400 });
 
   const { error } = await ownedGroup(id, meId);
   if (error) return error;
 
-  await prisma.group.update({ where: { id }, data: { name: parsed.data.name.trim() } });
+  const data: { name?: string; description?: string | null } = {};
+  if (parsed.data.name !== undefined)        data.name        = parsed.data.name.trim();
+  if (parsed.data.description !== undefined)  data.description = parsed.data.description?.trim() || null;
+
+  await prisma.group.update({ where: { id }, data });
   return NextResponse.json({ ok: true });
 }
 

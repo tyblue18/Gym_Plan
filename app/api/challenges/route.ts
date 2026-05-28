@@ -118,7 +118,7 @@ export async function POST(req: Request): Promise<NextResponse> {
                   startDate !== undefined || categories !== undefined;
 
   let typedFields: {
-    type: 'typed'; bestOf: number; windowKind: 'day' | 'week';
+    type: 'typed'; bestOf: number; windowKind: 'day' | '3day' | 'week';
     startDate: string; endDate: string; categories: string[];
   } | null = null;
 

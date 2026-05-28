@@ -671,7 +671,7 @@ export default function ProfileCard({
 }) {
   const [localProfile, setLocalProfile] = useState(profile);
   const [modal, setModal] = useState<'edit' | null>(null);
-  const [showAll, setShowAll] = useState(false);   // Full Collection collapsed by default to keep the tab compact
+  const [showBadges, setShowBadges] = useState(false);   // Gym Badges — collapsed by default (showcase + full collection)
 
   // Sync when parent refreshes
   useEffect(() => { setLocalProfile(profile); }, [profile]);
@@ -772,52 +772,55 @@ export default function ProfileCard({
           </div>
         </div>
 
-        {/* ── Badge case ── */}
-        <BadgeCase
-          showcase={localProfile.showcaseBadges}
-          allBadges={localProfile.badges}
-          isOwn={isOwn}
-          onEdit={isOwn ? () => setModal('edit') : undefined}
-        />
-
       </div>
 
-      {/* ── Full badge collection — collapsed by default to keep the tab compact ── */}
-      {localProfile.badges.length > 0 && (
-        <div className="border-t border-[var(--line)] px-5 py-2.5">
-          <button type="button" onClick={() => setShowAll(v => !v)} className="w-full flex items-center justify-between">
-            <span className="font-mono text-[8px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)]">
-              Full Collection · {localProfile.badgeCount}
-            </span>
-            <ChevronDown size={12} className="text-[var(--ink-3)] transition-transform" style={{ transform: showAll ? 'rotate(180deg)' : 'none' }} />
-          </button>
-          {showAll && (
-          <div className="flex flex-wrap gap-1.5 mt-2.5">
-            {localProfile.badges.slice(0, 12).map(b => (
-              <div
-                key={b.id}
-                title={`${b.label} · Assigned ${fmtBadgeDate(b.earnedAt)}`}
-                className="w-9 h-9 flex items-center justify-center"
-                style={b.icon.startsWith('/') ? {} : {
-                  borderRadius: '50%',
-                  background: 'radial-gradient(circle at 35% 30%, #181828, #06060E)',
-                  boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.9), 0 0 10px rgba(79,195,247,0.2)',
-                }}
-              >
-                {b.icon.startsWith('/') ? (
-                  <AutoCropImage src={b.icon} alt={b.label} />
-                ) : (
-                  <span className="text-[16px] leading-none">{b.icon}</span>
-                )}
+      {/* ── Gym Badges — one dropdown: showcase + full collection ── */}
+      <div className="border-t border-[var(--line)] px-5 py-2.5">
+        <button type="button" onClick={() => setShowBadges(v => !v)} className="w-full flex items-center justify-between">
+          <span className="font-mono text-[8px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)]">
+            Gym Badges{localProfile.badgeCount > 0 ? ` · ${localProfile.badgeCount}` : ''}
+          </span>
+          <ChevronDown size={12} className="text-[var(--ink-3)] transition-transform" style={{ transform: showBadges ? 'rotate(180deg)' : 'none' }} />
+        </button>
+        {showBadges && (
+          <>
+            <BadgeCase
+              showcase={localProfile.showcaseBadges}
+              allBadges={localProfile.badges}
+              isOwn={isOwn}
+              onEdit={isOwn ? () => setModal('edit') : undefined}
+            />
+            {localProfile.badges.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-[var(--line)]">
+                <p className="font-mono text-[8px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mb-2.5">Full Collection · {localProfile.badgeCount}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {localProfile.badges.slice(0, 12).map(b => (
+                    <div
+                      key={b.id}
+                      title={`${b.label} · Assigned ${fmtBadgeDate(b.earnedAt)}`}
+                      className="w-9 h-9 flex items-center justify-center"
+                      style={b.icon.startsWith('/') ? {} : {
+                        borderRadius: '50%',
+                        background: 'radial-gradient(circle at 35% 30%, #181828, #06060E)',
+                        boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.9), 0 0 10px rgba(79,195,247,0.2)',
+                      }}
+                    >
+                      {b.icon.startsWith('/') ? (
+                        <AutoCropImage src={b.icon} alt={b.label} />
+                      ) : (
+                        <span className="text-[16px] leading-none">{b.icon}</span>
+                      )}
+                    </div>
+                  ))}
+                  {localProfile.badgeCount > 12 && (
+                    <span className="font-mono text-[9px] text-[var(--ink-3)] self-center">+{localProfile.badgeCount - 12} more</span>
+                  )}
+                </div>
               </div>
-            ))}
-            {localProfile.badgeCount > 12 && (
-              <span className="font-mono text-[9px] text-[var(--ink-3)] self-center">+{localProfile.badgeCount - 12} more</span>
             )}
-          </div>
-          )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       {/* ── Edit profile — status + showcase in one window ── */}
       <AnimatePresence>

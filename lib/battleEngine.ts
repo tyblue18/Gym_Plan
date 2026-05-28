@@ -566,17 +566,18 @@ export async function computeStandings(battleId: string): Promise<Standings | nu
 
 /**
  * Computes [startDate, endDate] given a window kind and a start date (YYYY-MM-DD).
- * 'day'  → both equal startDate
- * 'week' → 7-day window starting at startDate, inclusive (startDate ... startDate+6)
+ * 'day'  → both equal startDate (1 day)
+ * '3day' → 3-day window, inclusive (startDate ... startDate+2)
+ * 'week' → 7-day window, inclusive (startDate ... startDate+6)
  */
-export function windowBounds(startDate: string, windowKind: 'day' | 'week'): { startDate: string; endDate: string } {
-  if (windowKind === 'day') return { startDate, endDate: startDate };
-  // Parse YYYY-MM-DD and add 6 days. Use UTC math to avoid local-DST drift.
+export function windowBounds(startDate: string, windowKind: 'day' | '3day' | 'week'): { startDate: string; endDate: string } {
+  const span = windowKind === 'day' ? 0 : windowKind === '3day' ? 2 : 6;
+  if (span === 0) return { startDate, endDate: startDate };
+  // Parse YYYY-MM-DD and add the span. UTC math avoids local-DST drift.
   const [y, m, d] = startDate.split('-').map(Number);
   const end = new Date(Date.UTC(y, m - 1, d));
-  end.setUTCDate(end.getUTCDate() + 6);
-  const endDate = end.toISOString().slice(0, 10);
-  return { startDate, endDate };
+  end.setUTCDate(end.getUTCDate() + span);
+  return { startDate, endDate: end.toISOString().slice(0, 10) };
 }
 
 /** True if endDate (YYYY-MM-DD) is strictly before today (UTC). */

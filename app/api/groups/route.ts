@@ -37,7 +37,7 @@ export async function GET(): Promise<NextResponse> {
     select: {
       group: {
         select: {
-          id: true, name: true, ownerId: true,
+          id: true, name: true, ownerId: true, description: true, createdAt: true,
           members: {
             select: { user: { select: { id: true, name: true, username: true, workoutData: { select: { settings: true } } } } },
           },
@@ -63,13 +63,15 @@ export async function GET(): Promise<NextResponse> {
       lastPost = { author, text: payload.title || post.note || 'shared a workout', at: post.createdAt.toISOString() };
     }
     return {
-      id:      m.group.id,
-      name:    m.group.name,
-      ownerId: m.group.ownerId,
-      isOwner: m.group.ownerId === meId,
-      members: m.group.members.map(gm => memberFields(gm.user)),
+      id:          m.group.id,
+      name:        m.group.name,
+      description: m.group.description,
+      createdAt:   m.group.createdAt.toISOString(),
+      ownerId:     m.group.ownerId,
+      isOwner:     m.group.ownerId === meId,
+      members:     m.group.members.map(gm => memberFields(gm.user)),
       lastPost,
-      postCount: m.group._count.posts,
+      postCount:   m.group._count.posts,
     };
   });
 
@@ -116,6 +118,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const group = await prisma.group.create({
     data: {
       name,
+      description: parsed.data.description?.trim() || null,
       ownerId: meId,
       members: { create: memberIds.map(userId => ({ userId })) },
     },

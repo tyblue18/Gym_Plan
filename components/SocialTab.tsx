@@ -63,7 +63,7 @@ interface ChallengeData {
   // legacy badge-count battles, which still resolve instantly on accept).
   type?:        'typed' | 'classic' | null;
   bestOf?:      number | null;
-  windowKind?:  'day' | 'week' | null;
+  windowKind?:  'day' | '3day' | 'week' | null;
   startDate?:   string | null;
   endDate?:     string | null;
   categories?:  string[] | null;
@@ -153,8 +153,8 @@ function SectionLabel({ children }: { children: ReactNode }) {
 function presetToWindow(
   preset:      WindowPreset,
   customStart: string,
-  customKind:  'day' | 'week',
-): { startDate: string; windowKind: 'day' | 'week' } {
+  customKind:  'day' | '3day' | 'week',
+): { startDate: string; windowKind: 'day' | '3day' | 'week' } {
   const today = localToday();
   switch (preset) {
     case 'today':     return { startDate: today,                 windowKind: 'day' };
@@ -182,7 +182,7 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
   // ── Form state ──────────────────────────────────────────────────────────
   const [preset,        setPreset]        = useState<WindowPreset>('past_week');
   const [customStart,   setCustomStart]   = useState(localToday());
-  const [customKind,    setCustomKind]    = useState<'day' | 'week'>('day');
+  const [customKind,    setCustomKind]    = useState<'day' | '3day' | 'week'>('day');
   const [bestOf,        setBestOf]        = useState<1 | 3 | 5>(1);
   const [selectedCats,  setSelectedCats]  = useState<string[]>([]);
   const [wager,         setWager]         = useState(Math.min(3, Math.max(1, myBalance)));
@@ -291,7 +291,7 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
             {WINDOW_PRESETS.map(p => {
               const active   = preset === p.id;
               const win      = presetToWindow(p.id, customStart, customKind);
-              const endDate  = win.windowKind === 'week' ? addDaysISO(win.startDate, 6) : win.startDate;
+              const endDate  = addDaysISO(win.startDate, win.windowKind === 'week' ? 6 : win.windowKind === '3day' ? 2 : 0);
               const rangeStr = p.id === 'custom' ? p.sub : fmtRange(win.startDate, endDate);
               return (
                 <button
@@ -322,18 +322,18 @@ function ChallengeModal({ friend, myBalance, onClose, onSent }: {
                 onChange={e => setCustomStart(e.target.value)}
               />
               <div className="flex rounded-md border border-[var(--line)] overflow-hidden flex-shrink-0">
-                {(['day', 'week'] as const).map(k => (
+                {(['day', '3day', 'week'] as const).map(k => (
                   <button
                     key={k}
                     type="button"
                     onClick={() => setCustomKind(k)}
-                    className="px-3 font-mono text-[9px] font-bold tracking-[0.5px] uppercase transition-colors"
+                    className="px-2.5 font-mono text-[9px] font-bold tracking-[0.5px] uppercase transition-colors"
                     style={{
                       background: customKind === k ? 'rgba(255,181,71,0.16)' : 'transparent',
                       color:      customKind === k ? '#FFB547'               : 'var(--ink-2)',
                     }}
                   >
-                    {k === 'day' ? '1d' : '7d'}
+                    {k === 'day' ? '1d' : k === '3day' ? '3d' : '7d'}
                   </button>
                 ))}
               </div>

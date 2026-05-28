@@ -8,6 +8,8 @@ interface FriendLite { id: string; name: string | null; username: string | null;
 interface GroupMemberLite { id: string; name: string | null; username: string | null; photo: string | null }
 interface GroupData {
   id: string; name: string; ownerId: string; isOwner: boolean; members: GroupMemberLite[];
+  description?: string | null;
+  createdAt?: string;
   lastPost?: { author: string; text: string; at: string } | null;
   postCount?: number;
 }
@@ -38,6 +40,7 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [name, setName]       = useState('');
+  const [desc, setDesc]       = useState('');
   const [picked, setPicked]   = useState<Set<string>>(new Set());
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState('');
@@ -63,10 +66,10 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
     try {
       const res = await fetch('/api/groups', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), memberIds: [...picked] }),
+        body: JSON.stringify({ name: name.trim(), description: desc.trim() || undefined, memberIds: [...picked] }),
       });
       if (!res.ok) { setError((await res.json().catch(() => null))?.error ?? 'Could not create group'); return; }
-      setCreating(false); setName(''); setPicked(new Set());
+      setCreating(false); setName(''); setDesc(''); setPicked(new Set());
       await refresh();
     } finally { setBusy(false); }
   };
@@ -158,6 +161,10 @@ export function Groups({ meId, friends }: { meId: string; friends: FriendLite[] 
             <label className="que-label">Group name</label>
             <input type="text" className="que-input mb-4" placeholder="e.g. Gym Bros" value={name} maxLength={40}
               onChange={e => { setName(e.target.value); setError(''); }} />
+
+            <label className="que-label">Description <span className="text-[var(--ink-3)] font-normal">(optional)</span></label>
+            <textarea className="que-input mb-4 resize-none" placeholder="What's this group about?" value={desc} maxLength={200} rows={2}
+              onChange={e => setDesc(e.target.value)} />
 
             <p className="font-mono text-[9px] font-bold tracking-[1.5px] uppercase text-[var(--ink-3)] mb-2">
               Add friends {picked.size > 0 && `(${picked.size})`}

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Swords, X, Check, Trophy } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { BATTLE_CATEGORIES } from '@/lib/battle-categories';
+import { BATTLE_CATEGORIES, windowLabel } from '@/lib/battle-categories';
 
 function localToday(): string {
   const d = new Date();
@@ -231,7 +231,7 @@ export function TeamBattles({ meId }: { meId: string }) {
                 <p className="font-mono text-[11px] font-bold text-[var(--ink-0)] mb-1.5">{b.groupName} · invite</p>
                 <div className="space-y-1 mb-2"><PlayersRows b={b} /></div>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf} · {b.windowKind}</span>
+                  <span className="font-mono text-[9px] text-[var(--ink-3)]">{b.wager} 🪙 · Bo{b.bestOf} · {windowLabel(b.windowKind)}</span>
                   <div className="flex gap-2">
                     <button type="button" disabled={busy} onClick={() => act(b.id, 'decline')}
                       className="font-mono text-[10px] text-[var(--danger)] px-2 py-1 disabled:opacity-40">Decline</button>
@@ -358,7 +358,7 @@ function CreateTeamBattle({ meId, groups, initialGroupId, busy, onClose, onCreat
 
   const [bestOf,     setBestOf]     = useState<1 | 3 | 5>(1);
   const [cats,       setCats]       = useState<string[]>([]);
-  const [windowKind, setWindowKind] = useState<'day' | 'week'>('day');
+  const [windowKind, setWindowKind] = useState<'day' | '3day' | 'week'>('day');
   const [startDate,  setStartDate]  = useState(localToday());
   const [wager,      setWager]      = useState(5);
   const [error,      setError]      = useState('');
@@ -545,18 +545,18 @@ function CreateTeamBattle({ meId, groups, initialGroupId, busy, onClose, onCreat
             <SectionLabel>When</SectionLabel>
             <div className="flex gap-2 mt-1.5">
               <div className="flex rounded-md border border-[var(--line)] overflow-hidden">
-                {(['day', 'week'] as const).map(w => (
+                {(['day', '3day', 'week'] as const).map(w => (
                   <button key={w} type="button" onClick={() => setWindowKind(w)}
-                    className="px-3.5 py-2 font-mono text-[10px] font-bold tracking-[0.5px] uppercase transition-colors"
+                    className="px-3 py-2 font-mono text-[10px] font-bold tracking-[0.5px] uppercase transition-colors"
                     style={{ background: windowKind === w ? 'rgba(255,181,71,0.16)' : 'transparent', color: windowKind === w ? '#FFB547' : 'var(--ink-2)' }}>
-                    {w === 'day' ? '1 day' : '7 days'}
+                    {w === 'day' ? '1 day' : w === '3day' ? '3 days' : '7 days'}
                   </button>
                 ))}
               </div>
               <input type="date" className="que-input flex-1 text-[11px]" value={startDate} min={localToday()} onChange={e => setStartDate(e.target.value)} />
             </div>
             <p className="font-mono text-[9px] text-[var(--ink-3)] mt-1.5 tabular-nums">
-              {fmtRange(startDate, windowKind === 'week' ? addDaysISO(startDate, 6) : startDate)}
+              {fmtRange(startDate, addDaysISO(startDate, windowKind === 'week' ? 6 : windowKind === '3day' ? 2 : 0))}
             </p>
           </div>
 

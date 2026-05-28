@@ -54,7 +54,7 @@ export const challengePostSchema = z.object({
   // ── Typed-battle fields (optional for backward compat with the classic
   //    badge-count battles created without these set; new clients send them) ──
   bestOf:     z.union([z.literal(1), z.literal(3), z.literal(5)]).optional(),
-  windowKind: z.enum(['day', 'week']).optional(),
+  windowKind: z.enum(['day', '3day', 'week']).optional(),
   startDate:  dateString.optional(),
   // 1, 3, or 5 category slugs; must match bestOf length when both are present.
   categories: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
@@ -89,7 +89,7 @@ const teamBattleCommon = {
   groupId:    id,
   wager:      z.number().int().min(0).max(100_000),
   bestOf:     z.union([z.literal(1), z.literal(3), z.literal(5)]),
-  windowKind: z.enum(['day', 'week']),
+  windowKind: z.enum(['day', '3day', 'week']),
   startDate:  dateString,
   categories: z.array(z.string().min(1).max(64)).min(1).max(5),
 } as const;
@@ -128,13 +128,20 @@ export const commentCreateSchema = z.object({
 // ── /api/groups ───────────────────────────────────────────────────────────────
 
 export const groupCreateSchema = z.object({
-  name:      z.string().min(1).max(40),
-  memberIds: z.array(id).max(20).optional(),
+  name:        z.string().min(1).max(40),
+  description: z.string().max(200).optional(),
+  memberIds:   z.array(id).max(20).optional(),
 });
 
 export const groupRenameSchema = z.object({
   name: z.string().min(1).max(40),
 });
+
+// PATCH /api/groups/[id] — rename and/or edit description (owner only).
+export const groupUpdateSchema = z.object({
+  name:        z.string().min(1).max(40).optional(),
+  description: z.string().max(200).nullable().optional(),
+}).refine(d => d.name !== undefined || d.description !== undefined, { message: 'Nothing to update' });
 
 export const groupMemberSchema = z.object({
   userId: id,

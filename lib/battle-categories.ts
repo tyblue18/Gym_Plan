@@ -365,5 +365,10 @@ export const BEST_OF_VALUES = [1, 3, 5] as const;
 export type BestOf = typeof BEST_OF_VALUES[number];
 
 /** Allowed window kinds. */
-export const WINDOW_KINDS = ['day', 'week'] as const;
+export const WINDOW_KINDS = ['day', '3day', 'week'] as const;
 export type WindowKind = typeof WINDOW_KINDS[number];
+
+/** Human label for a window kind, e.g. for battle cards. */
+export function windowLabel(windowKind: string): string {
+  return windowKind === 'day' ? '1-day' : windowKind === '3day' ? '3-day' : windowKind === 'week' ? '7-day' : windowKind;
+}
