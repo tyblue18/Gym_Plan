@@ -12,6 +12,11 @@ function fmt(n: number) {
   return n.toLocaleString();
 }
 
+// After a skip, snooze the prompt for this long so a quick app-switch / resume
+// doesn't re-pop it. Once the cooldown elapses it shows again on the next app
+// open / foreground until a weight is logged.
+const SKIP_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function MorningWeightPrompt() {
@@ -45,17 +50,20 @@ export function MorningWeightPrompt() {
 
   // Decide whether to open the prompt. The gate is DATA-DRIVEN, not an opaque
   // once-shown flag: show the morning prompt for the live current day unless the
-  // user has already weighed in today (via this prompt, the Metrics tab, or a
-  // synced device) OR explicitly skipped it today. This self-heals across days and
-  // devices — there is no flag that can wedge and silently hide the prompt forever.
-  // Everything is computed from a freshly-read date so a long-lived (frozen/resumed)
-  // mobile PWA still recognises the day has rolled over. Held in a ref so the stable
-  // listeners below always call the latest closure (fresh localDB) without re-subscribing.
+  // user has already weighed in today (via this prompt, the Metrics tab, or a synced
+  // device) OR skipped within the last SKIP_COOLDOWN_MS. A skip only SNOOZES (a short
+  // epoch-ms cooldown), so the prompt re-appears on the next app open / foreground
+  // once the cooldown elapses — until a weight is logged for the day. This self-heals
+  // across days and devices and is computed from a freshly-read date so a long-lived
+  // (frozen/resumed) mobile PWA still recognises the day has rolled over. Held in a
+  // ref so the stable listeners below always call the latest closure (fresh localDB)
+  // without re-subscribing.
   const tryShow = useRef<() => void>(() => {});
   tryShow.current = () => {
     const liveStr = toDateStr(new Date());
-    if (localDB[liveStr]?.weight) return;                      // already weighed in today
-    if (localStorage.getItem(WEIGHT_SKIP_KEY) === liveStr) return; // explicitly skipped today
+    if (localDB[liveStr]?.weight) return;                      // already weighed in today → done for the day
+    const skipAt = Number(localStorage.getItem(WEIGHT_SKIP_KEY));
+    if (Number.isFinite(skipAt) && Date.now() - skipAt < SKIP_COOLDOWN_MS) return; // recently skipped — still snoozing
     setNow(new Date()); // refresh recap/streak/greeting to the real current day
     const last = getLastKnownWeightRef.current(liveStr);
     if (last) setWeight(last);
@@ -91,11 +99,13 @@ export function MorningWeightPrompt() {
       updateDayRecord(liveStr, { weight });
       persistProfile({ weight });
       // Logging weight makes localDB[liveStr].weight truthy, which suppresses the
-      // prompt on its own — no skip flag needed.
+      // prompt for the rest of the day.
     } else {
-      // Explicit skip: silence it for today only. A fresh day clears this naturally
-      // because the stored date no longer matches the live date.
-      localStorage.setItem(WEIGHT_SKIP_KEY, liveStr);
+      // Skip / close: snooze for SKIP_COOLDOWN_MS so a quick app-switch / resume
+      // doesn't re-pop it. Stored as an epoch-ms timestamp so it self-expires (and an
+      // old date-string value from a prior version parses to NaN and is ignored).
+      // After the cooldown the prompt returns on the next open until a weight is logged.
+      localStorage.setItem(WEIGHT_SKIP_KEY, String(Date.now()));
     }
     setOpen(false);
   };
