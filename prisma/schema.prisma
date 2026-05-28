@@ -78,6 +78,7 @@ model TeamBattle {
   id          String    @id @default(cuid())
   groupId     String
   creatorId   String
+  mode        String    @default("teams")  // 'teams' (A v B, sum) | 'ffa' (each player; top wins)
   wager       Int       @default(0)        // coins anted by EACH participant
   bestOf      Int                          // 1 | 3 | 5 == categories.length
   windowKind  String                       // 'day' | 'week'

@@ -47,7 +47,7 @@ export async function GET(): Promise<NextResponse> {
     const mine = b.participants.find(p => p.userId === meId);
     return {
       id: b.id, groupId: b.groupId, groupName: b.group.name, creatorId: b.creatorId,
-      wager: b.wager, bestOf: b.bestOf, windowKind: b.windowKind,
+      mode: b.mode, wager: b.wager, bestOf: b.bestOf, windowKind: b.windowKind,
       startDate: b.startDate, endDate: b.endDate, categories: b.categories,
       status: b.status, winningTeam: b.winningTeam, resolution: b.resolution,
       myTeam: mine?.team ?? null, myAccepted: mine?.accepted ?? false,
@@ -76,15 +76,30 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const parsed = teamBattleCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid battle setup' }, { status: 400 });
-  const { groupId, teamA, teamB, wager, bestOf, windowKind, startDate, categories } = parsed.data;
+  const { groupId, mode, wager, bestOf, windowKind, startDate, categories } = parsed.data;
 
-  // ── Teams: equal size, no overlap/dupes, creator must be in it ──────────────
-  if (teamA.length !== teamB.length) {
-    return NextResponse.json({ error: 'Teams must be the same size' }, { status: 400 });
+  // ── Resolve players per mode + sanity-check shape ───────────────────────────
+  // For 'teams' we keep the A/B split (team 0/1, summed); for 'ffa' everyone
+  // competes individually so team is irrelevant — we store 0 for all of them.
+  let allIds: string[];
+  let teamOf: (uid: string) => number;
+
+  if (parsed.data.mode === 'teams') {
+    const { teamA, teamB } = parsed.data;
+    if (teamA.length !== teamB.length) {
+      return NextResponse.json({ error: 'Teams must be the same size' }, { status: 400 });
+    }
+    allIds = [...teamA, ...teamB];
+    teamOf = (uid) => (teamA.includes(uid) ? 0 : 1);
+  } else {
+    allIds = parsed.data.participants;
+    if (allIds.length < 2) {
+      return NextResponse.json({ error: 'FFA needs at least 2 players' }, { status: 400 });
+    }
+    teamOf = () => 0;
   }
-  const allIds = [...teamA, ...teamB];
   if (new Set(allIds).size !== allIds.length) {
-    return NextResponse.json({ error: 'A player can only be on one team' }, { status: 400 });
+    return NextResponse.json({ error: 'A player can only appear once' }, { status: 400 });
   }
   if (!allIds.includes(meId)) {
     return NextResponse.json({ error: 'You have to be in the battle' }, { status: 400 });
@@ -100,8 +115,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     seen.add(slug);
     const cat = getCategory(slug);
     if (!cat) return NextResponse.json({ error: `Unknown category: ${slug}` }, { status: 400 });
-    if (cat.direction !== 'higher') {
-      return NextResponse.json({ error: 'Team battles only support "most wins" categories' }, { status: 400 });
+    // Teams mode sums member scores, so a "lower-is-better" category could be
+    // gamed by not logging (null → 0 helps the team). FFA scores per person
+    // (null just makes you lose that category), so any direction is fair.
+    if (mode === 'teams' && cat.direction !== 'higher') {
+      return NextResponse.json({ error: 'Team mode only supports "most wins" categories — use FFA for lower-is-better.' }, { status: 400 });
     }
   }
 
@@ -127,8 +145,6 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: `Not enough coins (have ${wallet.balance})` }, { status: 400 });
   }
 
-  const teamOf = (id: string) => (teamA.includes(id) ? 0 : 1);
-
   let battleId: string;
   try {
     const created = await prisma.$transaction(async tx => {
@@ -139,7 +155,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       }
       return tx.teamBattle.create({
         data: {
-          groupId, creatorId: meId, wager, bestOf, windowKind, startDate, endDate,
+          groupId, creatorId: meId, mode, wager, bestOf, windowKind, startDate, endDate,
           categories, status: 'pending',
           participants: { create: allIds.map(uid => ({ userId: uid, team: teamOf(uid), accepted: uid === meId })) },
         },

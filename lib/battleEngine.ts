@@ -288,6 +288,47 @@ export interface TeamBattleResolution {
   winningTeam: 0 | 1 | null;
 }
 
+// ── FFA (free-for-all) ──────────────────────────────────────────────────────
+
+export interface FFACategoryResult {
+  slug:      string;
+  label:     string;
+  group:     BattleCategory['group'];
+  direction: BattleCategory['direction'];
+  unit:      string;
+  scores:    Array<{ userId: string; score: number | null }>;
+  /** Single winner of this category, or null on tie/no-data. */
+  winnerId:  string | null;
+}
+
+export interface FFABattleResolution {
+  perCategory: FFACategoryResult[];
+  perUser:     Array<{ userId: string; categoryWins: number }>;
+  /** Player with the most category wins. Null on overall tie → refund all. */
+  winnerId:    string | null;
+}
+
+/** Discriminated by mode so the cron can branch on the same return value. */
+export type ResolvedBattle =
+  | ({ mode: 'teams' } & TeamBattleResolution)
+  | ({ mode: 'ffa'   } & FFABattleResolution);
+
+/** Per-category FFA score: nulls auto-lose; single top scorer wins; ties skip. */
+function scoreCategoryFFA(cat: BattleCategory, parts: Array<{ userId: string; rows: DayRow[] }>): FFACategoryResult {
+  const scores = parts.map(p => ({ userId: p.userId, score: cat.score(p.rows) }));
+  const valid  = scores.filter((s): s is { userId: string; score: number } => s.score !== null);
+  let winnerId: string | null = null;
+  if (valid.length > 0) {
+    const top = valid.reduce(
+      (best, s) => (cat.direction === 'higher' ? s.score > best : s.score < best) ? s.score : best,
+      valid[0].score,
+    );
+    const winners = valid.filter(s => s.score === top);
+    winnerId = winners.length === 1 ? winners[0].userId : null;   // tied at top → no winner this category
+  }
+  return { slug: cat.slug, label: cat.label, group: cat.group, direction: cat.direction, unit: cat.unit, scores, winnerId };
+}
+
 /**
  * A team's score for a category = sum of its members' scores. Null only if
  * EVERY member had no data (a single non-logger just contributes 0, which —
@@ -307,7 +348,7 @@ function teamScore(cat: BattleCategory, memberRows: DayRow[][]): number | null {
  * winning team (each winner nets +1 wager, like a duel). Overall tie refunds
  * everyone their ante. Safe to call on a non-active battle — returns null.
  */
-export async function resolveTeamBattle(battleId: string): Promise<TeamBattleResolution | null> {
+export async function resolveTeamBattle(battleId: string): Promise<ResolvedBattle | null> {
   const tb = await prisma.teamBattle.findUnique({
     where:   { id: battleId },
     include: { participants: { select: { userId: true, team: true } } },
@@ -317,6 +358,63 @@ export async function resolveTeamBattle(battleId: string): Promise<TeamBattleRes
   const slugs = Array.isArray(tb.categories) ? (tb.categories as string[]) : [];
   if (slugs.length === 0) return null;
 
+  // ── FFA branch ────────────────────────────────────────────────────────────
+  if (tb.mode === 'ffa') {
+    const rowsByUser = new Map<string, DayRow[]>();
+    await Promise.all(tb.participants.map(async p => {
+      rowsByUser.set(p.userId, await loadWindow(p.userId, tb.startDate, tb.endDate));
+    }));
+
+    const perCategory: FFACategoryResult[] = [];
+    const wins: Record<string, number> = {};
+    for (const p of tb.participants) wins[p.userId] = 0;
+
+    for (const slug of slugs) {
+      const cat = getCategory(slug);
+      if (!cat) continue;
+      const inputs = tb.participants.map(p => ({ userId: p.userId, rows: rowsByUser.get(p.userId) ?? [] }));
+      const r = scoreCategoryFFA(cat, inputs);
+      perCategory.push(r);
+      if (r.winnerId) wins[r.winnerId]++;
+    }
+
+    // Top scorer wins; ties at the top → no winner (refund all).
+    let winnerId: string | null = null;
+    const sorted = Object.entries(wins).sort((a, b) => b[1] - a[1]);
+    if (sorted.length > 0 && sorted[0][1] > 0) {
+      const top = sorted[0][1];
+      const tied = sorted.filter(([, v]) => v === top);
+      winnerId = tied.length === 1 ? tied[0][0] : null;
+    }
+
+    const perUser    = Object.entries(wins).map(([userId, categoryWins]) => ({ userId, categoryWins }));
+    const resolution = { perCategory, perUser, winnerId };
+
+    await prisma.$transaction(async tx => {
+      const claimed = await tx.teamBattle.updateMany({
+        where: { id: tb.id, status: 'active' },
+        data:  { status: 'resolved', resolution: resolution as unknown as object, resolvedAt: new Date() },
+      });
+      if (claimed.count === 0) throw new Error('ALREADY_RESOLVED');
+      if (tb.wager <= 0) return;
+      const pot = tb.wager * tb.participants.length;
+      if (winnerId) {
+        const w = await tx.coinWallet.upsert({ where: { userId: winnerId }, create: { userId: winnerId, balance: 0 }, update: {} });
+        await tx.coinWallet.update({ where: { id: w.id }, data: { balance: { increment: pot } } });
+        await tx.coinTransaction.create({ data: { walletId: w.id, amount: pot, reason: 'battle_win', refId: tb.id } });
+      } else {
+        for (const p of tb.participants) {
+          const w = await tx.coinWallet.upsert({ where: { userId: p.userId }, create: { userId: p.userId, balance: 0 }, update: {} });
+          await tx.coinWallet.update({ where: { id: w.id }, data: { balance: { increment: tb.wager } } });
+          await tx.coinTransaction.create({ data: { walletId: w.id, amount: tb.wager, reason: 'refund', refId: tb.id } });
+        }
+      }
+    });
+
+    return { mode: 'ffa', ...resolution };
+  }
+
+  // ── Teams branch ──────────────────────────────────────────────────────────
   const team0 = tb.participants.filter(p => p.team === 0);
   const team1 = tb.participants.filter(p => p.team === 1);
   if (team0.length === 0 || team1.length === 0) return null;
@@ -384,7 +482,7 @@ export async function resolveTeamBattle(battleId: string): Promise<TeamBattleRes
     }
   });
 
-  return resolution;
+  return { mode: 'teams', ...resolution };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

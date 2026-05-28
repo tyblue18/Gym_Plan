@@ -12,6 +12,7 @@ import { WeeklyRecapModal } from '@/components/WeeklyRecapModal';
 import { InviteRedeemer } from '@/components/InviteRedeemer';
 import { BadgeCelebration } from '@/components/BadgeCelebration';
 import { FunnelTracker } from '@/components/FunnelTracker';
+import { InvitePrompt } from '@/components/InvitePrompt';
 import { SyncNudge } from '@/components/SyncNudge';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useApp } from '@/lib/AppContext';
@@ -57,6 +58,7 @@ export default function WorkoutPage() {
       <InviteRedeemer />
       <BadgeCelebration />
       <FunnelTracker />
+      <InvitePrompt />
 
       <main className="app-content" role="tabpanel">
         {/* Each tab gets its own ErrorBoundary so a single component crash

@@ -57,7 +57,8 @@ export type TelemetryEvent =
   | 'returning_user'              // opened the app on a calendar day after first-seen
   // Invite growth loop
   | 'invite_shared'               // user shared/copied their invite link
-  | 'invite_redeemed';            // a followed invite link was successfully redeemed
+  | 'invite_redeemed'             // a followed invite link was successfully redeemed
+  | 'invite_prompt_shown';        // the post-win invite nudge was displayed
 
 interface TelemetryProperties {
   /** Free-form integers / strings. Don't put PII here — categorical only.

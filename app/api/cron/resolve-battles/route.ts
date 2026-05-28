@@ -162,16 +162,30 @@ export async function GET(req: Request): Promise<NextResponse> {
     const res = await resolveTeamBattle(tb.id);
     if (!res) return 'skipped' as const;
     const pot = tb.wager * tb.participants.length;
-    const share = res.winningTeam !== null
-      ? Math.floor(pot / tb.participants.filter(p => p.team === res.winningTeam).length)
-      : 0;
-    for (const p of tb.participants) {
-      if (res.winningTeam === null) {
-        sendPushToUser(p.userId, { title: 'Team battle tied 🤝', body: `Ended in a tie — ${tb.wager} 🪙 refunded.`, url: '/app' }).catch(() => {});
-      } else if (p.team === res.winningTeam) {
-        sendPushToUser(p.userId, { title: 'Your team won! 🏆', body: `Team battle won${tb.wager > 0 ? ` — ${share} 🪙 added to your wallet.` : '!'}`, url: '/app' }).catch(() => {});
-      } else {
-        sendPushToUser(p.userId, { title: 'Team battle lost', body: 'Your team came up short. Run it back!', url: '/app' }).catch(() => {});
+
+    if (res.mode === 'teams') {
+      const share = res.winningTeam !== null
+        ? Math.floor(pot / tb.participants.filter(p => p.team === res.winningTeam).length)
+        : 0;
+      for (const p of tb.participants) {
+        if (res.winningTeam === null) {
+          sendPushToUser(p.userId, { title: 'Team battle tied 🤝', body: `Ended in a tie — ${tb.wager} 🪙 refunded.`, url: '/app' }).catch(() => {});
+        } else if (p.team === res.winningTeam) {
+          sendPushToUser(p.userId, { title: 'Your team won! 🏆', body: `Team battle won${tb.wager > 0 ? ` — ${share} 🪙 added to your wallet.` : '!'}`, url: '/app' }).catch(() => {});
+        } else {
+          sendPushToUser(p.userId, { title: 'Team battle lost', body: 'Your team came up short. Run it back!', url: '/app' }).catch(() => {});
+        }
+      }
+    } else {
+      // FFA — single winner takes the pot, or refund on tie.
+      for (const p of tb.participants) {
+        if (res.winnerId === null) {
+          sendPushToUser(p.userId, { title: 'Battle tied 🤝', body: `FFA ended in a tie — ${tb.wager} 🪙 refunded.`, url: '/app' }).catch(() => {});
+        } else if (p.userId === res.winnerId) {
+          sendPushToUser(p.userId, { title: 'You won the FFA! 🏆', body: `Winner takes all${tb.wager > 0 ? ` — ${pot} 🪙 added to your wallet.` : '!'}`, url: '/app' }).catch(() => {});
+        } else {
+          sendPushToUser(p.userId, { title: 'FFA battle lost', body: 'Another player edged you out. Run it back!', url: '/app' }).catch(() => {});
+        }
       }
     }
     return 'resolved' as const;

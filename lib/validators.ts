@@ -85,16 +85,28 @@ export const inviteRedeemSchema = z.object({
 
 // ── /api/team-battles ─────────────────────────────────────────────────────────
 
-export const teamBattleCreateSchema = z.object({
+const teamBattleCommon = {
   groupId:    id,
-  teamA:      z.array(id).min(1).max(6),
-  teamB:      z.array(id).min(1).max(6),
   wager:      z.number().int().min(0).max(100_000),
   bestOf:     z.union([z.literal(1), z.literal(3), z.literal(5)]),
   windowKind: z.enum(['day', 'week']),
   startDate:  dateString,
   categories: z.array(z.string().min(1).max(64)).min(1).max(5),
-});
+} as const;
+
+export const teamBattleCreateSchema = z.discriminatedUnion('mode', [
+  z.object({
+    ...teamBattleCommon,
+    mode:  z.literal('teams'),
+    teamA: z.array(id).min(1).max(6),
+    teamB: z.array(id).min(1).max(6),
+  }),
+  z.object({
+    ...teamBattleCommon,
+    mode:         z.literal('ffa'),
+    participants: z.array(id).min(2).max(12),
+  }),
+]);
 
 export const teamBattleActionSchema = z.object({
   action: z.enum(['accept', 'decline', 'cancel']),
