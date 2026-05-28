@@ -12,7 +12,7 @@
 import { prisma }        from '@/lib/prisma';
 import { hitGoal }       from '@/lib/calorie-utils';
 import {
-  ATHLETE_PLAN_KEY, MILLION_GROUPS_KEY, LIFT_PRS_KEY,
+  ATHLETE_PLAN_KEY, MILLION_GROUPS_KEY, LIFT_PRS_KEY, MACRO_GOALS_KEY,
 } from '@/lib/constants';
 import { BADGE_CATALOG } from '@/lib/badgeCatalog';
 
@@ -126,6 +126,60 @@ const OHP   = ['Overhead Press', 'OHP', 'Military Press', 'Barbell OHP', 'Standi
 /** Best PR across a set of exercise name variants. */
 function bestPR(liftPRs: Record<string, number>, exercises: string[]): number {
   return exercises.reduce((max, ex) => Math.max(max, liftPRs[ex] ?? 0), 0);
+}
+
+// ── Helpers for the "fun" badges below ──────────────────────────────────────────
+
+/** True if a day has a logged workout (mirrors the streak predicate). */
+function hasWorkout(d: DayRecord): boolean {
+  return String(d.exercises ?? '').length > 2;
+}
+/** True if a day has at least one logged LIFT (k==='lift'), not just cardio. */
+function hasLift(d: DayRecord): boolean {
+  try {
+    const exs = JSON.parse(String(d.exercises ?? '[]'));
+    return Array.isArray(exs) && exs.some(ex => (ex as { k?: string }).k === 'lift');
+  } catch { return false; }
+}
+/** US Thanksgiving = 4th Thursday of November (the Thursday landing on Nov 22–28). */
+function isThanksgiving(date: string): boolean {
+  const [, m, d] = date.split('-').map(Number);
+  return m === 11 && d >= 22 && d <= 28 && dow(date) === 4;
+}
+/** Gregorian dates of Chinese New Year (lunar — no formula). Extend the list as years pass. */
+const CHINESE_NEW_YEAR = new Set([
+  '2025-01-29', '2026-02-17', '2027-02-06', '2028-01-26', '2029-02-13', '2030-02-03',
+  '2031-01-23', '2032-02-11', '2033-01-31', '2034-02-19', '2035-02-08',
+]);
+/** UTC day-of-week for a YYYY-MM-DD (0 = Sun … 6 = Sat). */
+function dow(date: string): number {
+  return new Date(date + 'T00:00:00Z').getUTCDay();
+}
+/** Whole days from a → b (both YYYY-MM-DD). */
+function dayGap(a: string, b: string): number {
+  return Math.round((new Date(b + 'T00:00:00Z').getTime() - new Date(a + 'T00:00:00Z').getTime()) / 86_400_000);
+}
+/** Monday (YYYY-MM-DD) of the week containing date. */
+function weekStart(date: string): string {
+  const dt  = new Date(date + 'T00:00:00Z');
+  const day = dt.getUTCDay();                 // 0=Sun..6=Sat
+  dt.setUTCDate(dt.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return dt.toISOString().slice(0, 10);
+}
+/** A day's total for a macro: prefer the pre-summed day-level field, else sum foods. */
+function dayMacro(d: DayRecord, field: 'protein' | 'carbs' | 'fat'): number {
+  const v = d[field];
+  if (v !== undefined && v !== null && v !== '') {
+    const n = parseFloat(String(v));
+    if (Number.isFinite(n)) return n;
+  }
+  try {
+    const foods = JSON.parse(String(d.foods ?? '[]'));
+    if (Array.isArray(foods)) {
+      return foods.reduce((s, f) => s + (parseFloat(String((f as Record<string, unknown>)[field] ?? '0')) || 0), 0);
+    }
+  } catch { /* corrupt day — treat as 0 */ }
+  return 0;
 }
 
 const BADGE_DEFS: BadgeDef[] = [
@@ -404,6 +458,150 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     slug: 'recruit_10', label: 'Golden Star', icon: '/Badges/10_recruit_badge.png', category: 'nutrition',
     check: ({ referralCount }) => referralCount >= 10,
+  },
+
+  // ── Calendar / quirky (permanent — 'nutrition' so they're never revoked) ────
+  {
+    slug: 'new_year', label: 'New Year, New Me', icon: '/Badges/New_year_new_me.png', category: 'nutrition',
+    check: ({ localDB }) => Object.keys(localDB).some(d => d.endsWith('-01-01') && hasWorkout(localDB[d])),
+  },
+  {
+    slug: 'leap_day', label: 'Leap of Faith', icon: '/Badges/Leap_of_faith.png', category: 'nutrition',
+    check: ({ localDB }) => Object.entries(localDB).some(([date, d]) =>
+      date.endsWith('-02-29') && (
+        hasWorkout(d) ||
+        (parseFloat(String(d.calsEaten ?? '0')) || 0) > 0 ||
+        (parseFloat(String(d.weight    ?? '0')) || 0) > 0
+      )),
+  },
+  {
+    slug: 'holiday_grind', label: 'No Days Off', icon: '/Badges/No_Days_Off.png', category: 'nutrition',
+    check: ({ localDB }) => Object.keys(localDB).some(d => d.endsWith('-12-25') && hasWorkout(localDB[d])),
+  },
+  {
+    slug: 'trick_or_lift', label: 'Trick-or-Lift', icon: '/Badges/Trick_or_lift.png', category: 'nutrition',
+    check: ({ localDB }) => Object.keys(localDB).some(d => d.endsWith('-10-31') && hasLift(localDB[d])),
+  },
+  {
+    slug: 'american_lift', label: 'The American Lift', icon: '/Badges/The_American_Lift.png', category: 'nutrition',
+    check: ({ localDB }) => Object.keys(localDB).some(d => d.endsWith('-07-04') && hasLift(localDB[d])),
+  },
+  {
+    slug: 'st_patricks', label: "St Patty's", icon: '/Badges/Patricks.png', category: 'nutrition',
+    check: ({ localDB }) => Object.keys(localDB).some(d => d.endsWith('-03-17') && hasLift(localDB[d])),
+  },
+  {
+    slug: 'lifts_giving', label: 'Lifts Giving', icon: '/Badges/Lifts_giving.png', category: 'nutrition',
+    check: ({ localDB }) => Object.keys(localDB).some(d => isThanksgiving(d) && hasLift(localDB[d])),
+  },
+  {
+    slug: 'red_envelope', label: 'Red Envelope', icon: '/Badges/Chinese_new_year.png', category: 'nutrition',
+    check: ({ localDB }) => Object.keys(localDB).some(d => CHINESE_NEW_YEAR.has(d) && hasLift(localDB[d])),
+  },
+  {
+    slug: 'weekend_warrior', label: 'Weekend Warrior', icon: '/Badges/Weekend_warrior.png', category: 'nutrition',
+    check: ({ localDB }) => {
+      const wo = new Set(Object.keys(localDB).filter(d => hasWorkout(localDB[d])));
+      for (const d of wo) {
+        if (dow(d) !== 6) continue;                       // Saturday
+        const sun = new Date(d + 'T00:00:00Z');
+        sun.setUTCDate(sun.getUTCDate() + 1);
+        if (wo.has(sun.toISOString().slice(0, 10))) return true;
+      }
+      return false;
+    },
+  },
+  {
+    slug: 'comeback', label: 'Comeback Kid', icon: '/Badges/Comeback_kid.png', category: 'nutrition',
+    check: ({ localDB }) => {
+      const days = Object.keys(localDB).filter(d => hasWorkout(localDB[d])).sort();
+      for (let i = 1; i < days.length; i++) {
+        if (dayGap(days[i - 1], days[i]) >= 14) return true;   // logged again after 14+ days off
+      }
+      return false;
+    },
+  },
+
+  // ── Consistency / skill ─────────────────────────────────────────────────────
+  {
+    slug: 'perfect_week', label: 'Flawless', icon: '/Badges/Perfect_Week.png', category: 'nutrition',
+    check: ({ localDB }) => {
+      const byWeek: Record<string, number> = {};
+      for (const [date, d] of Object.entries(localDB)) {
+        if (hitGoal(d.calsEaten, d.budget)) {
+          const wk = weekStart(date);
+          byWeek[wk] = (byWeek[wk] ?? 0) + 1;
+        }
+      }
+      return Object.values(byWeek).some(n => n >= 7);          // all 7 days of one week
+    },
+  },
+  {
+    slug: 'workout_100', label: 'Iron Habit', icon: '/Badges/Iron_habit.png', category: 'nutrition',
+    check: ({ localDB }) => maxWorkoutStreak(localDB) >= 100,
+  },
+  {
+    slug: 'on_the_dot', label: 'Bullseye', icon: '🎯', category: 'nutrition',
+    check: ({ localDB }) => Object.values(localDB).some(d => {
+      const eaten  = parseFloat(String(d.calsEaten ?? '0')) || 0;
+      const budget = parseFloat(String(d.budget    ?? '0')) || 0;
+      return eaten > 0 && budget > 0 && Math.abs(eaten - budget) <= 10;
+    }),
+  },
+  {
+    slug: 'perfectionist', label: 'Perfectionist', icon: '/Badges/Perfectionist_badge.png', category: 'nutrition',
+    check: ({ localDB, settings }) => {
+      const goals = settings[MACRO_GOALS_KEY] as { protein?: number; carbs?: number; fat?: number } | null | undefined;
+      if (!goals?.protein || !goals.carbs || !goals.fat) return false;
+      const TOL = 2; // grams — "exact" within a tight margin (see howToGet)
+      return Object.values(localDB).some(d => {
+        const p = dayMacro(d, 'protein'), c = dayMacro(d, 'carbs'), f = dayMacro(d, 'fat');
+        if (p <= 0 && c <= 0 && f <= 0) return false;     // ignore days with no food logged
+        return Math.abs(p - goals.protein!) <= TOL
+            && Math.abs(c - goals.carbs!)   <= TOL
+            && Math.abs(f - goals.fat!)     <= TOL;
+      });
+    },
+  },
+  {
+    slug: 'transformation', label: 'Transformation', icon: '/Badges/Transformation.png', category: 'nutrition',
+    check: ({ localDB }) => {
+      const w = Object.keys(localDB).filter(d => (parseFloat(String(localDB[d].weight ?? '0')) || 0) > 0).sort();
+      if (w.length < 2) return false;
+      const first = parseFloat(String(localDB[w[0]].weight));
+      const last  = parseFloat(String(localDB[w[w.length - 1]].weight));
+      return Math.abs(last - first) >= 20;
+    },
+  },
+
+  // ── Endurance milestones (cardio — match existing distance badges) ──────────
+  {
+    slug: 'bike_century', label: 'Century Ride', icon: '/Badges/Century_Ride.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d => (parseFloat(String(d.bikeDist ?? '0')) || 0) >= 100),
+  },
+  {
+    slug: 'run_100mi', label: 'Hundred Miler', icon: '🏃', category: 'cardio',
+    check: ({ localDB }) =>
+      Object.values(localDB).reduce((s, d) => s + (parseFloat(String(d.runDist ?? '0')) || 0), 0) >= 100,
+  },
+  {
+    slug: 'swim_channel', label: 'Channel Crossing', icon: '/Badges/Channel_Crossing.png', category: 'cardio',
+    check: ({ localDB }) =>
+      Object.values(localDB).reduce((s, d) => s + (parseFloat(String(d.swimDist ?? '0')) || 0), 0) >= 21,
+  },
+  {
+    slug: 'all_rounder', label: 'All-Rounder', icon: '/Badges/All_rounder.png', category: 'cardio',
+    check: ({ localDB }) => {
+      const v = Object.values(localDB);
+      const run  = v.some(d => (parseFloat(String(d.runDist  ?? '0')) || 0) > 0);
+      const bike = v.some(d => (parseFloat(String(d.bikeDist ?? '0')) || 0) > 0);
+      const swim = v.some(d => (parseFloat(String(d.swimTime ?? '0')) || 0) > 0 || (parseFloat(String(d.swimDist ?? '0')) || 0) > 0);
+      return run && bike && swim;
+    },
+  },
+  {
+    slug: 'steps_20k', label: 'Step Machine', icon: '/Badges/Step_Machine.png', category: 'cardio',
+    check: ({ localDB }) => Object.values(localDB).some(d => (parseFloat(String(d.steps ?? '0')) || 0) >= 20000),
   },
 ];
 

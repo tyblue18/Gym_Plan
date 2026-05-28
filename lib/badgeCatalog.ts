@@ -115,4 +115,30 @@ export const BADGE_CATALOG: CatalogEntry[] = [
   { slug: 'recruit_3',  label: 'Full Support', icon: '/Badges/3_recruit_badge.png',     category: 'nutrition', howToGet: 'Bring 3 friends to Que with your link' },
   { slug: 'recruit_5',  label: 'Life Force',   icon: '/Badges/5_recruit_badge.png',     category: 'nutrition', howToGet: 'Bring 5 friends to Que with your link' },
   { slug: 'recruit_10', label: 'Golden Star',  icon: '/Badges/10_recruit_badge.png',    category: 'nutrition', howToGet: 'Bring 10 friends to Que with your link' },
+
+  // ── Calendar / quirky ──
+  { slug: 'new_year',        label: 'New Year, New Me', icon: '/Badges/New_year_new_me.png', category: 'nutrition', howToGet: 'Log a workout on January 1st' },
+  { slug: 'leap_day',        label: 'Leap of Faith',    icon: '/Badges/Leap_of_faith.png', category: 'nutrition', howToGet: 'Log anything on February 29th — only earnable on a leap year' },
+  { slug: 'holiday_grind',   label: 'No Days Off',       icon: '/Badges/No_Days_Off.png', category: 'nutrition', howToGet: 'Train on December 25th' },
+  { slug: 'trick_or_lift',   label: 'Trick-or-Lift',     icon: '/Badges/Trick_or_lift.png', category: 'nutrition', howToGet: 'Log a lift on Halloween (October 31st)' },
+  { slug: 'american_lift',   label: 'The American Lift', icon: '/Badges/The_American_Lift.png', category: 'nutrition', howToGet: 'Log a lift on the 4th of July' },
+  { slug: 'st_patricks',     label: "St Patty's",        icon: '/Badges/Patricks.png', category: 'nutrition', howToGet: "Log a lift on St. Patrick's Day (March 17th)" },
+  { slug: 'lifts_giving',    label: 'Lifts Giving',      icon: '/Badges/Lifts_giving.png', category: 'nutrition', howToGet: 'Log a lift on Thanksgiving (4th Thursday of November)' },
+  { slug: 'red_envelope',    label: 'Red Envelope',      icon: '/Badges/Chinese_new_year.png', category: 'nutrition', howToGet: 'Log a lift on Chinese New Year' },
+  { slug: 'weekend_warrior', label: 'Weekend Warrior',   icon: '/Badges/Weekend_warrior.png', category: 'nutrition', howToGet: 'Work out on both Saturday and Sunday of the same weekend' },
+  { slug: 'comeback',        label: 'Comeback Kid',      icon: '/Badges/Comeback_kid.png', category: 'nutrition', howToGet: 'Get back to training after a 14+ day break' },
+
+  // ── Consistency / skill ──
+  { slug: 'perfect_week',   label: 'Flawless',       icon: '/Badges/Perfect_Week.png', category: 'nutrition', howToGet: 'Hit your calorie goal all 7 days of a single week' },
+  { slug: 'workout_100',    label: 'Iron Habit',     icon: '/Badges/Iron_habit.png', category: 'nutrition', howToGet: 'Log a workout 100 days in a row' },
+  { slug: 'on_the_dot',     label: 'Bullseye',       icon: '🎯', category: 'nutrition', howToGet: 'Land within ±10 kcal of your calorie budget in a day' },
+  { slug: 'perfectionist',  label: 'Perfectionist',  icon: '/Badges/Perfectionist_badge.png', category: 'nutrition', howToGet: 'Hit your exact protein, carb, and fat goals in a single day' },
+  { slug: 'transformation', label: 'Transformation', icon: '/Badges/Transformation.png', category: 'nutrition', howToGet: 'Change your body weight by 20+ lb from your first to latest weigh-in' },
+
+  // ── Endurance milestones ──
+  { slug: 'bike_century', label: 'Century Ride',     icon: '/Badges/Century_Ride.png', category: 'cardio', howToGet: 'Bike 100 miles in a single day' },
+  { slug: 'run_100mi',    label: 'Hundred Miler',    icon: '🏃', category: 'cardio', howToGet: 'Run 100 miles total' },
+  { slug: 'swim_channel', label: 'Channel Crossing', icon: '/Badges/Channel_Crossing.png', category: 'cardio', howToGet: 'Swim 21 miles total — the width of the English Channel' },
+  { slug: 'all_rounder',  label: 'All-Rounder',      icon: '/Badges/All_rounder.png', category: 'cardio', howToGet: 'Log a run, a bike ride, and a swim' },
+  { slug: 'steps_20k',    label: 'Step Machine',     icon: '/Badges/Step_Machine.png', category: 'cardio', howToGet: 'Hit 20,000 steps in a single day' },
 ];
