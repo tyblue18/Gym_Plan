@@ -22,10 +22,10 @@ import { useState, useEffect, useRef } from 'react';
  * well under quota even with a packed showcase.
  */
 
-// _v2: border-palette background detection (handles baked checkerboard /
-// multi-color backgrounds). Bumped so users re-crop instead of serving the
-// old corner-only result from cache.
-const CACHE_KEY      = 'queBadgeCropCache_v2';
+// _v3: conservative corner sampling (small region + high dominance threshold
+// + trusted corner pixel). Bumped so users re-crop instead of serving the
+// over-cropped _v2 results (which ate the art on frame-filling badges).
+const CACHE_KEY      = 'queBadgeCropCache_v3';
 const CACHE_MAX      = 100;
 const memoryCache    = new Map<string, string>(); // src → dataUrl
 let   diskHydrated   = false;
@@ -34,9 +34,10 @@ let   diskCache: Record<string, { dataUrl: string; t: number }> = {};
 function hydrateDiskCache(): void {
   if (diskHydrated || typeof window === 'undefined') return;
   diskHydrated = true;
-  // Reclaim the pre-_v2 cache's quota — those crops used the old corner-only
-  // algorithm and are never read again.
+  // Reclaim the quota from superseded cache versions — their crops used older
+  // algorithms and are never read again.
   try { localStorage.removeItem('queBadgeCropCache'); } catch { /* ignore */ }
+  try { localStorage.removeItem('queBadgeCropCache_v2'); } catch { /* ignore */ }
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) diskCache = JSON.parse(raw);
@@ -122,15 +123,21 @@ export function AutoCropImage({
       const raw = t.getImageData(0, 0, W, H);
       const d = raw.data;
 
-      // Build a background palette from the four CORNER REGIONS (not the full
-      // border, and not just the single corner pixel). Centered medallion badges
-      // touch the mid-edges with their rim, so full-border sampling would pull
-      // the rim color into the palette and the flood-fill would eat the art. The
-      // corners, by contrast, hold only background — including BOTH colors of a
-      // faux-transparency checkerboard (white + medium gray) that the old
-      // corner-pixel + ">185 white" rules couldn't strip. Colors are quantized
-      // and counted; only those ≥6% of corner samples become references, so a
-      // sliver of art clipping a corner stays a minority and is kept.
+      // Build a background palette from the four corners. Two contributions:
+      //   1. The literal corner PIXEL is always trusted — for these inset-art
+      //      badges the extreme corner is background by definition.
+      //   2. Any color that DOMINATES a small corner region (≥25% of its
+      //      samples) is added too. That captures BOTH squares of a faux-
+      //      transparency checkerboard (white + medium gray) while ignoring a
+      //      sliver of art that merely clips a corner.
+      // History: the earlier _v2 attempt sampled an 18% region and admitted any
+      // color ≥6% of it. On frame-filling badges (fire ring, cosmic ring, navy
+      // ring — several deadlift tiers) the art reaches the corners, so its color
+      // entered the palette and the flood-fill ate THROUGH the art, leaving a
+      // tight, wrong crop. Keep the region small and the threshold high so the
+      // art always stays a minority. Centered medallions still touch the
+      // mid-edges with their rim, which is exactly why we sample corners, never
+      // the full border.
       const QUANT  = 16;
       const counts = new Map<string, { c: [number, number, number]; n: number }>();
       const tally  = (x: number, y: number) => {
@@ -141,8 +148,8 @@ export function AutoCropImage({
         const e = counts.get(key);
         if (e) e.n++; else counts.set(key, { c: [r, g, b], n: 1 });
       };
-      const rw = Math.max(2, Math.floor(W * 0.18));
-      const rh = Math.max(2, Math.floor(H * 0.18));
+      const rw = Math.min(16, Math.max(2, Math.floor(W * 0.09)));
+      const rh = Math.min(16, Math.max(2, Math.floor(H * 0.09)));
       for (const [bx, by] of [[0, 0], [W - rw, 0], [0, H - rh], [W - rw, H - rh]] as [number, number][]) {
         for (let y = by; y < by + rh; y++) {
           for (let x = bx; x < bx + rw; x++) tally(x, y);
@@ -150,10 +157,16 @@ export function AutoCropImage({
       }
       const total   = Array.from(counts.values()).reduce((s, e) => s + e.n, 0) || 1;
       const palette = Array.from(counts.values())
-        .filter(e => e.n / total >= 0.06)
+        .filter(e => e.n / total >= 0.25)
         .sort((a, b) => b.n - a.n)
-        .slice(0, 6)
+        .slice(0, 4)
         .map(e => e.c);
+      // Always trust the four literal corner pixels, even if a noisy region kept
+      // them under the dominance threshold.
+      for (const [cx, cy] of [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]] as [number, number][]) {
+        const i = (cy * W + cx) * 4;
+        if (d[i + 3] > 10) palette.push([d[i], d[i + 1], d[i + 2]]);
+      }
 
       const visited = new Uint8Array(W * H);
       const isBg = (i: number) => {
