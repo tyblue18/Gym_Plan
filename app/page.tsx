@@ -36,8 +36,8 @@ const FEATURES = [
   },
   {
     icon: Zap,
-    title: 'Calorie Budget Engine',
-    body: 'Mifflin-St Jeor BMR plus real cardio burn — so your daily budget adjusts to what you actually did.',
+    title: 'Science-Based Plans',
+    body: 'Cut and bulk plans on real exercise science (Mifflin-St Jeor, ACSM, the Compendium), with cardio counted net of rest. More rigorous than the plans most apps charge for.',
   },
   {
     icon: Award,
@@ -107,7 +107,7 @@ export default function LandingPage() {
             </Link>
           </div>
           <p className="lp-hero-no-account">
-            No sign-up needed — your data saves locally. Sign in later to sync across devices.
+            No sign-up needed. Your data saves locally, and you can sign in later to sync across devices.
           </p>
 
           <div className="lp-stats">
@@ -173,7 +173,7 @@ export default function LandingPage() {
         <div className="lp-cta-inner">
           <TrendingUp size={32} className="lp-cta-icon" aria-hidden="true" />
           <h2 className="lp-cta-title">Ready to level up?</h2>
-          <p className="lp-cta-sub">Free. No ads. Your data stays yours.</p>
+          <p className="lp-cta-sub">Free to use. Offline-first. Your data stays yours.</p>
           <InstallCTA className="lp-btn-primary lp-btn-lg" label="Start tracking" />
         </div>
       </section>

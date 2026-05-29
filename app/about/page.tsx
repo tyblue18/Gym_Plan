@@ -14,9 +14,9 @@ export default function AboutPage() {
     <PageShell title="About Que" subtitle="A hobby project, built for athletes who take their data seriously.">
       <P>
         Hey, I&apos;m Tanishq. I built {SITE.name} solo, on my own time, because I wanted a training
-        log and calorie tracker I&apos;d actually enjoy using every day. Fast, offline-first, no ads,
-        no upsells, and no selling your data. It does workouts, macros, body-weight trends,
-        cut and bulk plans, badges, and friendly challenges with friends, all in one app.
+        log and calorie tracker I&apos;d actually enjoy using every day. Fast, offline-first, and your
+        data stays yours. It does workouts, macros, body-weight trends, cut and bulk plans, badges,
+        and friendly challenges with friends, all in one app.
       </P>
       <P>
         I&apos;ve spent countless hours on this. Before I started, I tried a bunch of the other
@@ -25,8 +25,15 @@ export default function AboutPage() {
         did everything well and wasn&apos;t blocked by cost, so I sat down and built it.
       </P>
       <P>
-        It&apos;s free and it stays free. There&apos;s no paywall and there never will be. I&apos;d
-        rather build something people genuinely like than nickel-and-dime it.
+        The cut and bulk plans aren&apos;t generic templates either. They run on the same equations
+        sports scientists and dietitians use: Mifflin-St Jeor for your metabolism, the ACSM running
+        equation and the Compendium of Physical Activities for exercise burn. {SITE.name} also counts
+        cardio net of rest, the way it&apos;s actually measured, instead of the inflated numbers most
+        apps show. It ends up more rigorous than the plans a lot of apps lock behind a subscription.
+      </P>
+      <P>
+        {SITE.name} is free to use, no required subscription to track your workouts, food, and
+        progress. I want to build something people genuinely enjoy using.
       </P>
 
       <figure className="mt-7 mb-2">
@@ -45,12 +52,8 @@ export default function AboutPage() {
 
       <H2>Support the app</H2>
       <P>
-        {SITE.name} costs real money to run. Servers, the database, image storage, and notifications
-        all add up every month, and right now I cover that out of my own pocket. I refuse to put ads
-        in the app, so there&apos;s no revenue behind it. If {SITE.name} is useful to you and you feel
-        like chipping in, a donation genuinely goes a long way and I really appreciate it. It&apos;s
-        completely optional, there&apos;s zero pressure, and it unlocks nothing you don&apos;t already
-        have.
+        {SITE.name} is free to use. If you&apos;d like to support its development, you can donate on
+        Ko-fi. Completely optional, no pressure.
       </P>
 
       <div className="mt-6 mb-2 flex flex-col items-start gap-3">
