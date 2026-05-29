@@ -42,20 +42,26 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'steps must be a positive number' }, { status: 400 });
   }
 
-  const dateStr =
-    typeof body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
-      ? body.date
-      : new Date().toISOString().slice(0, 10);
-
-  // Find the user whose stepApiToken matches.
+  // Find the user whose stepApiToken matches (also grab settings for their tz).
   const workoutData = await prisma.workoutData.findFirst({
     where:  { settings: { path: ['stepApiToken'], equals: token } },
-    select: { userId: true },
+    select: { userId: true, settings: true },
   });
 
   if (!workoutData) {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
+
+  // Prefer the explicit date; otherwise default to the user's LOCAL today using
+  // their stored queTzOffset (getTimezoneOffset minutes; local = UTC − offset).
+  // Falls back to UTC if the offset isn't stored. Without this, an evening push
+  // from a user behind UTC would file steps on the next (future) day.
+  const tzOffset = (workoutData.settings as { queTzOffset?: unknown } | null)?.queTzOffset;
+  const offsetMin = typeof tzOffset === 'number' ? tzOffset : 0;
+  const dateStr =
+    typeof body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
+      ? body.date
+      : new Date(Date.now() - offsetMin * 60_000).toISOString().slice(0, 10);
 
   // Write to the DayRecord row (the authoritative per-day store /api/sync reads),
   // NOT the legacy WorkoutData.localDB blob — writing the blob got silently

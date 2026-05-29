@@ -12,7 +12,7 @@
 
 import type { LocalDB, DayRecord, ExerciseEntry, SetData, UserProfile } from '@/lib/AppContext';
 import { loadPlan, getPlanBaseline, type AthletePlan } from '@/lib/metricsTypes';
-import { hitGoal } from '@/lib/calorie-utils';
+import { isGoalDay, dayMaintenanceFromRecord, type PlanDirection } from '@/lib/calorie-utils';
 
 // ── date helpers ────────────────────────────────────────────────────────────
 
@@ -134,6 +134,13 @@ export function computeWeeklyRecap(
   const weekStart = dates[0];
   const inWeek   = (ds: string) => ds >= weekStart && ds <= sundayStr;
 
+  // Active plan + direction — drives the plan-aware "on target" count below
+  // (under maintenance on a cut / over on a bulk), matching coins + badges.
+  // loadPlan() returns null server-side (no localStorage), so the cron recap
+  // falls back to the ±100 band — fine, its plan block is omitted there anyway.
+  const ap: AthletePlan | null = typeof window !== 'undefined' ? loadPlan() : null;
+  const planDirection: PlanDirection = ap?.type === 'cut' || ap?.type === 'bulk' ? ap.type : null;
+
   let workoutDays = 0, daysLogged = 0;
 
   // Cardio
@@ -214,7 +221,7 @@ export function computeWeeklyRecap(
 
     if (calsEaten > 0) {
       calDays++; calSum += calsEaten;
-      if (hitGoal(rec.calsEaten, rec.budget)) onTargetDays++;
+      if (isGoalDay(rec.calsEaten, rec.budget, dayMaintenanceFromRecord(rec), planDirection)) onTargetDays++;
     }
     const prot = num(rec.protein);
     if (prot > 0) { proteinSum += prot; proteinDays++; }
@@ -267,9 +274,8 @@ export function computeWeeklyRecap(
   const weightChange = startVal != null && latestVal != null
     ? Math.round((latestVal - startVal) * 10) / 10 : undefined;
 
-  // ── plan (if any) ──
+  // ── plan (if any) ── (ap + planDirection computed near the top)
   let plan: WeeklyRecap['plan'];
-  const ap: AthletePlan | null = typeof window !== 'undefined' ? loadPlan() : null;
   if (ap) {
     const baseline = getPlanBaseline(ap, localDB);
     plan = {

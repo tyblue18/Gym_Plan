@@ -23,8 +23,10 @@ import {
   getWorkoutPresets, saveWorkoutPresets,
 } from '@/lib/storage';
 import {
-  GOAL_TOLERANCE, LIFT_PRS_KEY, MILLION_GROUPS_KEY, SHOWN_BADGES_KEY,
+  LIFT_PRS_KEY, MILLION_GROUPS_KEY, SHOWN_BADGES_KEY,
 } from '@/lib/constants';
+import { computeCardioBurn, loadPlan } from '@/lib/metricsTypes';
+import { isGoalDay, dayMaintenanceFromRecord, type PlanDirection } from '@/lib/calorie-utils';
 import { ActivityIcon, PRLiveBadge } from '@/components/ActivityIcon';
 import { AutoCropImage } from '@/components/AutoCropImage';
 import { ExerciseHistoryModal } from '@/components/ExerciseHistory';
@@ -476,11 +478,14 @@ function ReorderableExerciseItem({
 // SUB-COMPONENT — CardioEntryCard
 // ─────────────────────────────────────────────────────────────────────────────
 function CardioEntryCard({
-  entry, onDelete, onUpdateField, firstBadgeIcon, badgeMilesLabel, burnBadgeIcon, burnCalLabel,
+  entry, onDelete, onUpdateField, onCommit, firstBadgeIcon, badgeMilesLabel, burnBadgeIcon, burnCalLabel,
 }: {
   entry: CardioItem;
   onDelete: (idx: number) => void;
   onUpdateField: (idx: number, field: 'v1' | 'v2' | 'note', val: string) => void;
+  /** Persists the in-progress cardio (called on input blur) so a cardio-only
+   *  session isn't lost when the user navigates away without "Commit Session". */
+  onCommit: () => void;
   firstBadgeIcon?: string | null;
   badgeMilesLabel?: string | null;
   burnBadgeIcon?: string | null;
@@ -528,6 +533,7 @@ function CardioEntryCard({
             type="text" inputMode={cfg.f1mode as React.HTMLAttributes<HTMLInputElement>['inputMode']}
             className="que-input" value={entry.v1 ?? ''} placeholder={cfg.f1ph}
             onChange={e => onUpdateField(entry._idx, 'v1', e.target.value)}
+            onBlur={onCommit}
           />
         </div>
         <div>
@@ -536,13 +542,15 @@ function CardioEntryCard({
             type="text" inputMode={cfg.f2mode as React.HTMLAttributes<HTMLInputElement>['inputMode']}
             className="que-input" value={entry.v2 ?? ''} placeholder={cfg.f2ph}
             onChange={e => onUpdateField(entry._idx, 'v2', e.target.value)}
+            onBlur={onCommit}
           />
         </div>
       </div>
       <div>
         <label className="que-label">Notes</label>
         <input type="text" className="que-input" value={entry.note ?? ''} placeholder={cfg.notePh}
-          onChange={e => onUpdateField(entry._idx, 'note', e.target.value)} />
+          onChange={e => onUpdateField(entry._idx, 'note', e.target.value)}
+          onBlur={onCommit} />
       </div>
     </div>
   );
@@ -872,7 +880,7 @@ export default function WorkoutLogger() {
   const {
     today, todayStr,
     activeDayFocus,
-    localDB, updateDayRecord,
+    localDB, updateDayRecord, profile,
     currentGroup, setCurrentGroup,
     pendingSetsCount, setPendingSetsCount,
     pendingSetData, setPendingSetData,
@@ -948,14 +956,25 @@ export default function WorkoutLogger() {
       const runs  = arr.filter(e => e.k === 'run');
       const bikes = arr.filter(e => e.k === 'bike');
       const swims = arr.filter(e => e.k === 'swim');
+      const runDist  = runs.reduce((s, e)  => s + (parseFloat(e.v1 ?? '0') || 0), 0);
+      const runTime  = runs.reduce((s, e)  => s + (parseFloat(e.v2 ?? '0') || 0), 0);
+      const bikeDist = bikes.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0);
+      const bikeTime = bikes.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0);
+      const swimTime = swims.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0);
+      const swimDist = swims.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0);
+      // Store `burn` here too — it's a pure function of profile + this day's
+      // cardio, so it must be kept in sync wherever cardio is written (not only
+      // on the Calories tab's "Log Today"). Steps live on the day record
+      // separately and don't affect activityBurn.
+      const burn = computeCardioBurn(profile, {
+        steps: '0',
+        runDist:  String(runDist),  runTime:  String(runTime),
+        bikeDist: String(bikeDist), bikeTime: String(bikeTime),
+        swimTime: String(swimTime),
+      }).activityBurn;
       updateDayRecord(activeDayFocus, {
         exercises: raw, notes: notesTxt,
-        runDist:   runs.reduce((s, e)  => s + (parseFloat(e.v1 ?? '0') || 0), 0),
-        runTime:   runs.reduce((s, e)  => s + (parseFloat(e.v2 ?? '0') || 0), 0),
-        bikeDist:  bikes.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
-        bikeTime:  bikes.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0),
-        swimTime:  swims.reduce((s, e) => s + (parseFloat(e.v1 ?? '0') || 0), 0),
-        swimDist:  swims.reduce((s, e) => s + (parseFloat(e.v2 ?? '0') || 0), 0),
+        runDist, runTime, bikeDist, bikeTime, swimTime, swimDist, burn,
       });
       // Recompute all-time PRs from the full localDB so corrections flow back down.
       // Scan every OTHER day for historical maxes, then overlay today's arr.
@@ -1005,7 +1024,7 @@ export default function WorkoutLogger() {
       if (notesFlashRef.current) clearTimeout(notesFlashRef.current);
       notesFlashRef.current = setTimeout(() => setSaveFlash(false), 2000);
     },
-    [activeDayFocus, notes, updateDayRecord]
+    [activeDayFocus, notes, updateDayRecord, profile]
   );
   const setExercises = useCallback((arr: ExerciseEntry[]) => {
     setExercisesRaw(arr); persistExercises(arr);
@@ -1845,13 +1864,13 @@ export default function WorkoutLogger() {
   }, [localDB]);
 
   const maxCombinedStreak = useMemo((): number => {
+    // Plan-aware calorie goal (matches the coin + badge engines).
+    const direction = (loadPlan()?.type ?? null) as PlanDirection;
     const days = Object.keys(localDB)
       .filter(d => {
         const rec   = localDB[d];
         const hasEx = String(rec.exercises ?? '').length > 2;
-        const eaten = parseFloat(String(rec.calsEaten ?? '0'));
-        const bud   = parseFloat(String(rec.budget   ?? '0'));
-        return hasEx && eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= GOAL_TOLERANCE;
+        return hasEx && isGoalDay(rec.calsEaten, rec.budget, dayMaintenanceFromRecord(rec), direction);
       })
       .sort();
     if (days.length === 0) return 0;
@@ -2539,6 +2558,7 @@ export default function WorkoutLogger() {
                         entry={entry}
                         onDelete={deleteEntry}
                         onUpdateField={updateCardioField}
+                        onCommit={() => persistExercises(exercises, notes)}
                         firstBadgeIcon={
                           entry.k === 'run'  ? (runFirstBadgeIcon ?? runTotalBadgeIcon) :
                           entry.k === 'bike' ? bikeBadgeIcon :

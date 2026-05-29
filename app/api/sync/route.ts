@@ -268,7 +268,16 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     // ── Coins ──
     try {
-      const coinResult = await checkAndAwardCoins(userId);
+      // Pass the user's tz offset so coins are gated on their LOCAL today —
+      // future calendar days can't be filled in to farm coins. Pass the plan
+      // direction so coin awarding matches plan intent (deficit/surplus vs the
+      // strict ±100 band) — see isGoalDay.
+      const tzOffset = typeof mergedSettings.queTzOffset === 'number'
+        ? mergedSettings.queTzOffset
+        : undefined;
+      const planType = (mergedSettings.queAthletePlan as { type?: string } | null | undefined)?.type;
+      const planDirection = planType === 'cut' || planType === 'bulk' ? planType : null;
+      const coinResult = await checkAndAwardCoins(userId, tzOffset, planDirection);
       if (coinResult.awarded.length > 0) {
         extra.coins = { newCoins: coinResult.awarded, walletBalance: coinResult.walletBalance };
       }

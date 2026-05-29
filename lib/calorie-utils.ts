@@ -37,6 +37,45 @@ export function hitGoal(calsEaten: unknown, budget: unknown): boolean {
   return eaten > 0 && bud > 0 && Math.abs(eaten - bud) <= GOAL_TOLERANCE;
 }
 
+export type PlanDirection = 'cut' | 'bulk' | null;
+
+/**
+ * Plan-aware "goal day" for COINS (and their streak multiplier).
+ *
+ * The ±GOAL_TOLERANCE band is too strict once you're following a plan — being
+ * comfortably under maintenance on a cut (or over on a bulk) IS the goal. So:
+ *   • cut  → ate at/below true maintenance (tdee + burn) → a real deficit.
+ *            A floor (40% of maintenance) stops near-zero logs from farming coins.
+ *   • bulk → ate at/above true maintenance → a real surplus.
+ *   • no plan (or no maintenance available) → fall back to the precise ±100 band.
+ *
+ * `maintenance` is the day's TRUE expenditure (tdee + burn = "maintenance +
+ * activity"). Pass null for legacy days with no stored tdee — those use the band.
+ */
+export function isGoalDay(
+  calsEaten: unknown,
+  budget:    unknown,
+  maintenance: number | null,
+  direction:   PlanDirection,
+): boolean {
+  const eaten = parseFloat(String(calsEaten ?? '0'));
+  if (!(eaten > 0)) return false;
+  if (direction && maintenance && maintenance > 0) {
+    return direction === 'cut'
+      ? eaten <= maintenance && eaten >= maintenance * 0.4
+      : eaten >= maintenance;
+  }
+  return hitGoal(calsEaten, budget);
+}
+
+/** Day's true maintenance (tdee + burn) from stored fields, or null if no tdee. */
+export function dayMaintenanceFromRecord(rec: { tdee?: unknown; burn?: unknown }): number | null {
+  const tdee = parseFloat(String(rec.tdee ?? '0')) || 0;
+  if (tdee <= 0) return null;
+  const burn = parseFloat(String(rec.burn ?? '0')) || 0;
+  return tdee + burn;
+}
+
 // ── Coin balance (client-side localStorage cache) ────────────────────────────
 // The DB is the authoritative source via /api/wallet — this is the optimistic
 // client-side ledger that the header counter and CalorieTracker animate from.

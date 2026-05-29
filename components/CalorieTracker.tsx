@@ -10,8 +10,7 @@ import { useApp } from '@/lib/AppContext';
 import type { FoodEntry, UserProfile } from '@/lib/AppContext';
 import { recordFood } from '@/lib/foodUsage';
 import { trackEvent } from '@/lib/telemetry';
-import { GOAL_TOLERANCE } from '@/lib/constants';
-import { computeBaseBudget, loadCoins, saveCoins, hitGoal, type CoinData } from '@/lib/calorie-utils';
+import { computeBaseBudget, loadCoins, saveCoins, isGoalDay, dayMaintenanceFromRecord, type PlanDirection, type CoinData } from '@/lib/calorie-utils';
 import {
   DonutChart, MacroBar, MacroGoalModal,
   type MacroGoals, loadMacroGoals, saveMacroGoals, getBaseline,
@@ -25,13 +24,14 @@ import { useSpotlightBorder } from '@/hooks/useSpotlightBorder';
 import { CelebrationModal, ProjectionModal } from '@/components/metrics/MetricsModals';
 
 // ── Calorie Coin system ───────────────────────────────────────────────────────
-// computeBaseBudget, loadCoins, saveCoins, hitGoal, and the CoinData interface
-// live in lib/calorie-utils. GOAL_TOLERANCE lives in lib/constants.
+// computeBaseBudget, loadCoins, saveCoins, isGoalDay (the plan-aware goal
+// predicate), and the CoinData interface live in lib/calorie-utils.
 
 function streakEndingAt(
-  db: Record<string, { budget?: unknown; calsEaten?: unknown }>,
+  db: Record<string, { budget?: unknown; calsEaten?: unknown; tdee?: unknown; burn?: unknown }>,
   dateStr: string,
   fallback: number,
+  direction: PlanDirection,
 ): number {
   let count = 0;
   const d = new Date(dateStr + 'T00:00:00');
@@ -39,9 +39,9 @@ function streakEndingAt(
     const ds  = [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-');
     const rec = db[ds];
     if (!rec) break;
-    const b = (parseFloat(String(rec.budget  ?? '0')) || 0) || fallback;
-    const e =  parseFloat(String(rec.calsEaten ?? '0')) || 0;
-    if (!e || !b || Math.abs(e - b) > GOAL_TOLERANCE) break;
+    const b     = (parseFloat(String(rec.budget ?? '0')) || 0) || fallback;
+    const maint = dayMaintenanceFromRecord(rec);
+    if (!isGoalDay(rec.calsEaten, b, maint, direction)) break;
     count++;
     d.setDate(d.getDate() - 1);
   }
@@ -471,7 +471,11 @@ export default function CalorieTracker() {
   const budget      = liveMetrics.budget || baseBudget;
   const proteinTarget = Math.round(parseFloat(profile.weight) * 0.8) || 0;
 
-  const todayGoalHit = budget > 0 && totals.kcal > 0 && Math.abs(totals.kcal - budget) <= GOAL_TOLERANCE;
+  // Plan-aware goal: on a cut/bulk, being under/over true maintenance counts
+  // (not just the ±100 band). loadPlan() is a cheap localStorage read.
+  const planDir         = (loadPlan()?.type ?? null) as PlanDirection;
+  const liveMaintenance = liveMetrics.tdee + liveMetrics.activityBurn;
+  const todayGoalHit = isGoalDay(totals.kcal, budget, liveMaintenance, planDir);
 
   // Sync weight from the active day's record on load / date change
   useEffect(() => {
@@ -508,23 +512,16 @@ export default function CalorieTracker() {
       ...(liveMetrics.tdee > 0 && { tdee: liveMetrics.tdee }),
       ...(todayWeight && parseFloat(todayWeight) > 0 && { weight: todayWeight }),
     });
-    const plan = typeof window !== 'undefined' ? loadPlan() : null;
-    const cals = totals.kcal;
-    const bud  = liveMetrics.budget || baseBudget;
-    let hitGoalFlag = false;
-    if (cals > 0 && bud > 0) {
-      const minReasonable = bud * 0.40;
-      hitGoalFlag = plan?.type === 'bulk'
-        ? cals >= bud * 0.9 && cals <= bud * 1.15
-        : cals <= bud && cals >= minReasonable;
-    }
+    // Celebrate exactly when a coin is earned — same plan-aware goal as the coin
+    // engine (under maintenance on a cut, over on a bulk, ±100 with no plan).
+    const hitGoalFlag = isGoalDay(totals.kcal, liveMetrics.budget || baseBudget, liveMaintenance, planDir);
     if (hitGoalFlag) {
       navigator.vibrate?.([50, 30, 80]);
       setCelebrateVisible(true);
     } else {
       setProjVisible(true);
     }
-  }, [activeDayFocus, liveMetrics, baseBudget, todayWeight, totals.kcal, updateDayRecord]);
+  }, [activeDayFocus, liveMetrics, baseBudget, todayWeight, totals.kcal, updateDayRecord, planDir, liveMaintenance]);
 
   // On mount: scan past days for unawarded coins (only days before today).
   // Skip coin logic entirely when browsing a day other than today.
@@ -541,8 +538,8 @@ export default function CalorieTracker() {
     for (const ds of pendingDates) {
       const rec       = localDB[ds];
       const dayBudget = (parseFloat(String(rec.budget ?? '0')) || 0) || baseBudget;
-      if (hitGoal(rec.calsEaten, dayBudget)) {
-        const dayStreak = streakEndingAt(localDB, ds, baseBudget);
+      if (isGoalDay(rec.calsEaten, dayBudget, dayMaintenanceFromRecord(rec), planDir)) {
+        const dayStreak = streakEndingAt(localDB, ds, baseBudget, planDir);
         const earned    = coinsForStreak(dayStreak || 1);
         const newTotal  = coins.total + earned;
         const newData   = { total: newTotal, awardedDates: [...coins.awardedDates, ds] };
@@ -593,7 +590,7 @@ export default function CalorieTracker() {
       return;
     }
     todayCoinAwardedRef.current = true;
-    const todayStreak = streakEndingAt(localDB, todayStr, baseBudget);
+    const todayStreak = streakEndingAt(localDB, todayStr, baseBudget, planDir);
     const earned      = coinsForStreak(todayStreak || 1);
     todayCoinEarnedRef.current = earned;
     const newTotal    = coins.total + earned;
@@ -647,11 +644,14 @@ export default function CalorieTracker() {
       carbs,
       fat,
       // Persist budget + the TDEE snapshot together (see handleLogToday) so the
-      // plan ledger can reconstruct true maintenance without the deficit.
+      // plan ledger can reconstruct true maintenance without the deficit. burn is
+      // written too so maintenance (tdee + burn) reflects the day's cardio even
+      // when the user never taps "Log Today".
       ...(budget > 0 && { budget }),
       ...(liveMetrics.tdee > 0 && { tdee: liveMetrics.tdee }),
+      burn: liveMetrics.activityBurn,
     });
-  }, [activeDayFocus, updateDayRecord, budget, liveMetrics.tdee]);
+  }, [activeDayFocus, updateDayRecord, budget, liveMetrics.tdee, liveMetrics.activityBurn]);
 
   const [editingFood, setEditingFood] = useState<FoodEntry | null>(null);
 

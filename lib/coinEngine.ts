@@ -5,18 +5,23 @@
  * POST /api/sync, after day records are upserted.
  *
  * Rules (mirror of CalorieTracker.tsx client logic):
- *   • A day "hits the goal" when calsEaten is within ±100 kcal of budget.
- *     Both fields must be present and > 0 in the DayRecord.
+ *   • A day "hits the goal" via isGoalDay(): on a cut/bulk plan, any day at/below
+ *     (cut) or at/above (bulk) true maintenance (tdee + burn) counts; with no
+ *     plan it's the precise ±100 kcal band around budget. calsEaten must be > 0.
  *   • Coins per day = Math.floor(streak / 7) + 1
  *     (week 1 = 1 coin/day, week 2 = 2 coins/day, …)
  *   • Each date is awarded at most once, tracked via CoinTransaction
  *     rows with reason = 'goal_hit' and refId = 'YYYY-MM-DD'.
+ *   • FUTURE days never earn coins. A user can scroll the calendar to
+ *     tomorrow and fill in a goal-hit day, but coins are only granted for
+ *     dates ≤ the user's LOCAL today (derived from their queTzOffset). This
+ *     also keeps future days out of the streak multiplier.
  *   • Non-critical: callers should catch and swallow errors so a coin
  *     failure never blocks a sync response.
  */
 
 import { prisma } from '@/lib/prisma';
-import { hitGoal } from '@/lib/calorie-utils';
+import { isGoalDay, dayMaintenanceFromRecord, type PlanDirection } from '@/lib/calorie-utils';
 
 type DayRecordClient = {
   findMany: (args: unknown) => Promise<Array<{ date: string; data: unknown }>>;
@@ -54,7 +59,17 @@ export interface CoinAward { date: string; coins: number }
  */
 export async function checkAndAwardCoins(
   userId: string,
+  tzOffsetMinutes?: number,
+  planDirection: PlanDirection = null,
 ): Promise<{ awarded: CoinAward[]; walletBalance: number }> {
+  // The user's LOCAL today (YYYY-MM-DD). queTzOffset is Date.getTimezoneOffset()
+  // — minutes where local = UTC − offset — so shifting "now" by it and reading
+  // the UTC date yields the local calendar day. Falls back to UTC today when the
+  // offset is missing (legacy clients); at worst a tz-ahead user's same-day coin
+  // lands on the next sync, which is harmless.
+  const offset     = Number.isFinite(tzOffsetMinutes) ? (tzOffsetMinutes as number) : 0;
+  const localToday = new Date(Date.now() - offset * 60_000).toISOString().slice(0, 10);
+
   // 1. All day records — need full history to compute streaks correctly.
   const dayRows = await dr().findMany({
     where:   { userId },
@@ -62,11 +77,16 @@ export async function checkAndAwardCoins(
     orderBy: { date: 'asc' },
   } as unknown as Parameters<DayRecordClient['findMany']>[0]);
 
-  // 2. Build the set of goal-hit dates.
+  // 2. Build the set of goal-hit dates — FUTURE days are excluded so they can
+  //    neither be awarded nor inflate the streak multiplier (anti-farming).
+  //    Plan-aware: on a cut/bulk, any day under/over true maintenance counts
+  //    (see isGoalDay); without a plan it's the precise ±100 band.
   const goalDaySet = new Set<string>();
   for (const row of dayRows) {
+    if (row.date > localToday) continue;
     const data = row.data as Record<string, unknown>;
-    if (hitGoal(data.calsEaten, data.budget)) goalDaySet.add(row.date);
+    const maint = dayMaintenanceFromRecord(data);
+    if (isGoalDay(data.calsEaten, data.budget, maint, planDirection)) goalDaySet.add(row.date);
   }
 
   // 3. Get (or create) the wallet and the dates already awarded.

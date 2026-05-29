@@ -21,7 +21,7 @@ import prData from '@/public/PR_animation.json';
 import {
   type CardioFields, type BudgetMetrics, type PRFlags,
   EMPTY_CARDIO, INTENSITY_LABELS,
-  useBudgetMetrics, loadPlan, savePlanToStorage, intensityForKcal,
+  useBudgetMetrics, computeCardioBurn, loadPlan, savePlanToStorage, intensityForKcal,
   getPlanBaseline, planExpectedChange,
   dayMaintenance, parseNum, fmt, fmtDateLong, toDateStr,
 } from '@/lib/metricsTypes';
@@ -281,7 +281,7 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
   prFlags?: PRFlags;
 }) {
   const spotlight = useSpotlightBorder({ color: '79,195,247', size: 280, opacity: 0.55 });
-  const { updateDayRecord, getDayRecord, localDB, activeDayFocus } = useApp();
+  const { updateDayRecord, getDayRecord, localDB, activeDayFocus, profile } = useApp();
 
   const calsEaten  = parseNum(String(localDB[activeDayFocus]?.calsEaten ?? 0));
   const remaining  = m.budget - calsEaten;
@@ -305,9 +305,21 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
     const cfg = CARDIO_QUICK_CFG[cardioModal];
     const updates: Partial<Record<string, number>> = { [cfg.f1key]: parseFloat(f1) || 0 };
     if (cfg.f2key) updates[cfg.f2key] = parseFloat(f2) || 0;
+    // Recompute `burn` from the FULL day's cardio (existing fields overlaid with
+    // this edit, which lives in `updates` keyed by the field name) so the stored
+    // burn stays in sync wherever cardio is logged.
+    const rec = getDayRecord(activeDayFocus) as Record<string, unknown>;
+    updates.burn = computeCardioBurn(profile, {
+      steps:    '0',
+      runDist:  String(updates.runDist  ?? rec.runDist  ?? 0),
+      runTime:  String(updates.runTime  ?? rec.runTime  ?? 0),
+      bikeDist: String(updates.bikeDist ?? rec.bikeDist ?? 0),
+      bikeTime: String(updates.bikeTime ?? rec.bikeTime ?? 0),
+      swimTime: String(updates.swimTime ?? rec.swimTime ?? 0),
+    }).activityBurn;
     updateDayRecord(activeDayFocus, updates as Parameters<typeof updateDayRecord>[1]);
     setCardioModal(null);
-  }, [cardioModal, f1, f2, activeDayFocus, updateDayRecord]);
+  }, [cardioModal, f1, f2, activeDayFocus, updateDayRecord, getDayRecord, profile]);
 
   const clearCardio = useCallback((kind: 'run' | 'bike' | 'swim') => {
     const clears: Partial<Record<string, number>> = kind === 'run'

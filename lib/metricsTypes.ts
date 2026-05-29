@@ -273,7 +273,9 @@ export function getPlanCompliance(
   profile:  UserProfile,
 ): PlanCompliance {
   const planStartMs = new Date(plan.startDate + 'T00:00:00').getTime();
-  const todayStr    = new Date().toISOString().slice(0, 10);
+  // LOCAL today (toDateStr) — not UTC — so the day count / window don't drift by
+  // one in the evening for users behind UTC.
+  const todayStr    = toDateStr(new Date());
   const daysElapsed = Math.max(
     0,
     Math.floor((new Date(todayStr + 'T00:00:00').getTime() - planStartMs) / 86400000) + 1,
@@ -309,6 +311,85 @@ export function getPlanCompliance(
   };
 }
 
+// ── Cardio burn (pure — shared by the live budget AND the persistence paths) ──
+
+export interface CardioBurn {
+  stepMiles: number; stepBurn: number;
+  runBurn: number; runPaceStr: string; runSpeed: number;
+  bikeBurn: number; bikeSpeed: number;
+  swimBurn: number;
+  /** run + bike + swim, NET of resting energy. Steps are NOT included. */
+  activityBurn: number;
+}
+
+/**
+ * Pure cardio-burn calculation. Extracted from useBudgetMetrics so the stored
+ * `burn` DayRecord field (written wherever cardio is logged) always matches what
+ * the live budget shows — previously `burn` was only persisted on "Log Today",
+ * leaving it stale/0 for cardio logged via the workout log or quick-cardio tiles
+ * (which broke the 1,000-cal badge, the plan ledger's maintenance, and the burn
+ * chart). NET of resting energy (gross − RMR over the same minutes).
+ */
+export function computeCardioBurn(profile: UserProfile, cardio: CardioFields): CardioBurn {
+  const wLbs = parseNum(profile.weight) || 180;
+  const hIn  = parseNum(profile.height) || 70;
+  const age  = parseNum(profile.age)    || 29;
+  const sex  = profile.sex;
+  const kg   = wLbs / 2.20462;
+  const cm   = hIn  * 2.54;
+  const bmr  = Math.round(
+    sex === 'male' ? 10 * kg + 6.25 * cm - 5 * age + 5 : 10 * kg + 6.25 * cm - 5 * age - 161
+  );
+
+  const steps     = parseNum(cardio.steps);
+  const stride    = hIn * (sex === 'male' ? 0.418 : 0.415);
+  const stepMiles = (steps * stride) / 63360;
+  const stepBurn  = Math.round(stepMiles * 0.57 * wLbs);
+
+  const rmrPerMin = bmr / 1440;
+  const netOf = (gross: number, min: number) => Math.max(0, Math.round(gross - rmrPerMin * min));
+
+  const rMi  = parseNum(cardio.runDist);
+  const rMin = parseNum(cardio.runTime);
+  let runBurn = 0, runPaceStr = '', runSpeed = 0;
+  if (rMi > 0 && rMin > 0) {
+    runSpeed = (rMi / rMin) * 60;
+    const pace = rMin / rMi;
+    const pMin = Math.floor(pace);
+    const pSec = Math.round((pace - pMin) * 60).toString().padStart(2, '0');
+    runPaceStr = `${pMin}:${pSec} /mi`;
+    const mPerMin  = runSpeed * 26.8224;
+    const vo2      = 0.2 * mPerMin + 3.5;
+    const grossRun = (vo2 * kg / 1000) * 5 * rMin;
+    runBurn = netOf(grossRun, rMin);
+  }
+
+  const bMi  = parseNum(cardio.bikeDist);
+  const bMin = parseNum(cardio.bikeTime);
+  let bikeBurn = 0, bikeSpeed = 0;
+  if (bMi > 0 && bMin > 0) {
+    bikeSpeed = (bMi / bMin) * 60;
+    let met = 4;
+    if      (bikeSpeed >= 20) met = 15.8;
+    else if (bikeSpeed >= 16) met = 12;
+    else if (bikeSpeed >= 14) met = 10;
+    else if (bikeSpeed >= 12) met = 8;
+    else if (bikeSpeed >= 10) met = 6.8;
+    bikeBurn = netOf(met * 3.5 * kg / 200 * bMin, bMin);
+  }
+
+  const sMin     = parseNum(cardio.swimTime);
+  const swimBurn = sMin > 0 ? netOf(7.0 * 3.5 * kg / 200 * sMin, sMin) : 0;
+
+  return {
+    stepMiles, stepBurn,
+    runBurn, runPaceStr, runSpeed: Math.round(runSpeed * 10) / 10,
+    bikeBurn, bikeSpeed: Math.round(bikeSpeed * 10) / 10,
+    swimBurn,
+    activityBurn: Math.round(runBurn + bikeBurn + swimBurn),
+  };
+}
+
 // ── Budget metrics ────────────────────────────────────────────────────────────
 
 export interface BudgetMetrics {
@@ -338,69 +419,19 @@ export function useBudgetMetrics(profile: UserProfile, cardio: CardioFields): Bu
     );
     const tdee = Math.round(bmr * mult);
 
-    const steps     = parseNum(cardio.steps);
-    const stride    = hIn * (sex === 'male' ? 0.418 : 0.415);
-    const stepMiles = (steps * stride) / 63360;
-    const stepBurn  = Math.round(stepMiles * 0.57 * wLbs);
-
-    // Cardio energy cost is physically dominated by body MASS moved over
-    // distance/time (already captured by `kg`). Height & age have negligible
-    // effect on the *gross* cost, so the scientifically honest way to fold them
-    // in is to report NET calories: gross expenditure minus the resting energy
-    // you'd have burned anyway. Resting rate comes from the Mifflin BMR above —
-    // which uses weight, height, age, and sex — so all four now shape the result.
-    // (1 kcal ≈ 5 kcal per litre O₂; VO₂ in ml/kg/min.)
-    const rmrPerMin = bmr / 1440;
-    const netOf = (gross: number, min: number) => Math.max(0, Math.round(gross - rmrPerMin * min));
-
-    const rMi  = parseNum(cardio.runDist);
-    const rMin = parseNum(cardio.runTime);
-    let runBurn = 0, runPaceStr = '', runSpeed = 0;
-    if (rMi > 0 && rMin > 0) {
-      runSpeed = (rMi / rMin) * 60;
-      const pace = rMin / rMi;
-      const pMin = Math.floor(pace);
-      const pSec = Math.round((pace - pMin) * 60).toString().padStart(2, '0');
-      runPaceStr = `${pMin}:${pSec} /mi`;
-      // ACSM running equation (level ground): VO₂ = 0.2 × speed(m/min) + 3.5.
-      // Continuous & validated — more accurate than coarse MET tiers.
-      const mPerMin   = runSpeed * 26.8224;           // mph → m/min
-      const vo2        = 0.2 * mPerMin + 3.5;          // ml/kg/min
-      const grossRun  = (vo2 * kg / 1000) * 5 * rMin;  // ml→L→kcal over duration
-      runBurn = netOf(grossRun, rMin);
-    }
-
-    const bMi  = parseNum(cardio.bikeDist);
-    const bMin = parseNum(cardio.bikeTime);
-    let bikeBurn = 0, bikeSpeed = 0;
-    if (bMi > 0 && bMin > 0) {
-      bikeSpeed = (bMi / bMin) * 60;
-      // Compendium-of-Physical-Activities cycling METs by road speed (mph).
-      let met = 4;
-      if      (bikeSpeed >= 20) met = 15.8;
-      else if (bikeSpeed >= 16) met = 12;
-      else if (bikeSpeed >= 14) met = 10;
-      else if (bikeSpeed >= 12) met = 8;
-      else if (bikeSpeed >= 10) met = 6.8;
-      bikeBurn = netOf(met * 3.5 * kg / 200 * bMin, bMin);
-    }
-
-    const sMin     = parseNum(cardio.swimTime);
-    // Moderate freestyle ≈ 7 MET (Compendium); no per-set pace captured, so a
-    // single representative intensity is used, then taken net of resting.
-    const swimBurn = sMin > 0 ? netOf(7.0 * 3.5 * kg / 200 * sMin, sMin) : 0;
-
-    const activityBurn = Math.round(runBurn + bikeBurn + swimBurn);
-    const eatBack      = Math.round(activityBurn * 0.60);
-    const budget       = Math.max(0, (tdee - def) + eatBack);
+    // Cardio burn is computed by the shared pure helper so the live budget and
+    // the persisted `burn` field can never drift.
+    const cb       = computeCardioBurn(profile, cardio);
+    const eatBack  = Math.round(cb.activityBurn * 0.60);
+    const budget   = Math.max(0, (tdee - def) + eatBack);
 
     return {
       bmr, tdee, deficit: def, multiplier: mult,
-      stepMiles, stepBurn,
-      runBurn, runPaceStr, runSpeed: Math.round(runSpeed * 10) / 10,
-      bikeBurn, bikeSpeed: Math.round(bikeSpeed * 10) / 10,
-      swimBurn,
-      activityBurn, eatBack, budget,
+      stepMiles: cb.stepMiles, stepBurn: cb.stepBurn,
+      runBurn: cb.runBurn, runPaceStr: cb.runPaceStr, runSpeed: cb.runSpeed,
+      bikeBurn: cb.bikeBurn, bikeSpeed: cb.bikeSpeed,
+      swimBurn: cb.swimBurn,
+      activityBurn: cb.activityBurn, eatBack, budget,
     };
   }, [profile, cardio]);
 }

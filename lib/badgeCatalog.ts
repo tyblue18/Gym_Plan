@@ -97,12 +97,12 @@ export const BADGE_CATALOG: CatalogEntry[] = [
   { slug: 'eat_10000', label: '10,000 Cal Day', icon: '/Badges/10000_calories_eaten_badge.jpg', category: 'nutrition', howToGet: 'Log 10,000+ calories eaten in a single day' },
 
   // ── Calorie goal streaks ──────────────────────────────────────────────────────
-  { slug: 'streak_3',   label: '3-Day Streak',      icon: '🔥', category: 'nutrition', howToGet: 'Hit your calorie goal 3 days in a row (±100 kcal)' },
-  { slug: 'streak_7',   label: 'Week Warrior',       icon: '🔥', category: 'nutrition', howToGet: 'Hit your calorie goal 7 days in a row (±100 kcal)' },
-  { slug: 'streak_14',  label: 'Two-Week Run',       icon: '⚡', category: 'nutrition', howToGet: 'Hit your calorie goal 14 days in a row (±100 kcal)' },
-  { slug: 'streak_30',  label: 'Monthly Master',     icon: '🌟', category: 'nutrition', howToGet: 'Hit your calorie goal 30 days in a row (±100 kcal)' },
-  { slug: 'streak_60',  label: '60-Day Domination',  icon: '💎', category: 'nutrition', howToGet: 'Hit your calorie goal 60 days in a row (±100 kcal)' },
-  { slug: 'streak_100', label: 'Century Club',       icon: '👑', category: 'nutrition', howToGet: 'Hit your calorie goal 100 days in a row (±100 kcal)' },
+  { slug: 'streak_3',   label: '3-Day Streak',      icon: '🔥', category: 'nutrition', howToGet: 'Hit your calorie goal 3 days in a row (on a cut/bulk: stay under/over maintenance; otherwise ±100 kcal)' },
+  { slug: 'streak_7',   label: 'Week Warrior',       icon: '🔥', category: 'nutrition', howToGet: 'Hit your calorie goal 7 days in a row (on a cut/bulk: stay under/over maintenance; otherwise ±100 kcal)' },
+  { slug: 'streak_14',  label: 'Two-Week Run',       icon: '⚡', category: 'nutrition', howToGet: 'Hit your calorie goal 14 days in a row (on a cut/bulk: stay under/over maintenance; otherwise ±100 kcal)' },
+  { slug: 'streak_30',  label: 'Monthly Master',     icon: '🌟', category: 'nutrition', howToGet: 'Hit your calorie goal 30 days in a row (on a cut/bulk: stay under/over maintenance; otherwise ±100 kcal)' },
+  { slug: 'streak_60',  label: '60-Day Domination',  icon: '💎', category: 'nutrition', howToGet: 'Hit your calorie goal 60 days in a row (on a cut/bulk: stay under/over maintenance; otherwise ±100 kcal)' },
+  { slug: 'streak_100', label: 'Century Club',       icon: '👑', category: 'nutrition', howToGet: 'Hit your calorie goal 100 days in a row (on a cut/bulk: stay under/over maintenance; otherwise ±100 kcal)' },
 
   // ── Battle wins ───────────────────────────────────────────────────────────────
   { slug: 'battle_first', label: 'First Battle Win', icon: '/Badges/First_battle_win.png', category: 'nutrition', howToGet: 'Win your first friendship battle' },

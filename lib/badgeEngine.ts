@@ -10,7 +10,7 @@
  */
 
 import { prisma }        from '@/lib/prisma';
-import { hitGoal }       from '@/lib/calorie-utils';
+import { isGoalDay, dayMaintenanceFromRecord, type PlanDirection } from '@/lib/calorie-utils';
 import {
   ATHLETE_PLAN_KEY, MILLION_GROUPS_KEY, LIFT_PRS_KEY, MACRO_GOALS_KEY,
 } from '@/lib/constants';
@@ -21,6 +21,8 @@ import { BADGE_CATALOG } from '@/lib/badgeCatalog';
 interface DayRecord {
   calsEaten?: string;
   budget?:    number | string;
+  tdee?:      number | string;
+  burn?:      number | string;
   [key: string]:  unknown;
 }
 
@@ -33,6 +35,9 @@ interface BadgeCheckData {
   battleWins: number;
   /** Count of successful invites (referral_sent CoinTransactions). */
   referralCount: number;
+  /** Current plan direction — makes calorie-goal streaks plan-aware (matches
+   *  the coin engine): under maintenance counts on a cut, over on a bulk. */
+  planDirection: PlanDirection;
 }
 
 interface BadgeDef {
@@ -45,12 +50,17 @@ interface BadgeDef {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-// hitGoal lives in lib/calorie-utils (shared with client and other server engines).
+// isGoalDay lives in lib/calorie-utils (shared with the coin engine + client).
+
+/** Plan-aware "calorie goal" for a single day (mirrors the coin engine). */
+function goalDay(rec: DayRecord, direction: PlanDirection): boolean {
+  return isGoalDay(rec.calsEaten, rec.budget, dayMaintenanceFromRecord(rec), direction);
+}
 
 /** Returns the longest consecutive calorie-goal streak in localDB. */
-function maxStreak(localDB: Record<string, DayRecord>): number {
+function maxStreak(localDB: Record<string, DayRecord>, direction: PlanDirection): number {
   const goalDays = Object.keys(localDB)
-    .filter(d => hitGoal(localDB[d].calsEaten, localDB[d].budget))
+    .filter(d => goalDay(localDB[d], direction))
     .sort();
 
   if (goalDays.length === 0) return 0;
@@ -88,14 +98,11 @@ function maxWorkoutStreak(localDB: Record<string, DayRecord>): number {
 }
 
 /** Returns the longest streak where BOTH a workout was logged AND the calorie goal was hit. */
-function maxCombinedStreak(localDB: Record<string, DayRecord>): number {
+function maxCombinedStreak(localDB: Record<string, DayRecord>, direction: PlanDirection): number {
   return longestStreak(
     Object.keys(localDB).filter(d => {
       const rec = localDB[d];
-      return (
-        String(rec.exercises ?? '').length > 2 &&
-        hitGoal(rec.calsEaten as string | undefined, rec.budget)
-      );
+      return String(rec.exercises ?? '').length > 2 && goalDay(rec, direction);
     }).sort()
   );
 }
@@ -376,7 +383,7 @@ const BADGE_DEFS: BadgeDef[] = [
   },
   {
     slug: 'stoic', label: 'Stoic', icon: '/Badges/stoic_badge.png', category: 'nutrition',
-    check: ({ localDB }) => maxCombinedStreak(localDB) >= 50,
+    check: ({ localDB, planDirection }) => maxCombinedStreak(localDB, planDirection) >= 50,
   },
 
   // ── Big eating days ───────────────────────────────────────────────────────────
@@ -396,27 +403,27 @@ const BADGE_DEFS: BadgeDef[] = [
   // ── Nutrition streaks ─────────────────────────────────────────────────────────
   {
     slug: 'streak_3',   label: '3-Day Streak',       icon: '🔥', category: 'nutrition',
-    check: ({ localDB }) => maxStreak(localDB) >= 3,
+    check: ({ localDB, planDirection }) => maxStreak(localDB, planDirection) >= 3,
   },
   {
     slug: 'streak_7',   label: 'Week Warrior',        icon: '🔥', category: 'nutrition',
-    check: ({ localDB }) => maxStreak(localDB) >= 7,
+    check: ({ localDB, planDirection }) => maxStreak(localDB, planDirection) >= 7,
   },
   {
     slug: 'streak_14',  label: 'Two-Week Run',        icon: '⚡', category: 'nutrition',
-    check: ({ localDB }) => maxStreak(localDB) >= 14,
+    check: ({ localDB, planDirection }) => maxStreak(localDB, planDirection) >= 14,
   },
   {
     slug: 'streak_30',  label: 'Monthly Master',      icon: '🌟', category: 'nutrition',
-    check: ({ localDB }) => maxStreak(localDB) >= 30,
+    check: ({ localDB, planDirection }) => maxStreak(localDB, planDirection) >= 30,
   },
   {
     slug: 'streak_60',  label: '60-Day Domination',   icon: '💎', category: 'nutrition',
-    check: ({ localDB }) => maxStreak(localDB) >= 60,
+    check: ({ localDB, planDirection }) => maxStreak(localDB, planDirection) >= 60,
   },
   {
     slug: 'streak_100', label: 'Century Club',         icon: '👑', category: 'nutrition',
-    check: ({ localDB }) => maxStreak(localDB) >= 100,
+    check: ({ localDB, planDirection }) => maxStreak(localDB, planDirection) >= 100,
   },
 
   // ── Battle wins ──────────────────────────────────────────────────────────────
@@ -525,10 +532,10 @@ const BADGE_DEFS: BadgeDef[] = [
   // ── Consistency / skill ─────────────────────────────────────────────────────
   {
     slug: 'perfect_week', label: 'Flawless', icon: '/Badges/Perfect_Week.png', category: 'nutrition',
-    check: ({ localDB }) => {
+    check: ({ localDB, planDirection }) => {
       const byWeek: Record<string, number> = {};
       for (const [date, d] of Object.entries(localDB)) {
-        if (hitGoal(d.calsEaten, d.budget)) {
+        if (goalDay(d, planDirection)) {
           const wk = weekStart(date);
           byWeek[wk] = (byWeek[wk] ?? 0) + 1;
         }
@@ -655,7 +662,11 @@ export async function checkAndAwardBadges(
     dayRows.map(r => [r.date, r.data as DayRecord])
   );
 
-  const data: BadgeCheckData = { liftPRs, localDB, settings, battleWins, referralCount };
+  // Plan direction makes the calorie-goal streaks plan-aware (mirrors coins).
+  const planType = (settings[ATHLETE_PLAN_KEY] as { type?: string } | null | undefined)?.type;
+  const planDirection: PlanDirection = planType === 'cut' || planType === 'bulk' ? planType : null;
+
+  const data: BadgeCheckData = { liftPRs, localDB, settings, battleWins, referralCount, planDirection };
   const earnedMap = new Map(existing.map(b => [b.slug, b]));
 
   const toAward  = BADGE_DEFS.filter(def => !earnedMap.has(def.slug) && def.check(data));
@@ -707,12 +718,20 @@ export async function awardBadgesForUser(userId: string): Promise<AwardedBadge[]
   return awarded;
 }
 
-/** Overrides stale icon paths stored in the DB with the canonical catalog value. */
-export function normalizeBadgeIcons<T extends { slug: string; icon: string }>(badges: T[]): T[] {
-  return badges.map(b => ({
-    ...b,
-    icon: BADGE_CATALOG.find(c => c.slug === b.slug)?.icon ?? b.icon,
-  }));
+/**
+ * Overrides the icon AND label stored on a Badge row with the canonical catalog
+ * values. The DB snapshots whatever label/icon BADGE_DEFS had at award time, so
+ * any later wording change (or a DEFS↔CATALOG drift like "First Marathon" vs
+ * "Marathon") would otherwise show stale text. Making BADGE_CATALOG the single
+ * display source of truth keeps the showcase's "All Badges" view and a user's
+ * earned badges in agreement. (Name kept for backwards-compat with call sites.)
+ */
+export function normalizeBadgeIcons<T extends { slug: string; icon: string; label?: string }>(badges: T[]): T[] {
+  return badges.map(b => {
+    const cat = BADGE_CATALOG.find(c => c.slug === b.slug);
+    if (!cat) return b;
+    return { ...b, icon: cat.icon, ...(b.label !== undefined && { label: cat.label }) };
+  });
 }
 
 /** Returns all badges for a user, newest first, with canonical icon paths. */

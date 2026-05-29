@@ -22,7 +22,10 @@ import { useState, useEffect, useRef } from 'react';
  * well under quota even with a packed showcase.
  */
 
-const CACHE_KEY      = 'queBadgeCropCache';
+// _v2: border-palette background detection (handles baked checkerboard /
+// multi-color backgrounds). Bumped so users re-crop instead of serving the
+// old corner-only result from cache.
+const CACHE_KEY      = 'queBadgeCropCache_v2';
 const CACHE_MAX      = 100;
 const memoryCache    = new Map<string, string>(); // src → dataUrl
 let   diskHydrated   = false;
@@ -31,6 +34,9 @@ let   diskCache: Record<string, { dataUrl: string; t: number }> = {};
 function hydrateDiskCache(): void {
   if (diskHydrated || typeof window === 'undefined') return;
   diskHydrated = true;
+  // Reclaim the pre-_v2 cache's quota — those crops used the old corner-only
+  // algorithm and are never read again.
+  try { localStorage.removeItem('queBadgeCropCache'); } catch { /* ignore */ }
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) diskCache = JSON.parse(raw);
@@ -116,22 +122,49 @@ export function AutoCropImage({
       const raw = t.getImageData(0, 0, W, H);
       const d = raw.data;
 
-      // Sample corner pixels as background color references (handles colored backgrounds)
-      const cornerRefs: [number, number, number][] = [];
-      for (const [cx, cy] of [[0,0],[W-1,0],[0,H-1],[W-1,H-1]] as [number,number][]) {
-        const i = (cy * W + cx) * 4;
-        if (d[i + 3] > 10) cornerRefs.push([d[i], d[i + 1], d[i + 2]]);
+      // Build a background palette from the four CORNER REGIONS (not the full
+      // border, and not just the single corner pixel). Centered medallion badges
+      // touch the mid-edges with their rim, so full-border sampling would pull
+      // the rim color into the palette and the flood-fill would eat the art. The
+      // corners, by contrast, hold only background — including BOTH colors of a
+      // faux-transparency checkerboard (white + medium gray) that the old
+      // corner-pixel + ">185 white" rules couldn't strip. Colors are quantized
+      // and counted; only those ≥6% of corner samples become references, so a
+      // sliver of art clipping a corner stays a minority and is kept.
+      const QUANT  = 16;
+      const counts = new Map<string, { c: [number, number, number]; n: number }>();
+      const tally  = (x: number, y: number) => {
+        const i = (y * W + x) * 4;
+        if (d[i + 3] < 10) return;
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const key = `${Math.round(r / QUANT)},${Math.round(g / QUANT)},${Math.round(b / QUANT)}`;
+        const e = counts.get(key);
+        if (e) e.n++; else counts.set(key, { c: [r, g, b], n: 1 });
+      };
+      const rw = Math.max(2, Math.floor(W * 0.18));
+      const rh = Math.max(2, Math.floor(H * 0.18));
+      for (const [bx, by] of [[0, 0], [W - rw, 0], [0, H - rh], [W - rw, H - rh]] as [number, number][]) {
+        for (let y = by; y < by + rh; y++) {
+          for (let x = bx; x < bx + rw; x++) tally(x, y);
+        }
       }
+      const total   = Array.from(counts.values()).reduce((s, e) => s + e.n, 0) || 1;
+      const palette = Array.from(counts.values())
+        .filter(e => e.n / total >= 0.06)
+        .sort((a, b) => b.n - a.n)
+        .slice(0, 6)
+        .map(e => e.c);
 
       const visited = new Uint8Array(W * H);
       const isBg = (i: number) => {
         if (d[i + 3] < 10) return true;
-        // Light/white background (original rule)
+        // Light/white background (original rule).
         if (d[i] > 185 && d[i + 1] > 185 && d[i + 2] > 185) return true;
-        // Match any corner color within tolerance (handles colored/JPEG backgrounds)
-        for (const [r, g, b] of cornerRefs) {
+        // Match any dominant border color within tolerance (~32 RGB units) —
+        // covers the gray checker squares and colored/JPEG backgrounds.
+        for (const [r, g, b] of palette) {
           const dr = d[i] - r, dg = d[i + 1] - g, db = d[i + 2] - b;
-          if (dr * dr + dg * dg + db * db < 900) return true; // ~30 RGB units
+          if (dr * dr + dg * dg + db * db < 1024) return true;
         }
         return false;
       };
