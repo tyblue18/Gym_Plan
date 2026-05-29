@@ -48,6 +48,11 @@ export const THEME_KEY         = 'queTheme';
 
 // Misc client state (single-use today, centralized so they're discoverable)
 export const SHOWN_BADGES_KEY   = 'queShownBadgePopups';
+// Durable queue of server-confirmed badges waiting to show their celebration
+// popup. A sync drains pending badges from Redis ONCE (getdel), so the only
+// resilient place to hold "still need to show this" is the client — this key
+// survives a missed DOM event / frozen tab and is drained on the next app open.
+export const PENDING_BADGE_POPUPS_KEY = 'quePendingBadgePopups';
 export const WEIGHT_PROMPT_KEY  = 'queWeightPromptDate';   // legacy gate — cleaned up on load
 export const WEIGHT_SKIP_KEY    = 'queWeightSkipDate';     // epoch-ms timestamp of the last morning-prompt skip (drives a 5-min snooze)
 export const SOCIAL_ANIM_KEY    = 'queSocialAnimIdx';

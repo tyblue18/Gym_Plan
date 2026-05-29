@@ -6,7 +6,7 @@ import { X } from 'lucide-react';
 import Lottie from 'lottie-react';
 import celebrateAnim from '@/public/Celebrate_animation.json';
 import { AutoCropImage } from '@/components/AutoCropImage';
-import { SHOWN_BADGES_KEY } from '@/lib/constants';
+import { SHOWN_BADGES_KEY, PENDING_BADGE_POPUPS_KEY } from '@/lib/constants';
 
 type EarnedBadge = { slug: string; label: string; icon: string; category: string };
 
@@ -16,6 +16,15 @@ function readShown(): Set<string> {
 }
 function writeShown(set: Set<string>): void {
   try { localStorage.setItem(SHOWN_BADGES_KEY, JSON.stringify([...set])); } catch { /* noop */ }
+}
+
+/** Read + atomically clear the durable popup queue (sync engine fills it). */
+function takeQueue(): EarnedBadge[] {
+  try {
+    const raw = localStorage.getItem(PENDING_BADGE_POPUPS_KEY);
+    if (raw) localStorage.removeItem(PENDING_BADGE_POPUPS_KEY);
+    return raw ? (JSON.parse(raw) as EarnedBadge[]) : [];
+  } catch { return []; }
 }
 
 /**
@@ -36,20 +45,42 @@ export function BadgeCelebration() {
   const [earned, setEarned] = useState<EarnedBadge[]>([]);
 
   useEffect(() => {
-    function onBadgeEarned(e: Event) {
-      const badges = (e as CustomEvent<EarnedBadge[]>).detail;
-      if (!badges?.length) return;
+    // Badges reach us two ways: the DURABLE QUEUE (sync engine persists every
+    // server-confirmed award there before firing the event), and the EVENT
+    // DETAIL (e.g. SocialTab's optimistic battle-win popup, which dispatches
+    // directly without a sync). We merge both so neither path is dropped — and
+    // because the queue survives a frozen/unmounted tab, a popup missed earlier
+    // still surfaces on the next open.
+    function drain(e?: Event) {
+      const fromEvent = e ? ((e as CustomEvent<EarnedBadge[]>).detail ?? []) : [];
+      const bySlug    = new Map<string, EarnedBadge>();
+      for (const b of [...takeQueue(), ...fromEvent]) if (b?.slug) bySlug.set(b.slug, b);
+      const badges = [...bySlug.values()];
+      if (!badges.length) return;
+
       const shown  = readShown();
       const toShow = badges.filter(b => !shown.has(b.slug));
       for (const b of badges) shown.delete(b.slug); // unmark → re-earn re-pops
       writeShown(shown);
       if (toShow.length > 0) {
-        setEarned(prev => [...prev, ...toShow]);
+        setEarned(prev => {
+          const have = new Set(prev.map(p => p.slug)); // don't double-stack on screen
+          const add  = toShow.filter(b => !have.has(b.slug));
+          return add.length ? [...prev, ...add] : prev;
+        });
         navigator.vibrate?.([0, 60, 80, 120, 80, 60]);
       }
     }
-    window.addEventListener('que-badge-earned', onBadgeEarned);
-    return () => window.removeEventListener('que-badge-earned', onBadgeEarned);
+    // 1) Drain anything left from a previous session (the missed-event case).
+    drain();
+    // 2) Live wake-ups from this session's syncs / optimistic dispatches.
+    //    Also re-drain on foreground in case a sync landed while backgrounded.
+    window.addEventListener('que-badge-earned', drain);
+    document.addEventListener('visibilitychange', drain);
+    return () => {
+      window.removeEventListener('que-badge-earned', drain);
+      document.removeEventListener('visibilitychange', drain);
+    };
   }, []);
 
   return (

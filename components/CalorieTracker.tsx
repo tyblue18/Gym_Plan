@@ -503,6 +503,9 @@ export default function CalorieTracker() {
     updateDayRecord(activeDayFocus, {
       burn:   liveMetrics.activityBurn,
       budget: liveMetrics.budget || baseBudget,
+      // Snapshot TDEE so plan-progress maintenance = tdee + burn stays exact
+      // even if the user later changes their deficit/profile.
+      ...(liveMetrics.tdee > 0 && { tdee: liveMetrics.tdee }),
       ...(todayWeight && parseFloat(todayWeight) > 0 && { weight: todayWeight }),
     });
     const plan = typeof window !== 'undefined' ? loadPlan() : null;
@@ -643,9 +646,12 @@ export default function CalorieTracker() {
       protein,
       carbs,
       fat,
+      // Persist budget + the TDEE snapshot together (see handleLogToday) so the
+      // plan ledger can reconstruct true maintenance without the deficit.
       ...(budget > 0 && { budget }),
+      ...(liveMetrics.tdee > 0 && { tdee: liveMetrics.tdee }),
     });
-  }, [activeDayFocus, updateDayRecord, budget]);
+  }, [activeDayFocus, updateDayRecord, budget, liveMetrics.tdee]);
 
   const [editingFood, setEditingFood] = useState<FoodEntry | null>(null);
 

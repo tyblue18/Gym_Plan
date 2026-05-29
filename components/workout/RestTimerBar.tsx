@@ -86,13 +86,16 @@ export function RestTimerBar({
       dragControls={dragControls}
       dragMomentum={false}
       dragElastic={0.12}
-      initial={{ y: 60, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 60, opacity: 0 }}
+      initial={{ scale: 0.92, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ scale: 0.92, opacity: 0 }}
       transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
       className="fixed left-0 right-0 mx-auto w-max max-w-[calc(100vw-20px)] z-[60] flex items-center gap-2 rounded-full border bg-[var(--bg-1)] px-2 py-2 shadow-2xl"
       style={{
-        bottom:      'calc(20px + env(safe-area-inset-bottom))',
+        // Default to mid-screen (not pinned behind the bottom nav). Once the user
+        // drags, framer-motion's transform takes over and the bar stays where
+        // they left it across the rest loop (it doesn't remount on startMs change).
+        top:         '42vh',
         borderColor: done ? 'var(--positive)' : 'var(--accent)',
         boxShadow:   `0 0 0 1px ${done ? 'var(--positive-12)' : 'var(--accent-12)'}, 0 18px 40px rgba(0,0,0,0.5)`,
       }}
@@ -103,10 +106,10 @@ export function RestTimerBar({
         onPointerDown={e => dragControls.start(e)}
         aria-label="Drag rest timer"
         title="Drag to move"
-        className="w-6 h-9 flex items-center justify-center rounded-full text-[var(--ink-3)] hover:text-[var(--ink-1)] cursor-grab active:cursor-grabbing flex-shrink-0"
+        className="w-7 h-9 flex items-center justify-center rounded-full border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-2)] hover:text-[var(--ink-0)] cursor-grab active:cursor-grabbing flex-shrink-0"
         style={{ touchAction: 'none' }}
       >
-        <GripVertical size={15} />
+        <GripVertical size={16} />
       </button>
 
       {logging ? (

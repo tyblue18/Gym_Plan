@@ -29,8 +29,32 @@ import {
   ATHLETE_PLAN_KEY, WORKOUT_PRESETS_KEY, TEMPLATES_KEY, EXERCISE_USAGE_KEY,
   CUSTOM_EXERCISES_KEY,
   LAST_STREAK_KEY, LIFT_PRS_KEY, MILLION_GROUPS_KEY, MACRO_GOALS_KEY,
-  COIN_KEY, PROFILE_PHOTO_KEY, DB_KEY,
+  COIN_KEY, PROFILE_PHOTO_KEY, DB_KEY, PENDING_BADGE_POPUPS_KEY,
 } from '@/lib/constants';
+
+type EarnedBadge = { slug: string; label: string; icon: string; category: string };
+
+/**
+ * Server-confirmed badges arrive exactly once (the API drains them from Redis
+ * with getdel). A bare DOM event is lost if no listener is mounted at that
+ * instant — a frozen PWA tab, a background sync, or a render race all drop it,
+ * and the badge is gone from Redis forever. So we PERSIST them to a localStorage
+ * queue first, then fire the event as a wake-up. BadgeCelebration drains the
+ * queue on the event AND on every mount, so a missed event still surfaces the
+ * popup the next time the app opens. Dedup against already-shown popups happens
+ * in BadgeCelebration via queShownBadgePopups.
+ */
+function enqueueBadgePopups(badges: EarnedBadge[]): void {
+  if (typeof window === 'undefined' || !badges?.length) return;
+  try {
+    const raw      = localStorage.getItem(PENDING_BADGE_POPUPS_KEY);
+    const existing = raw ? (JSON.parse(raw) as EarnedBadge[]) : [];
+    const bySlug   = new Map(existing.map(b => [b.slug, b]));
+    for (const b of badges) bySlug.set(b.slug, b);
+    localStorage.setItem(PENDING_BADGE_POPUPS_KEY, JSON.stringify([...bySlug.values()]));
+  } catch { /* storage full — the event below still delivers for the live case */ }
+  window.dispatchEvent(new CustomEvent('que-badge-earned', { detail: badges }));
+}
 
 // All localStorage keys that belong in the synced "settings" blob
 const SETTINGS_KEYS = [
@@ -152,7 +176,7 @@ export async function pullFromCloud(): Promise<SyncPayload | null> {
       newBadges?: Array<{ slug: string; label: string; icon: string; category: string }>;
     };
     if (json.newBadges?.length) {
-      window.dispatchEvent(new CustomEvent('que-badge-earned', { detail: json.newBadges }));
+      enqueueBadgePopups(json.newBadges);
     }
     return json;
   } catch {
@@ -203,7 +227,7 @@ async function _push(payload: SyncPayload, attempt = 0): Promise<void> {
         } catch { /* storage full — skip */ }
       }
       if (json.newBadges?.length) {
-        window.dispatchEvent(new CustomEvent('que-badge-earned', { detail: json.newBadges }));
+        enqueueBadgePopups(json.newBadges);
       }
       if (json.revokedBadges?.length) {
         window.dispatchEvent(new CustomEvent('que-badges-revoked', { detail: json.revokedBadges }));

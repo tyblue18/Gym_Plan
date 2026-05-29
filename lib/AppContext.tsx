@@ -88,6 +88,12 @@ export interface DayRecord {
   weight?:   string;
   burn?:     number;
   budget?:   number;
+  /** TDEE (BMR × activity multiplier) snapshotted at log time. Deficit- and
+   *  cardio-independent, so plan-progress maintenance reconstructs exactly as
+   *  `tdee + burn` regardless of later deficit/profile changes. Absent on days
+   *  logged before this field existed — consumers fall back to the legacy
+   *  `budget + deficit + 0.4·burn` reconstruction for those. */
+  tdee?:     number;
   calsEaten?: string;
   protein?:  number;       // grams — day total, summed from foods (used by battles)
   carbs?:    number;       // grams — day total, summed from foods (used by battles)

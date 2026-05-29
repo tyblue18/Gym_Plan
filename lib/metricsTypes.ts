@@ -1,7 +1,7 @@
 // Shared types, constants, and pure utility functions for MetricsDashboard.
 
 import { useMemo } from 'react';
-import type { UserProfile, LocalDB } from '@/lib/AppContext';
+import type { UserProfile, LocalDB, DayRecord } from '@/lib/AppContext';
 
 // ── Locale helpers ────────────────────────────────────────────────────────────
 
@@ -50,6 +50,17 @@ export const INTENSITY_LABELS: Record<'cut' | 'bulk', Record<PlanIntensity, stri
   bulk: { slight: 'Lean Bulk',      moderate: 'Bulk', aggressive: 'Dirty Bulk'      },
 };
 
+/**
+ * Bucket an arbitrary daily kcal target into the nearest named tier — for the
+ * label/category only (the plan stores the exact `dailyKcal`). Thresholds are
+ * the midpoints between the presets (250 / 500 / 1000).
+ */
+export function intensityForKcal(kcal: number): PlanIntensity {
+  if (kcal <= 375) return 'slight';
+  if (kcal <= 750) return 'moderate';
+  return 'aggressive';
+}
+
 export interface AthletePlan {
   type:        'cut' | 'bulk';
   intensity:   PlanIntensity;
@@ -68,7 +79,7 @@ export interface AthletePlan {
   creationActivityBurn?: number;
 }
 
-import { ATHLETE_PLAN_KEY } from '@/lib/constants';
+import { ATHLETE_PLAN_KEY, GOAL_TOLERANCE } from '@/lib/constants';
 // Re-exported under the legacy PLAN_KEY name so existing imports keep working.
 export const PLAN_KEY = ATHLETE_PLAN_KEY;
 
@@ -119,6 +130,108 @@ export function getEffectiveDailyKcal(plan: AthletePlan): number {
  */
 export function getPlanBaseline(plan: AthletePlan, _localDB?: LocalDB): number {
   return plan.startWeight;
+}
+
+// ── Plan rate / projection / status (shared by every plan surface) ────────────
+
+/** The plan's signed effective weekly rate (lb/wk). Negative for cuts. */
+export function planWeeklyRate(plan: AthletePlan): number {
+  const eff = getEffectiveDailyKcal(plan);
+  return plan.type === 'cut' ? -(eff * 7 / 3500) : (eff * 7 / 3500);
+}
+
+/**
+ * Expected weight change (signed lb) at `weeksElapsed` into the plan, CAPPED at
+ * the goal delta. Without the cap, `rate × weeks` keeps growing past the goal
+ * once the target date passes, which would flag a user who hit their goal and
+ * is now maintaining as "behind pace" forever and make "Proj Now" overshoot the
+ * goal weight. raw and goalDelta share the plan's sign, so we clamp magnitude.
+ */
+export function planExpectedChange(plan: AthletePlan, weeksElapsed: number): number {
+  const raw       = planWeeklyRate(plan) * Math.max(0, weeksElapsed);
+  const goalDelta = plan.goalWeight - getPlanBaseline(plan);
+  return goalDelta >= 0 ? Math.min(raw, goalDelta) : Math.max(raw, goalDelta);
+}
+
+export type PlanStatus = 'ahead' | 'on-track' | 'behind' | 'no-data';
+
+export interface PlanStatusResult {
+  status:         PlanStatus;
+  /** Exact elapsed weeks since plan.startDate. */
+  weeksSince:     number;
+  /** Raw last in-window weigh-in (for display — the user's real scale number). */
+  latestWeight:   number | null;
+  /** Mean of the last ≤3 in-window weigh-ins (used for status — water-weight
+   *  noise on a single reading shouldn't flip ahead↔behind). */
+  smoothedWeight: number | null;
+  /** latestWeight − baseline (raw, for the "Change" stat). */
+  actualChange:   number | null;
+  /** Capped expected change at weeksSince (see planExpectedChange). */
+  expectedChange: number;
+}
+
+/**
+ * Single source of truth for "Ahead / On-track / Behind". Previously each modal
+ * computed this slightly differently (smoothed vs raw weight, 3-day vs 3.5-day
+ * gate), so the same plan could read differently across surfaces. All of them
+ * now route through here: smoothed weight, a 3-day minimum, ±20% band around the
+ * (capped) expected change.
+ */
+export function getPlanStatus(plan: AthletePlan, localDB: LocalDB): PlanStatusResult {
+  const baseline   = getPlanBaseline(plan);
+  const startMs    = new Date(plan.startDate + 'T00:00:00').getTime();
+  const weeksSince = Math.max(0, (Date.now() - startMs) / (7 * 86400000));
+
+  const inWindow = (Object.entries(localDB) as [string, DayRecord][])
+    .filter(([ds, r]) => ds >= plan.startDate && parseNum(String(r.weight ?? '0')) > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, r]) => parseNum(String(r.weight)));
+
+  const latestWeight   = inWindow.length ? inWindow[inWindow.length - 1] : null;
+  const smoothCount    = Math.min(3, inWindow.length);
+  const smoothedWeight = smoothCount > 0
+    ? inWindow.slice(-smoothCount).reduce((s, w) => s + w, 0) / smoothCount
+    : null;
+
+  const actualChange   = latestWeight   !== null ? latestWeight   - baseline : null;
+  const changeSmoothed = smoothedWeight !== null ? smoothedWeight - baseline : null;
+  const expectedChange = planExpectedChange(plan, weeksSince);
+
+  let status: PlanStatus = 'no-data';
+  if (changeSmoothed !== null && weeksSince >= 3 / 7 && Math.abs(expectedChange) > 0.05) {
+    const thr   = Math.abs(expectedChange) * 0.2;
+    const delta = changeSmoothed - expectedChange;
+    status = plan.type === 'cut'
+      ? (delta < -thr ? 'ahead' : delta > thr ? 'behind' : 'on-track')
+      : (delta >  thr ? 'ahead' : delta < -thr ? 'behind' : 'on-track');
+  } else if (changeSmoothed !== null) {
+    status = 'on-track';
+  }
+
+  return { status, weeksSince, latestWeight, smoothedWeight, actualChange, expectedChange };
+}
+
+/**
+ * A logged day's TRUE maintenance (TDEE + cardio burn) — the expenditure the
+ * user must eat ABOVE to gain and below to lose, independent of any goal.
+ *
+ * Prefers the `tdee` snapshot stored at log time (exact, deficit-proof). Days
+ * logged before that field existed fall back to recovering TDEE from the stored
+ * budget: budget = tdee − deficit + 0.6·burn ⇒ tdee + burn = budget + deficit +
+ * 0.4·burn. That fallback is only exact if the deficit hasn't changed since the
+ * day was logged — which is exactly the case the `tdee` snapshot fixes going
+ * forward. Returns null when the day lacks the data to compute it.
+ */
+export function dayMaintenance(
+  rec:            { tdee?: unknown; budget?: unknown; burn?: unknown },
+  fallbackDeficit: number,
+): number | null {
+  const burn = parseNum(String(rec.burn ?? 0));
+  const tdee = parseNum(String(rec.tdee ?? 0));
+  if (tdee > 0) return tdee + burn;
+  const budget = parseNum(String(rec.budget ?? 0));
+  if (budget <= 0) return null;
+  return budget + fallbackDeficit + burn * 0.4;
 }
 
 // ── Plan compliance (per-day caloric balance) ────────────────────────────────
@@ -176,14 +289,14 @@ export function getPlanCompliance(
     if (ds < plan.startDate || ds > todayStr) continue;
     const calsEaten = parseNum(String(rec.calsEaten ?? '0'));
     const budget    = parseNum(String(rec.budget    ?? '0'));
-    const burn      = parseNum(String(rec.burn      ?? '0'));
     if (calsEaten <= 0 || budget <= 0) continue;
 
     daysLogged++;
-    if (Math.abs(calsEaten - budget) <= 100) daysOnTarget++;
+    if (Math.abs(calsEaten - budget) <= GOAL_TOLERANCE) daysOnTarget++;
 
-    const maintenance = budget + profileDeficit + burn * 0.4;
-    cumulativeBalance += calsEaten - maintenance;
+    // True maintenance (tdee + burn) from the day's snapshot, deficit-proof.
+    const maintenance = dayMaintenance(rec, profileDeficit);
+    if (maintenance !== null) cumulativeBalance += calsEaten - maintenance;
   }
 
   return {

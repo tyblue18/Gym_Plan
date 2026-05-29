@@ -16,11 +16,13 @@ import {
   type PlanIntensity,
   INTENSITY_KCAL,
   INTENSITY_LABELS,
+  intensityForKcal,
   loadPlan,
   savePlanToStorage,
-  getEffectiveDailyKcal,
   getPlanBaseline,
   getPlanCompliance,
+  getPlanStatus,
+  planWeeklyRate,
   parseNum,
   fmt,
   fmtDateLong,
@@ -97,26 +99,16 @@ export function CelebrationModal({ open, onClose, localDB, calsEaten, budget }: 
   const sign   = (n: number) => n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1);
 
   const { latestWeight, actualChange, weeksSince, status, baseline } = useMemo(() => {
-    if (!plan) return { latestWeight: null, actualChange: null, weeksSince: 0, status: 'no-data', baseline: 0 };
-    // Filter to plan window — a pre-plan weight isn't "current" progress.
-    const entries = (Object.entries(localDB) as [string, DayRecord][])
-      .filter(([ds, r]) => ds >= plan.startDate && parseNum(String(r.weight ?? '0')) > 0)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, r]) => parseNum(String(r.weight)));
-    const latest = entries.length > 0 ? entries[entries.length - 1] : null;
-    const wks    = Math.max(0, (Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / (7 * 86400000));
-    const eff    = getEffectiveDailyKcal(plan);
-    const rate   = plan.type === 'cut' ? -(eff * 7 / 3500) : (eff * 7 / 3500);
-    const exp    = rate * wks;
-    const base   = getPlanBaseline(plan, localDB);
-    const act    = latest !== null ? latest - base : null;
-    let   st     = 'no-data';
-    if (act !== null && wks >= 0.5 && Math.abs(exp) > 0.05) {
-      const thr = Math.abs(exp) * 0.2, d = act - exp;
-      st = plan.type === 'cut' ? (d < -thr ? 'ahead' : d > thr ? 'behind' : 'on-track')
-                                : (d > thr  ? 'ahead' : d < -thr ? 'behind' : 'on-track');
-    } else if (act !== null) { st = 'on-track'; }
-    return { latestWeight: latest, actualChange: act, weeksSince: wks, status: st, baseline: base };
+    if (!plan) return { latestWeight: null, actualChange: null, weeksSince: 0, status: 'no-data' as const, baseline: 0 };
+    // Shared status engine — identical logic to PlanProgress + Projection.
+    const s = getPlanStatus(plan, localDB);
+    return {
+      latestWeight: s.latestWeight,
+      actualChange: s.actualChange,
+      weeksSince:   s.weeksSince,
+      status:       s.status,
+      baseline:     getPlanBaseline(plan),
+    };
   }, [plan, localDB, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusLabel = { ahead: 'Ahead of pace', 'on-track': 'On track', behind: 'Behind pace', 'no-data': '' }[status] ?? '';
@@ -239,26 +231,28 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
   }, [open]);
 
   const {
-    weightEntries, chartPts, weeksSince, planWeeklyRate,
+    weightEntries, chartPts, weeksSince, planRate,
     expectedChange, firstWeight, actualChange, actualWeeklyRate, status,
     projectedTotalWeeks, compliance, kcalAdjust,
   } = useMemo(() => {
     if (!plan) return {
-      weightEntries: [], chartPts: [], weeksSince: 0, planWeeklyRate: 0,
+      weightEntries: [], chartPts: [], weeksSince: 0, planRate: 0,
       expectedChange: 0, firstWeight: 0, actualChange: null, actualWeeklyRate: null,
       status: 'no-data' as const, projectedTotalWeeks: null,
       compliance: null as ReturnType<typeof getPlanCompliance> | null,
       kcalAdjust: null as { kcal: number; weeksLeft: number; reached: boolean } | null,
     };
 
+    // Shared status engine — status, smoothed weight, capped expected change,
+    // elapsed weeks, latest weigh-in. Identical logic across every plan surface.
+    const ps         = getPlanStatus(plan, localDB);
+    const baseWeight  = getPlanBaseline(plan);
+
+    // Full weight history → chart polyline + actual-rate fit.
     const entries = (Object.entries(localDB) as [string, DayRecord][])
       .filter(([, rec]) => parseNum(String(rec.weight ?? '0')) > 0)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([ds, rec]) => ({ date: ds, weight: parseNum(String(rec.weight)) }));
-
-    const msElapsed   = Date.now() - new Date(plan.startDate + 'T00:00:00').getTime();
-    const totalDays   = Math.max(0, Math.floor(msElapsed / 86400000));
-    const wks         = Math.max(0, msElapsed / (7 * 86400000));
 
     const planStartMs = new Date(plan.startDate + 'T00:00:00').getTime();
     const cPts = entries.map(e => ({
@@ -266,35 +260,9 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
       week: (new Date(e.date + 'T00:00:00').getTime() - planStartMs) / (7 * 86400000),
     })).filter(p => p.week >= 0);
 
-    // The plan's starting weight — locked at creation (see getPlanBaseline).
-    // Shared with the chart, MilestoneModal, CelebrationModal, and
-    // ProjectionModal so "change since start" is computed identically everywhere.
-    const baseWeight  = getPlanBaseline(plan, localDB);
-
-    const eff         = getEffectiveDailyKcal(plan);
-    const rate        = plan.type === 'cut'
-      ? -(eff * 7 / 3500)
-      :  (eff * 7 / 3500);
-    const expChange   = rate * wks;
-    // "Latest" must be a weigh-in *within* the plan window. Using the full
-    // history would let a pre-plan weight masquerade as current progress when
-    // the user hasn't logged anything since starting the plan.
+    // Plan-window-only list for the Recent Weigh-ins panel + actual-rate fit.
     const windowEntries = entries.filter(e => e.date >= plan.startDate);
     const latest        = windowEntries.length > 0 ? windowEntries[windowEntries.length - 1] : null;
-    // Compare against the locked start weight so "change since start" is stable.
-    const actChange     = latest ? latest.weight - baseWeight : null;
-
-    // Smoothed weight: mean of the last 3 in-window weigh-ins (or fewer if
-    // that's all there is). Daily readings fluctuate ±1–2 lb from water alone,
-    // which can flip ahead↔behind status from a single bad reading. The
-    // smoothed value is used for the status determination and the goal-shift
-    // recommendation; raw `latest` is still used for display (Latest tile,
-    // chart dots) so the user sees their actual scale reading.
-    const smoothCount     = Math.min(3, windowEntries.length);
-    const smoothedWeight  = smoothCount > 0
-      ? windowEntries.slice(-smoothCount).reduce((s, e) => s + e.weight, 0) / smoothCount
-      : null;
-    const actChangeSmooth = smoothedWeight !== null ? smoothedWeight - baseWeight : null;
 
     let actRate: number | null = null;
     if (windowEntries.length >= 2 && latest) {
@@ -303,16 +271,17 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
       if (span >= 4) actRate = ((latest.weight - first.weight) / span) * 7;
     }
 
-    let st: 'ahead' | 'on-track' | 'behind' | 'no-data' = 'no-data';
-    if (actChangeSmooth !== null && totalDays >= 3 && Math.abs(expChange) > 0.05) {
-      const thr = Math.abs(expChange) * 0.2, delta = actChangeSmooth - expChange;
-      if (plan.type === 'cut') st = delta < -thr ? 'ahead' : delta > thr ? 'behind' : 'on-track';
-      else                     st = delta > thr  ? 'ahead' : delta < -thr ? 'behind' : 'on-track';
-    } else if (actChangeSmooth !== null) { st = 'on-track'; }
-
     let projWks: number | null = null;
+    // Only project a finish when the user is actually moving TOWARD the goal (or
+    // already past it). Otherwise (goal − weight) / actRate flips sign and a
+    // divergent pace renders a misleadingly small "weeks to goal".
     if (actRate !== null && Math.abs(actRate) > 0.01) {
-      projWks = Math.max(0, wks + (plan.goalWeight - (smoothedWeight ?? baseWeight)) / actRate);
+      const ref        = ps.smoothedWeight ?? baseWeight;
+      const towardGoal = plan.type === 'cut' ? actRate < 0 : actRate > 0;
+      const beyondGoal = plan.type === 'cut' ? ref <= plan.goalWeight : ref >= plan.goalWeight;
+      if (towardGoal || beyondGoal) {
+        projWks = Math.max(0, ps.weeksSince + (plan.goalWeight - ref) / actRate);
+      }
     }
 
     // Per-day calorie-compliance metrics (real balance vs. true maintenance).
@@ -328,22 +297,22 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
     //   adjust  → user is mid-plan; compute the rate delta needed to land
     //             exactly on goal at plan.weeksTarget.
     let adj: { kcal: number; weeksLeft: number; reached: boolean } | null = null;
-    if (actRate !== null && wks >= 1 && smoothedWeight !== null) {
-      const weeksLeft = Math.max(0, plan.weeksTarget - wks);
+    if (actRate !== null && ps.weeksSince >= 1 && ps.smoothedWeight !== null) {
+      const weeksLeft = Math.max(0, plan.weeksTarget - ps.weeksSince);
       // Use smoothed weight so a single noisy reading doesn't flip the
       // "reached" badge or swing the recommended shift.
       const reached   = plan.type === 'cut'
-        ? smoothedWeight <= plan.goalWeight
-        : smoothedWeight >= plan.goalWeight;
+        ? ps.smoothedWeight <= plan.goalWeight
+        : ps.smoothedWeight >= plan.goalWeight;
       if (reached) {
         // Maintenance shift: counteract the current actRate so weight holds.
         const kcalDelta = Math.round((-actRate * 3500) / 7);
         if (Math.abs(kcalDelta) >= 50) adj = { kcal: kcalDelta, weeksLeft, reached: true };
       } else if (weeksLeft >= 0.5 && weeksLeft <= 52) {
-        const weightLeft   = plan.goalWeight - smoothedWeight;   // signed
-        const requiredRate = weightLeft / weeksLeft;              // signed lb/wk
-        const rateDelta    = requiredRate - actRate;               // signed lb/wk
-        const kcalDelta    = Math.round((rateDelta * 3500) / 7);   // signed kcal/day
+        const weightLeft   = plan.goalWeight - ps.smoothedWeight;   // signed
+        const requiredRate = weightLeft / weeksLeft;                 // signed lb/wk
+        const rateDelta    = requiredRate - actRate;                 // signed lb/wk
+        const kcalDelta    = Math.round((rateDelta * 3500) / 7);     // signed kcal/day
         if (Math.abs(kcalDelta) >= 50) adj = { kcal: kcalDelta, weeksLeft, reached: false };
       }
     }
@@ -351,11 +320,11 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
     return {
       // weightEntries is now plan-window only so the Recent Weigh-ins list
       // doesn't show pre-plan history next to plan-specific deltas/status.
-      weightEntries: windowEntries, chartPts: cPts, weeksSince: wks,
-      planWeeklyRate: rate, expectedChange: expChange,
+      weightEntries: windowEntries, chartPts: cPts, weeksSince: ps.weeksSince,
+      planRate: planWeeklyRate(plan), expectedChange: ps.expectedChange,
       firstWeight: baseWeight,
-      actualChange: actChange, actualWeeklyRate: actRate,
-      status: st, projectedTotalWeeks: projWks,
+      actualChange: ps.actualChange, actualWeeklyRate: actRate,
+      status: ps.status, projectedTotalWeeks: projWks,
       compliance: comp, kcalAdjust: adj,
     };
   }, [plan, localDB, profile, open, planVersion]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -460,7 +429,7 @@ export function PlanProgressModal({ open, onClose, localDB, profile }: {
                 <div className="rounded border border-[var(--line)] bg-[var(--bg-2)] divide-y divide-[var(--line)]">
                   {[
                     { label: 'Actual pace', value: `${sign(actualWeeklyRate)} lb / wk`, color: status === 'ahead' ? 'var(--positive)' : status === 'behind' ? 'var(--warn)' : 'var(--ink-0)' },
-                    { label: 'Plan rate',   value: `${sign(planWeeklyRate)} lb / wk`,   color: 'var(--ink-3)' },
+                    { label: 'Plan rate',   value: `${sign(planRate)} lb / wk`,   color: 'var(--ink-3)' },
                     ...(projectedTotalWeeks !== null ? [{ label: 'At this pace', value: `~${Math.ceil(projectedTotalWeeks)} wks total`, color: 'var(--ink-1)' }] : []),
                   ].map(r => (
                     <div key={r.label} className="flex justify-between items-center px-3 py-2.5">
@@ -651,7 +620,10 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
   todayStr: string;
 }) {
   const [planType,    setPlanType]    = useState<'cut' | 'bulk' | null>(null);
-  const [intensity,   setIntensity]   = useState<PlanIntensity>('moderate');
+  // The daily deficit (cut) / surplus (bulk) in kcal — now a free-form value.
+  // The 3 preset chips just quick-set it; the user can type any number and the
+  // whole projection (rate, duration, goal, budget) re-derives from it.
+  const [kcalInput,   setKcalInput]   = useState(String(INTENSITY_KCAL.moderate));
   const [startWeight, setStartWeight] = useState('');
   const [goalMode,    setGoalMode]    = useState<'weight' | 'weeks'>('weight');
   const [goalWeight,  setGoalWeight]  = useState('');
@@ -663,14 +635,16 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
     const saved = loadPlan();
     if (saved) {
       setPlanType(saved.type);
-      setIntensity(saved.intensity ?? 'moderate');
+      // Restore the exact saved daily kcal (falls back to the intensity preset
+      // for plans saved before custom values existed).
+      setKcalInput(String(saved.dailyKcal || INTENSITY_KCAL[saved.intensity ?? 'moderate']));
       setStartWeight(String(saved.startWeight));
       setGoalWeight(String(saved.goalWeight));
       setGoalWeeks(String(saved.weeksTarget));
     } else {
       const tw = localDB[todayStr]?.weight ?? profile.weight;
       setStartWeight(String(tw || ''));
-      setPlanType(null); setIntensity('moderate'); setGoalWeight(''); setGoalWeeks('12');
+      setPlanType(null); setKcalInput(String(INTENSITY_KCAL.moderate)); setGoalWeight(''); setGoalWeeks('12');
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -694,7 +668,8 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
     if (!planType || !startWeight) return null;
     const sw = parseNum(startWeight);
     if (sw <= 0) return null;
-    const kcal         = INTENSITY_KCAL[intensity];
+    const kcal         = Math.round(parseNum(kcalInput));
+    if (kcal <= 0) return null;
     const cardioAdjust = m.activityBurn * 0.4;
     // Cut: cardio enlarges the deficit. Bulk: cardio shrinks the surplus (clamped ≥ 0
     // so a heavy-cardio user with a small surplus picks a higher intensity instead
@@ -725,30 +700,23 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
     // shows the capped duration, so callers need to warn the user that the
     // goal won't actually be reached in this window.
     const wasCapped = weeksNeeded !== null && weeksNeeded > 52;
-    // If capped, suggest the lowest intensity that *would* hit the goal in
-    // ≤52 wks. The rate is (effective × 7 / 3500) where effective scales
-    // linearly with the chosen kcal (cardio adjust is constant for the day).
-    // Returns null if even the most aggressive setting can't fit.
-    let suggestedIntensity: { level: PlanIntensity; weeks: number } | null = null;
+    // If capped, compute the EXACT daily deficit/surplus that would land the goal
+    // in 52 wks (the max window). effective = |gw−sw|/52 × 3500/7, then back out
+    // the kcal the user must set by reversing the cardio adjustment. Rounded up
+    // to the next 25. Null if it would exceed a sane ceiling (1500 kcal/day) —
+    // there's no safe deficit/surplus that fits, so the user should pick a closer
+    // target instead.
+    let suggestedKcal: number | null = null;
     if (wasCapped && goalMode === 'weight') {
-      const order: PlanIntensity[] = ['slight', 'moderate', 'aggressive'];
-      const currentIdx = order.indexOf(intensity);
-      for (let i = currentIdx + 1; i < order.length; i++) {
-        const tryKcal = INTENSITY_KCAL[order[i]];
-        const tryEff  = planType === 'cut'
-          ? tryKcal + cardioAdjust
-          : Math.max(0, tryKcal - cardioAdjust);
-        if (tryEff <= 0) continue;
-        const tryRate = tryEff * 7 / 3500; // unsigned magnitude
-        const tryWks  = Math.ceil(Math.abs(gw - sw) / tryRate);
-        if (tryWks <= 52) {
-          suggestedIntensity = { level: order[i], weeks: tryWks };
-          break;
-        }
-      }
+      const effNeeded  = (Math.abs(gw - sw) / 52) * 3500 / 7;
+      const kcalNeeded = planType === 'cut'
+        ? effNeeded - cardioAdjust   // cardio already enlarges the deficit
+        : effNeeded + cardioAdjust;  // cardio eats into the surplus
+      const rounded = Math.ceil(kcalNeeded / 25) * 25;
+      if (rounded > kcal && rounded <= 1500) suggestedKcal = rounded;
     }
-    return { pts, weeks, startWeight: sw, goalWeight: gw, weeklyRate, effective, kcal, cardioAdjust, weeksNeeded, wasCapped, suggestedIntensity };
-  }, [planType, intensity, startWeight, goalMode, goalWeight, goalWeeks, m.activityBurn]);
+    return { pts, weeks, startWeight: sw, goalWeight: gw, weeklyRate, effective, kcal, cardioAdjust, weeksNeeded, wasCapped, suggestedKcal };
+  }, [planType, kcalInput, startWeight, goalMode, goalWeight, goalWeeks, m.activityBurn]);
 
   const actualData = useMemo(() => {
     const saved = loadPlan(); if (!saved) return [];
@@ -768,7 +736,10 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
 
   const handleSave = useCallback(() => {
     if (!projData || !planType) return;
-    const kcal = INTENSITY_KCAL[intensity];
+    // Use the exact value the projection was built from. intensity is now just a
+    // derived label bucket — the source of truth is the custom dailyKcal.
+    const kcal = projData.kcal;
+    const intensity = intensityForKcal(kcal);
     const existing = loadPlan();
     const isUpdate = !!existing;
     savePlanToStorage({
@@ -796,7 +767,7 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
     // though the plan projects weight gain.
     persistProfile({ deficit: String(planType === 'cut' ? kcal : -kcal) });
     onClose();
-  }, [projData, planType, intensity, m.activityBurn, todayStr, persistProfile, onClose]);
+  }, [projData, planType, m.activityBurn, todayStr, persistProfile, onClose]);
 
   const isValid = !!projData && !!planType;
 
@@ -850,17 +821,22 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
                 ))}
               </div>
 
-              {planType && (
+              {planType && (() => {
+                const accentCol = planType === 'cut' ? 'var(--accent)' : 'var(--positive)';
+                const kcalVal   = Math.round(parseNum(kcalInput));
+                const stepKcal  = (delta: number) =>
+                  setKcalInput(String(Math.max(0, kcalVal + delta)));
+                return (
                 <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
-                  <p className="que-label mb-2">Intensity</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <p className="que-label mb-2">Daily {planType === 'cut' ? 'Deficit' : 'Surplus'}</p>
+                  {/* Preset quick-picks — tapping one just fills the field below. */}
+                  <div className="grid grid-cols-3 gap-2 mb-2">
                     {(['slight', 'moderate', 'aggressive'] as PlanIntensity[]).map(lvl => {
-                      const label     = INTENSITY_LABELS[planType][lvl];
-                      const kcal      = INTENSITY_KCAL[lvl];
-                      const active    = intensity === lvl;
-                      const accentCol = planType === 'cut' ? 'var(--accent)' : 'var(--positive)';
+                      const label  = INTENSITY_LABELS[planType][lvl];
+                      const preset = INTENSITY_KCAL[lvl];
+                      const active = kcalVal === preset;
                       return (
-                        <button key={lvl} onClick={() => setIntensity(lvl)}
+                        <button key={lvl} onClick={() => setKcalInput(String(preset))}
                           className={[
                             'flex flex-col items-center gap-1 rounded border py-3 px-2 transition-all text-center',
                             active
@@ -870,7 +846,7 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
                         >
                           <span className="font-display text-[22px] leading-none"
                             style={{ color: active ? accentCol : 'var(--ink-1)' }}>
-                            {fmt(kcal)}
+                            {fmt(preset)}
                           </span>
                           <span className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px] uppercase">kcal</span>
                           <span className="font-mono text-[8px] tracking-[0.5px] mt-0.5"
@@ -881,8 +857,32 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
                       );
                     })}
                   </div>
+                  {/* Custom value — type any number, or nudge with ± steppers. */}
+                  <div className="flex items-stretch gap-2">
+                    <button type="button" onClick={() => stepKcal(-50)} aria-label="Decrease 50 kcal"
+                      className="w-11 flex items-center justify-center rounded border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:border-[var(--line-3)] text-[18px] leading-none">−</button>
+                    <div className="relative flex-1">
+                      <input
+                        type="number" inputMode="numeric" className="que-input text-center pr-12"
+                        value={kcalInput}
+                        onChange={e => setKcalInput(e.target.value)}
+                        placeholder={planType === 'cut' ? 'e.g. 800' : 'e.g. 400'}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[9px] text-[var(--ink-3)] tracking-[0.5px] uppercase pointer-events-none">
+                        kcal/day
+                      </span>
+                    </div>
+                    <button type="button" onClick={() => stepKcal(50)} aria-label="Increase 50 kcal"
+                      className="w-11 flex items-center justify-center rounded border border-[var(--line-2)] bg-[var(--bg-2)] text-[var(--ink-1)] hover:border-[var(--line-3)] text-[18px] leading-none">+</button>
+                  </div>
+                  <p className="font-mono text-[8px] text-[var(--ink-3)] tracking-[0.5px] mt-1.5">
+                    {planType === 'cut'
+                      ? 'kcal/day below maintenance. Higher = faster loss.'
+                      : 'kcal/day above maintenance. Higher = faster gain.'}
+                  </p>
                 </motion.div>
-              )}
+                );
+              })()}
 
               <div className="mb-3">
                 <label className="que-label">Starting Weight / lbs</label>
@@ -960,20 +960,20 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
                       <div className="flex items-start gap-2">
                         <span className="block w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5" style={{ background: 'var(--warn)' }} />
                         <p className="font-mono text-[9px] text-[var(--warn)] tracking-[0.5px] leading-relaxed">
-                          Goal needs ~{projData.weeksNeeded} wks at this intensity — capped at 52 wks.
-                          {projData.suggestedIntensity ? (
+                          Goal needs ~{projData.weeksNeeded} wks at this {planType === 'cut' ? 'deficit' : 'surplus'} — capped at 52 wks.
+                          {projData.suggestedKcal ? (
                             <>
                               {' '}<button
                                 type="button"
-                                onClick={() => setIntensity(projData.suggestedIntensity!.level)}
+                                onClick={() => setKcalInput(String(projData.suggestedKcal))}
                                 className="underline underline-offset-2 hover:text-[var(--ink-0)] transition-colors font-bold"
                               >
-                                Switch to {INTENSITY_LABELS[planType!][projData.suggestedIntensity.level]}
+                                Set to {fmt(projData.suggestedKcal)} kcal/day
                               </button>{' '}
-                              to reach goal in ~{projData.suggestedIntensity.weeks} wks.
+                              to reach goal within 52 wks.
                             </>
                           ) : (
-                            <> Even the most aggressive intensity can&apos;t fit in 52 wks — pick a closer target weight.</>
+                            <> Even a safe {planType === 'cut' ? 'deficit' : 'surplus'} can&apos;t fit in 52 wks — pick a closer target weight.</>
                           )}
                         </p>
                       </div>
@@ -1004,12 +1004,12 @@ export function PlanModal({ open, onClose, profile, persistProfile, m, localDB, 
                       : `Bulk goal must be higher than starting weight. Set a target above ${parseNum(startWeight).toFixed(1)} lb, or switch to Cut.`}
                   </p>
                 </div>
-              ) : planType === 'bulk' && m.activityBurn * 0.4 >= INTENSITY_KCAL[intensity] ? (
+              ) : planType === 'bulk' && m.activityBurn * 0.4 >= Math.round(parseNum(kcalInput)) ? (
                 <div className="mb-4 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/8 px-3 py-3">
                   <p className="font-mono text-[10px] text-[var(--warn)] tracking-[0.5px] leading-relaxed">
                     Cardio burn of {fmt(Math.round(m.activityBurn))} kcal/day cancels out the
-                    {' '}{fmt(INTENSITY_KCAL[intensity])} kcal surplus (40% of cardio counts against surplus).
-                    Pick a higher intensity or reduce logged cardio to enable this bulk.
+                    {' '}{fmt(Math.round(parseNum(kcalInput)))} kcal surplus (40% of cardio counts against surplus).
+                    Raise the surplus or reduce logged cardio to enable this bulk.
                   </p>
                 </div>
               ) : planType && (
@@ -1086,26 +1086,9 @@ export function ProjectionModal({ open, m, weightLbs, calsEaten, localDB, onClos
   const budgetGap  = m.budget - calsEaten;
 
   const { latestWeight, status: planStatus, weeksSince } = useMemo(() => {
-    if (!plan || !open) return { latestWeight: null, status: 'no-data', weeksSince: 0 };
-    // Filter to plan window — pre-plan weights aren't current progress.
-    const entries = (Object.entries(localDB) as [string, DayRecord][])
-      .filter(([ds, r]) => ds >= plan.startDate && parseNum(String(r.weight ?? '0')) > 0)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, r]) => parseNum(String(r.weight)));
-    const latest = entries.length > 0 ? entries[entries.length - 1] : null;
-    const wks = Math.max(0, (Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / (7 * 86400000));
-    const eff  = getEffectiveDailyKcal(plan);
-    const rate = plan.type === 'cut' ? -(eff * 7 / 3500) : (eff * 7 / 3500);
-    const exp  = rate * wks;
-    const base = getPlanBaseline(plan, localDB);
-    const act  = latest !== null ? latest - base : null;
-    let st = 'no-data';
-    if (act !== null && wks >= 0.5 && Math.abs(exp) > 0.05) {
-      const thr = Math.abs(exp) * 0.2, d = act - exp;
-      st = plan.type === 'cut' ? (d < -thr ? 'ahead' : d > thr ? 'behind' : 'on-track')
-                                : (d > thr  ? 'ahead' : d < -thr ? 'behind' : 'on-track');
-    } else if (act !== null) { st = 'on-track'; }
-    return { latestWeight: latest, status: st, weeksSince: wks };
+    if (!plan || !open) return { latestWeight: null, status: 'no-data' as const, weeksSince: 0 };
+    const s = getPlanStatus(plan, localDB);
+    return { latestWeight: s.latestWeight, status: s.status, weeksSince: s.weeksSince };
   }, [plan, localDB, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const trajectory = useMemo(() => {

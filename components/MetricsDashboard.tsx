@@ -21,8 +21,9 @@ import prData from '@/public/PR_animation.json';
 import {
   type CardioFields, type BudgetMetrics, type PRFlags,
   EMPTY_CARDIO, INTENSITY_LABELS,
-  useBudgetMetrics, loadPlan, getEffectiveDailyKcal, getPlanBaseline,
-  parseNum, fmt, fmtDateLong, toDateStr,
+  useBudgetMetrics, loadPlan, savePlanToStorage, intensityForKcal,
+  getPlanBaseline, planExpectedChange,
+  dayMaintenance, parseNum, fmt, fmtDateLong, toDateStr,
 } from '@/lib/metricsTypes';
 import { drawLineChart } from '@/lib/metricsCharts';
 import {
@@ -140,28 +141,66 @@ function ProfilePanel({ profile, onChange, onOpenPlan, onOpenRunPlan }: {
             </select>
           </div>
 
-          <div>
-            {/* Bulk plans persist their surplus as a negative profile.deficit
-                so the single budget formula handles both directions. The
-                input hides that sign — labels itself "Surplus" when negative
-                and shows the absolute value. onChange preserves the current
-                sign so editing inside one mode can't flip cut↔bulk. To
-                change direction, use the PlanModal. */}
+          <div className="col-span-2 sm:col-span-1">
+            {/* Manual daily target. A surplus is persisted as a NEGATIVE
+                profile.deficit so the single budget formula handles both
+                directions. The Deficit/Surplus toggle sets that sign; the input
+                sets the magnitude. When an active plan matches the chosen
+                direction, its dailyKcal is kept in lockstep so the projection
+                and the budget never disagree. */}
             {(() => {
               const rawDef    = parseNum(profile.deficit);
               const isSurplus = rawDef < 0;
-              const display   = String(Math.abs(rawDef) || (profile.deficit === '' ? '' : 0));
+              const mag       = Math.abs(rawDef);
+              const display   = String(mag || (profile.deficit === '' ? '' : 0));
+              // Apply a signed daily target + sync an active same-direction plan.
+              const apply = (magnitude: number, surplus: boolean) => {
+                const m2 = Math.max(0, Math.round(magnitude));
+                onChange({ deficit: String(surplus ? -m2 : m2) });
+                const plan = loadPlan();
+                if (plan && m2 > 0 && (plan.type === 'cut') === !surplus) {
+                  savePlanToStorage({ ...plan, dailyKcal: m2, intensity: intensityForKcal(m2) });
+                }
+              };
               return (
                 <>
-                  <label className="que-label">{isSurplus ? 'Surplus / kcal' : 'Deficit / kcal'}</label>
+                  <label className="que-label">Daily Target / kcal</label>
+                  <div className="flex gap-1 mb-1.5">
+                    {([['Deficit', false], ['Surplus', true]] as const).map(([lbl, surplus]) => {
+                      const active = isSurplus === surplus;
+                      return (
+                        <button
+                          key={lbl} type="button"
+                          onClick={() => apply(mag || 500, surplus)}
+                          className={[
+                            'flex-1 py-1 rounded-sm font-mono text-[9px] font-bold tracking-[0.5px] uppercase transition-all',
+                            active
+                              ? surplus
+                                ? 'bg-[var(--positive)] text-[var(--accent-ink)]'
+                                : 'bg-[var(--accent)] text-[var(--accent-ink)]'
+                              : 'bg-[var(--bg-2)] text-[var(--ink-2)] hover:text-[var(--ink-0)] border border-[var(--line-2)]',
+                          ].join(' ')}
+                        >
+                          {lbl}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <input
                     type="number" inputMode="numeric" className="que-input"
                     value={display}
-                    onChange={e => {
-                      const n = parseNum(e.target.value);
-                      onChange({ deficit: String(isSurplus ? -n : n) });
-                    }}
+                    placeholder={isSurplus ? 'e.g. 400' : 'e.g. 500'}
+                    onChange={e => apply(parseNum(e.target.value), isSurplus)}
                   />
+                  {(() => {
+                    const plan = loadPlan();
+                    const conflict = plan && ((plan.type === 'cut') !== !isSurplus);
+                    return conflict ? (
+                      <p className="font-mono text-[8px] text-[var(--warn)] tracking-[0.5px] mt-1 leading-tight">
+                        Active {plan!.type} plan targets a {plan!.type === 'cut' ? 'deficit' : 'surplus'} — edit the plan to switch its direction.
+                      </p>
+                    ) : null;
+                  })()}
                 </>
               );
             })()}
@@ -573,16 +612,13 @@ function CalorieBudgetCard({ m, onOpenProgress, prFlags }: {
         {(() => {
           if (typeof window === 'undefined') return null;
           const plan = loadPlan(); if (!plan) return null;
-          const daysSince  = Math.round((Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / 86400000);
-          const weeksSince = Math.max(0, daysSince / 7);
-          const effKcal    = getEffectiveDailyKcal(plan);
-          const weeklyRate = plan.type === 'cut'
-            ? -(effKcal * 7 / 3500)
-            :  (effKcal * 7 / 3500);
+          // Exact ms-based elapsed weeks (matches the modals; no day-rounding).
+          const weeksSince = Math.max(0, (Date.now() - new Date(plan.startDate + 'T00:00:00').getTime()) / (7 * 86400000));
           // Anchor projection at the plan's locked start weight so this tile stays
-          // consistent with the chart and Change stat in PlanProgressModal.
+          // consistent with the chart and Change stat in PlanProgressModal. Capped
+          // at the goal so a completed/overrun plan doesn't project past it.
           const baseline   = getPlanBaseline(plan, localDB);
-          const projNow      = baseline + weeklyRate * weeksSince;
+          const projNow      = baseline + planExpectedChange(plan, weeksSince);
           const weeksLeft    = Math.max(0, plan.weeksTarget - weeksSince);
           const planAccent   = plan.type === 'cut' ? 'var(--accent)' : 'var(--positive)';
           const planBg       = plan.type === 'cut' ? 'var(--accent-12)' : 'var(--positive-12)';
@@ -867,24 +903,23 @@ function WeeklyVolumeCard() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Real caloric balance for a logged day: calsEaten − true maintenance.
- *   maintenance = budget + goalDeficit + 0.4 × burn   (≡ TDEE + burn)
- * Mirrors getPlanCompliance + the budget formula. Negative = a real deficit,
- * positive = a real surplus. Returns null when the day lacks the data to
- * compute it (no calories or no stored budget).
+ * Real caloric balance for a logged day: calsEaten − true maintenance, where
+ * maintenance comes from dayMaintenance() (the stored TDEE snapshot, or the
+ * legacy budget+deficit reconstruction for older days). Negative = a real
+ * deficit, positive = a real surplus. Returns null when the day lacks the data.
  *
  * NOTE: this is the true deficit/surplus vs. maintenance — NOT calsEaten −
  * budget, which only measures how far under/over the GOAL you landed.
  */
 function dayCalorieBalance(
-  rec: { calsEaten?: unknown; budget?: unknown; burn?: unknown },
+  rec: { calsEaten?: unknown; tdee?: unknown; budget?: unknown; burn?: unknown },
   goalDeficit: number,
 ): number | null {
-  const eaten  = parseNum(String(rec.calsEaten ?? 0));
-  const budget = parseNum(String(rec.budget ?? 0));
-  if (eaten <= 0 || budget <= 0) return null;
-  const burn = parseNum(String(rec.burn ?? 0));
-  return Math.round(eaten - (budget + goalDeficit + burn * 0.4));
+  const eaten = parseNum(String(rec.calsEaten ?? 0));
+  if (eaten <= 0) return null;
+  const maintenance = dayMaintenance(rec, goalDeficit);
+  if (maintenance === null) return null;
+  return Math.round(eaten - maintenance);
 }
 
 function ActivityLogCard() {
