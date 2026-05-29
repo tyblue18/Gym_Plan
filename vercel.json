@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-nudge",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/weigh-in-reminder",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/weekly-recap",
+      "schedule": "0 23 * * 0"
+    },
+    {
+      "path": "/api/cron/resolve-battles",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
